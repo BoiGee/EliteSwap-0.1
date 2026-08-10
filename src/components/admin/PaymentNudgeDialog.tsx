@@ -208,22 +208,21 @@ export default function PaymentNudgeDialog({ target, open, onOpenChange, onSent 
       });
       if (error) throw error;
 
-      // Log this nudge in history (per-preset audit) and update legacy timestamp.
-      const { data: auth } = await supabase.auth.getUser();
-      const sentBy = auth?.user?.id;
-      if (sentBy) {
-        await supabase.from("payment_nudge_history").insert({
-          user_id: target.user_id,
-          preset_id: presetId || "custom",
-          sent_by: sentBy,
-          subject: headline.slice(0, 200),
-          headline_snippet: headline.slice(0, 80),
-        });
-      }
-      await supabase
-        .from("profiles")
-        .update({ last_payment_nudge_sent_at: new Date().toISOString() })
-        .eq("user_id", target.user_id);
+      // Log this nudge (per-preset audit) and stamp profiles.last_payment_nudge_sent_at
+      // through one RPC — profiles' UPDATE RLS is admin-only and a guard trigger
+      // separately protects this exact field, so a direct client update from a
+      // sec_admin (who this tab is fully visible to) would silently no-op with
+      // no error. The RPC is scoped to can_manage_payments(), matching the tab.
+      // Best-effort, same as before: the email already sent successfully
+      // above, so a hiccup recording history/timestamp shouldn't surface
+      // as a user-facing "nudge failed" error.
+      const { error: recordError } = await supabase.rpc("record_payment_nudge_sent" as any, {
+        p_user_id: target.user_id,
+        p_preset_id: presetId || "custom",
+        p_subject: headline.slice(0, 200),
+        p_headline_snippet: headline.slice(0, 80),
+      });
+      if (recordError) console.warn("[PaymentNudgeDialog] record_payment_nudge_sent failed", recordError);
 
       toast({ title: "Nudge sent ✉️", description: `Email queued to ${target.email}` });
       onSent?.();

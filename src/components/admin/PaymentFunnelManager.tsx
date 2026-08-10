@@ -19,7 +19,10 @@ interface ConfirmedPayment {
   user_id: string;
 }
 
-const STAGE_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const;
+// Stage 7 is intentionally absent — verified against the DB trigger
+// (tg_update_payment_funnel_stage) that it's never assigned to any user;
+// rendering it would just be a permanently-empty, unlabeled chart row.
+const STAGE_ORDER = [0, 1, 2, 3, 4, 5, 6, 8] as const;
 
 export default function PaymentFunnelManager() {
   const [profiles, setProfiles] = useState<FunnelProfile[]>([]);
@@ -34,15 +37,33 @@ export default function PaymentFunnelManager() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [pRes, payRes, nudgeRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("user_id, email, display_name, payment_funnel_stage, payment_funnel_updated_at, last_payment_nudge_sent_at, created_at")
-        .order("payment_funnel_updated_at", { ascending: false, nullsFirst: false }),
+    // profiles has 1800+ rows — well past PostgREST's default 1000-row cap,
+    // so this must be paginated explicitly. Verified live: the previous
+    // unpaginated query already undercounted "All users" by ~800, and was
+    // one data-shape change away from silently corrupting the funnel-stage
+    // analytics too (they only survived by the accident of sort order).
+    const fetchAllProfiles = async (): Promise<FunnelProfile[]> => {
+      const out: FunnelProfile[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("user_id, email, display_name, payment_funnel_stage, payment_funnel_updated_at, last_payment_nudge_sent_at, created_at")
+          .order("payment_funnel_updated_at", { ascending: false, nullsFirst: false })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as FunnelProfile[];
+        out.push(...rows);
+        if (rows.length < pageSize) break;
+      }
+      return out;
+    };
+    const [pRows, payRes, nudgeRes] = await Promise.all([
+      fetchAllProfiles(),
       supabase.from("payments").select("user_id").eq("status", "confirmed"),
       supabase.from("payment_nudge_history").select("user_id"),
     ]);
-    if (pRes.data) setProfiles(pRes.data as FunnelProfile[]);
+    setProfiles(pRows);
     if (payRes.data) setConfirmedUserIds(new Set((payRes.data as ConfirmedPayment[]).map((p) => p.user_id)));
     if (nudgeRes.data) {
       const counts: Record<string, number> = {};
