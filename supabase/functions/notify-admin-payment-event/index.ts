@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
     const isApproved = userEmailSpec.template === 'payment-approved'
     const adminNote = isApproved
       ? (eventType === 'auto_confirmed_key_pending'
-          ? 'Your transaction was verified — your API key is being assigned and will appear in your dashboard shortly.'
+          ? 'Your transaction was verified — your unique key is being assigned and will appear in your dashboard shortly.'
           : 'Your transaction has been confirmed — your account is fully unlocked. Welcome aboard!')
       : undefined
     try {

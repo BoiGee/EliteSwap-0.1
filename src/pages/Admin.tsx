@@ -285,7 +285,7 @@ export default function Admin() {
     { id: "time_ledger", label: "Time Ledger", icon: "🧮" },
     { id: "payments", label: "Payments", icon: "💰" },
     { id: "funnel", label: "Funnel", icon: "🎯" },
-    { id: "api_keys", label: "API Keys", icon: "🔑" },
+    { id: "api_keys", label: "Unique Keys", icon: "🔑" },
     { id: "key_pool", label: "Decart Pool", icon: "🗝️" },
     { id: "key_activity", label: "Key Activity", icon: "📜" },
     { id: "pricing", label: "Pricing", icon: "💎" },
@@ -383,7 +383,7 @@ export default function Admin() {
                   { label: "Total Users", value: totalUsers, icon: "👥" },
                   { label: "Pending Payments", value: pendingPayments, icon: "⏳" },
                   { label: "Confirmed Payments", value: confirmedPayments, icon: "✅" },
-                  { label: "Active API Keys", value: activeKeys, icon: "🔑" },
+                  { label: "Active Unique Keys", value: activeKeys, icon: "🔑" },
                 ].map((s) => (
                   <div key={s.label} className="glass neon-border rounded-xl p-4 text-center space-y-2">
                     <div className="text-2xl">{s.icon}</div>
@@ -434,7 +434,7 @@ export default function Admin() {
 
           {tab === "api_keys" && (
             <div className="space-y-4">
-              <h2 className="text-2xl font-heading font-bold text-foreground">Manage API Keys</h2>
+              <h2 className="text-2xl font-heading font-bold text-foreground">Manage Unique Keys</h2>
               <div className="space-y-2">
                 {apiKeys.map((k) => (
                   <div key={k.id} className="glass rounded-xl px-4 py-3 flex items-center gap-4 text-sm">
@@ -460,7 +460,7 @@ export default function Admin() {
                     </div>
                   </div>
                 ))}
-                {apiKeys.length === 0 && <p className="text-sm text-muted-foreground">No API keys yet.</p>}
+                {apiKeys.length === 0 && <p className="text-sm text-muted-foreground">No unique keys yet.</p>}
               </div>
             </div>
           )}
@@ -512,7 +512,7 @@ export default function Admin() {
       <Dialog open={!!editingKey} onOpenChange={(o) => !o && setEditingKey(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-heading">Edit API Key</DialogTitle>
+            <DialogTitle className="font-heading">Edit Unique Key</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">

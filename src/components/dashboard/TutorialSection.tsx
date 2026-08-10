@@ -48,7 +48,7 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
                     <li className="flex gap-3">
                       <span className="shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-xs">3</span>
                       <div>
-                        <span className="font-semibold text-foreground">Step 2 unlocks</span> with a fresh trial API key — 4 minutes of studio time.
+                        <span className="font-semibold text-foreground">Step 2 unlocks</span> with a fresh trial unique key — 4 minutes of studio time.
                       </div>
                     </li>
                     <li className="flex gap-3">
@@ -118,7 +118,7 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
                     <li className="flex gap-3">
                       <span className="shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-xs">4</span>
                       <div>
-                        <span className="font-semibold text-foreground">Copy your API key</span> from Step 2 of your dashboard.
+                        <span className="font-semibold text-foreground">Copy your unique key</span> from Step 2 of your dashboard.
                       </div>
                     </li>
                     <li className="flex gap-3">
@@ -130,7 +130,7 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
                     <li className="flex gap-3">
                       <span className="shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-xs">6</span>
                       <div>
-                        <span className="font-semibold text-foreground">Optional — Stream to OBS, Zoom, or Meet</span> using the <code className="text-xs bg-muted/40 px-1 rounded">/obs-output</code> URL with your API key as a virtual camera source.
+                        <span className="font-semibold text-foreground">Optional — Stream to OBS, Zoom, or Meet</span> using the <code className="text-xs bg-muted/40 px-1 rounded">/obs-output</code> URL with your unique key as a virtual camera source.
                       </div>
                     </li>
                   </ol>

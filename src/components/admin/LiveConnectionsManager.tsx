@@ -212,7 +212,7 @@ export default function LiveConnectionsManager() {
       setRecent(((data ?? []) as any) as RecentRow[]);
     };
 
-    // Include trial keys so the count matches the API Keys tab.
+    // Include trial keys so the count matches the Unique Keys tab.
     const fetchActiveKeys = async () => {
       const { data, error } = await supabase
         .from("api_keys")

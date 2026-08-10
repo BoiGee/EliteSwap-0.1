@@ -255,7 +255,7 @@ export function DeepfakeStudio() {
     if (isFreeTrial) {
       setShowTrialEnded(true);
     } else {
-      toast({ title: "API key expired ⏰", description: "Your session time has run out.", variant: "destructive" });
+      toast({ title: "Unique key expired ⏰", description: "Your session time has run out.", variant: "destructive" });
     }
     try {
       await supabase
@@ -1537,11 +1537,11 @@ export function DeepfakeStudio() {
             setShowTrialEnded(true);
           } else if (row?.reason === "expired_or_inactive") {
             if (row?.is_trial) setShowTrialEnded(true);
-            else toast({ title: "API key expired ⏰", description: "Please renew or upgrade to continue.", variant: "destructive" });
+            else toast({ title: "Unique key expired ⏰", description: "Please renew or upgrade to continue.", variant: "destructive" });
           } else if (row?.reason === "not_owner") {
             toast({ title: "This key belongs to another account", description: "Sign in with the account that owns this key, or use one of your own.", variant: "destructive" });
           } else if (row?.reason === "key_not_found") {
-            toast({ title: "API key not assigned", description: "This key is not assigned to your account.", variant: "destructive" });
+            toast({ title: "Unique key not assigned", description: "This key is not assigned to your account.", variant: "destructive" });
           } else if (row?.reason === "not_authenticated") {
             toast({ title: "Sign in required", description: "Please sign in before opening the studio.", variant: "destructive" });
           } else {
@@ -1680,7 +1680,7 @@ export function DeepfakeStudio() {
         title = "Connection timed out";
         description = "Your network took too long to reach the studio. Try again, or switch off VPN / restrictive Wi‑Fi.";
       } else if (lower.includes("401") || lower.includes("unauthor") || (lower.includes("invalid") && lower.includes("key"))) {
-        description = "Your API key was rejected. Please confirm it's the exact key shown in your dashboard.";
+        description = "Your unique key was rejected. Please confirm it's the exact key shown in your dashboard.";
       } else if (lower.includes("network") || lower.includes("failed to fetch") || lower.includes("ice") || lower.includes("dtls")) {
         description = "Your network is blocking realtime video (firewall / VPN / restrictive Wi‑Fi). Try a different network.";
       } else if (lower.includes("prompt") || lower.includes("content")) {

@@ -385,7 +385,7 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
               {submitting ? "Submitting..." : `Submit ${wallet.symbol} Hash for Verification`}
             </Button>
             <p className="text-[10px] text-muted-foreground text-center">
-              We'll verify on-chain and activate your API key — usually within minutes.
+              We'll verify on-chain and activate your unique key — usually within minutes.
             </p>
             <p className="text-[10px] text-muted-foreground/80 text-center leading-snug">
               Paid from <span className="font-semibold">inside Binance</span>? Paste the Binance

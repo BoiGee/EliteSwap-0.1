@@ -43,7 +43,7 @@ const ACTION_OPTIONS = [
   { value: "payments.status", label: "Payment status change" },
   { value: "discount_codes", label: "Discount codes" },
   { value: "user_roles", label: "User roles" },
-  { value: "api_keys", label: "API keys" },
+  { value: "api_keys", label: "Unique keys" },
   { value: "pricing_plans", label: "Pricing plans" },
 ];
 

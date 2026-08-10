@@ -138,7 +138,7 @@ export default function UserDetailDrawer({ userId, onClose }: Props) {
               <Field label="Total studio time" value={fmtMs(totalStudioMs)} />
               <Field label="Sessions (last 20)" value={String(data.sessions.length)} />
               <Field label="Last session" value={fmtDate(data.sessions[0]?.started_at)} />
-              <Field label="API keys" value={`${data.apiKeys.length} (${data.apiKeys.filter((k) => k.is_active).length} active)`} />
+              <Field label="Unique keys" value={`${data.apiKeys.length} (${data.apiKeys.filter((k) => k.is_active).length} active)`} />
               <div className="col-span-2 mt-2 space-y-2">
                 {data.apiKeys.slice(0, 10).map((k) => {
                   const keySessions = data.sessions.filter((s: any) => s.api_key_id === k.id);

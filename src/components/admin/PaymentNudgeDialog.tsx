@@ -72,7 +72,7 @@ const PRESETS: Preset[] = [
     label: "Submitted hash — checking on them",
     forStages: [6],
     headline: "Your payment is being verified",
-    body: "Just a heads up — we received your transaction hash and our team is verifying it on-chain. You should be activated within the next few hours. If you don't see your API key by tomorrow, reply to this email and we'll dig in.",
+    body: "Just a heads up — we received your transaction hash and our team is verifying it on-chain. You should be activated within the next few hours. If you don't see your unique key by tomorrow, reply to this email and we'll dig in.",
     ctaLabel: "Open Dashboard",
   },
   {

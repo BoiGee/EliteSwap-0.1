@@ -720,7 +720,7 @@ async function verifyOne(
       if (prof?.email) {
         const adminNote = keyIssued
           ? "Your transaction was verified automatically on-chain — your account is fully unlocked. Welcome aboard!"
-          : "Your transaction was verified automatically on-chain. Your API key is being assigned and will appear in your dashboard shortly — usually within a few minutes.";
+          : "Your transaction was verified automatically on-chain. Your unique key is being assigned and will appear in your dashboard shortly — usually within a few minutes.";
         await admin.functions.invoke("send-transactional-email", {
           body: {
             templateName: "payment-approved",

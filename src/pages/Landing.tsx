@@ -58,7 +58,7 @@ export default function Landing() {
           <div className="glass neon-border rounded-2xl p-8 space-y-4">
             <h2 className="text-xl font-heading font-semibold text-foreground">Get Started</h2>
             <p className="text-sm text-muted-foreground">
-              Create an account, make a payment, and receive your API key instantly.
+              Create an account, make a payment, and receive your unique key instantly.
             </p>
             <div className="flex flex-col gap-3">
               <Button

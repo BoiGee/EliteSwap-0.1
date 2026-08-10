@@ -20,7 +20,7 @@ export default function Guidelines() {
         <h2>No spam or self-promo</h2>
         <p>Don't post affiliate links, sales pitches, or unrelated promotions.</p>
         <h2>Protect privacy</h2>
-        <p>Don't share other people's personal info, API keys, or payment details.</p>
+        <p>Don't share other people's personal info, unique keys, or payment details.</p>
         <h2>Voice notes &amp; images</h2>
         <p>
           All media is held for quick admin review before becoming public. Keep it appropriate —

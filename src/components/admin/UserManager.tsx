@@ -394,7 +394,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       console.error("[internal]", error);
       toast({ title: "Error", description: getSafeErrorMessage(error.code), variant: "destructive" });
     } else {
-      toast({ title: "API key created ✅" });
+      toast({ title: "Unique key created ✅" });
       setNewKeyLabel("");
       setNewKeySecret("");
       setNewKeyHours("");
@@ -762,7 +762,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
         <Select value={keysFilter} onValueChange={(v) => setKeysFilter(v as KeysFilter)}>
           <SelectTrigger className="h-9 text-xs bg-muted/30"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">API Keys: All</SelectItem>
+            <SelectItem value="all">Unique Keys: All</SelectItem>
             <SelectItem value="active_key">Has active key</SelectItem>
             <SelectItem value="no_active_key">No active key</SelectItem>
             <SelectItem value="expired_key">Has expired key</SelectItem>
@@ -1099,9 +1099,9 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                   </>)}
 
                   {isAdmin && (<>
-                  {/* API Keys */}
+                  {/* Unique Keys */}
                   <div className="space-y-2">
-                    <h4 className="text-xs font-heading text-muted-foreground uppercase tracking-wider">API Keys ({uKeys.length})</h4>
+                    <h4 className="text-xs font-heading text-muted-foreground uppercase tracking-wider">Unique Keys ({uKeys.length})</h4>
                     {uKeys.map((k) => {
                       const timerDisplay = getTimeRemaining(k);
                       const isExpired = timerDisplay === "Expired";
@@ -1252,7 +1252,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       <Dialog open={!!editingKey} onOpenChange={(o) => !o && setEditingKey(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-heading">Edit API Key</DialogTitle>
+            <DialogTitle className="font-heading">Edit Unique Key</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">

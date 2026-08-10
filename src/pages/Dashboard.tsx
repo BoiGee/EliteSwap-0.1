@@ -223,7 +223,7 @@ export default function Dashboard() {
         (payload) => {
           fetchPayments();
           if (payload.eventType === 'UPDATE' && (payload.new as Payment).status === 'confirmed') {
-            toast({ title: "Payment confirmed! 🎉", description: "You can now generate your API key." });
+            toast({ title: "Payment confirmed! 🎉", description: "You can now generate your unique key." });
           } else if (payload.eventType === 'UPDATE' && (payload.new as Payment).status === 'rejected') {
             toast({ title: "Payment rejected ❌", description: "Please contact support or submit a new payment.", variant: "destructive" });
           }
@@ -325,7 +325,7 @@ export default function Dashboard() {
       toast({ title: "Error", description: getSafeErrorMessage(error.code), variant: "destructive" });
     } else {
       trackFunnel("funnel_tx_hash_submitted", { currency: effectiveCurrency });
-      toast({ title: "Payment submitted! ⏳", description: "We'll verify your transaction and activate your API key." });
+      toast({ title: "Payment submitted! ⏳", description: "We'll verify your transaction and activate your unique key." });
       // Fire-and-forget admin alert.
       if (inserted?.id) {
         notifyAdminPaymentEvent({
@@ -350,7 +350,7 @@ export default function Dashboard() {
     navigator.clipboard.writeText(key);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
-    toast({ title: "API key copied! 📋" });
+    toast({ title: "Unique key copied! 📋" });
   };
 
   const handleSignOut = async () => {
@@ -588,15 +588,15 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Step 2: API Keys */}
+        {/* Step 2: Unique Keys */}
         <div className={`glass neon-border rounded-2xl p-6 space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
           <div className="flex items-center gap-3">
             <span className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-sm">2</span>
-            <h2 className="text-lg font-heading font-semibold text-foreground">Your API Keys</h2>
+            <h2 className="text-lg font-heading font-semibold text-foreground">Your Unique Keys</h2>
           </div>
 
           {!canUseStudio && (
-            <p className="text-sm text-muted-foreground">Purchase a $10 trial or a paid plan to unlock your API keys.</p>
+            <p className="text-sm text-muted-foreground">Purchase a $10 trial or a paid plan to unlock your unique keys.</p>
           )}
 
           {canUseStudio && (
@@ -609,7 +609,7 @@ export default function Dashboard() {
                   <div className="space-y-2">
                     <p className="text-sm font-heading font-semibold text-foreground">Payment confirmed!</p>
                     <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                      Your API key will be sent to <span className="font-semibold text-foreground/80">{user?.email}</span> within <span className="font-semibold text-primary">15 to 60 minutes</span>. Please check your inbox (and spam folder).
+                      Your unique key will be sent to <span className="font-semibold text-foreground/80">{user?.email}</span> within <span className="font-semibold text-primary">15 to 60 minutes</span>. Please check your inbox (and spam folder).
                     </p>
                   </div>
                 </div>
@@ -653,9 +653,9 @@ export default function Dashboard() {
           </div>
           <p className="text-sm text-muted-foreground">
             {usableApiKeys.length > 0
-              ? "Your API key is ready. Launch the realtime face swap studio."
+              ? "Your unique key is ready. Launch the realtime face swap studio."
               : hasConfirmedPayment
-                ? "Your previous API key has run out of time. Repurchase a plan below to get a fresh key."
+                ? "Your previous unique key has run out of time. Repurchase a plan below to get a fresh key."
                 : "Purchase a $10 trial or a paid plan to unlock the studio."}
           </p>
           <Button
@@ -668,7 +668,7 @@ export default function Dashboard() {
                 setRepurchaseMode(true);
                 toast({
                   title: "Time to top up ⏱️",
-                  description: "Pick a plan below to refresh your API key — your account stays the same.",
+                  description: "Pick a plan below to refresh your unique key — your account stays the same.",
                 });
                 setTimeout(() => {
                   document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });

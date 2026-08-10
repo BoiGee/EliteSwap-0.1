@@ -514,7 +514,7 @@ export default function OBSOutput() {
 
         <p className="text-white/50 text-sm font-mono animate-pulse">
           {status === "missing key"
-            ? "Missing API key in URL (?key=...)"
+            ? "Missing unique key in URL (?key=...)"
             : status === "connection error"
             ? "Connection error — check your network."
             : "Waiting for studio stream… Open the studio in another tab."}

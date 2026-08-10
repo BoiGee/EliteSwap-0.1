@@ -76,7 +76,7 @@ export function ApiKeyTimer({ remainingMs, activeSessionStartedAt, expiresAt, is
       title={
         hasLiveSession
           ? "Studio session in progress — time is ticking down live"
-          : "Remaining time on this API key"
+          : "Remaining time on this unique key"
       }
     >
       <Clock className="w-3 h-3" />

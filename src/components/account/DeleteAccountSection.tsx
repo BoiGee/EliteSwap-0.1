@@ -86,7 +86,7 @@ export default function DeleteAccountSection() {
               <AlertDialogTitle>Delete your account?</AlertDialogTitle>
               <AlertDialogDescription>
                 You will be signed out immediately and unable to sign back in.
-                All your data — profile, payments, API keys, support history, reviews —
+                All your data — profile, payments, unique keys, support history, reviews —
                 will be permanently wiped from our servers within 7 days.
                 This cannot be undone after the 7-day grace period.
               </AlertDialogDescription>

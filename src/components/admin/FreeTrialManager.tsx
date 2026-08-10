@@ -268,7 +268,7 @@ export default function FreeTrialManager({ emailForUser }: Props) {
       <div>
         <h2 className="text-2xl font-heading font-bold text-foreground">Free Trial Keys</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Pool of pre-generated API keys handed out as free trials. Each user gets 1.
+          Pool of pre-generated unique keys handed out as free trials. Each user gets 1.
           Default trial duration is 2 minutes — override per-key below.
         </p>
       </div>
@@ -356,7 +356,7 @@ export default function FreeTrialManager({ emailForUser }: Props) {
 
       <div className="glass neon-border rounded-xl p-4 space-y-3">
         <h3 className="font-heading font-semibold text-foreground text-sm">Add keys to pool</h3>
-        <p className="text-xs text-muted-foreground">One API key per line. Duplicates will be rejected.</p>
+        <p className="text-xs text-muted-foreground">One unique key per line. Duplicates will be rejected.</p>
         <Textarea
           value={bulkInput}
           onChange={(e) => setBulkInput(e.target.value)}
