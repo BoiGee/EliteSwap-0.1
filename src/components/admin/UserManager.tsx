@@ -377,18 +377,19 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
 
   const createApiKey = async (userId: string) => {
     setCreatingKey(true);
-    const insertData: { user_id: string; label: string; key?: string; remaining_ms?: number } = {
-      user_id: userId,
-      label: newKeyLabel || "Admin-created",
-    };
-    if (newKeySecret.trim()) {
-      insertData.key = newKeySecret.trim();
-    }
     const totalMs = (parseFloat(newKeyHours) || 0) * 3600000 + (parseFloat(newKeyMinutes) || 0) * 60000 + (parseFloat(newKeySeconds) || 0) * 1000;
-    if (totalMs > 0) {
-      insertData.remaining_ms = totalMs;
-    }
-    const { error } = await supabase.from("api_keys").insert(insertData as any);
+    // Routed through admin_issue_api_key rather than a raw insert: leaving
+    // "Custom secret" blank used to fall through to api_keys.key's own
+    // column default (a 64-char hex string) instead of the 11-char format
+    // every other key on the platform uses — this RPC always generates a
+    // real short key when no custom secret is supplied, and audit-logs the
+    // grant since it bypasses payment entirely.
+    const { error } = await supabase.rpc("admin_issue_api_key" as any, {
+      p_user_id: userId,
+      p_label: newKeyLabel || null,
+      p_remaining_ms: totalMs > 0 ? totalMs : null,
+      p_custom_key: newKeySecret.trim() || null,
+    });
     if (error) {
       console.error("[internal]", error);
       toast({ title: "Error", description: getSafeErrorMessage(error.code), variant: "destructive" });
@@ -1198,7 +1199,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                         className="bg-muted/30 border-border text-xs h-8 max-w-[180px]"
                       />
                       <Input
-                        placeholder="Custom secret (optional)"
+                        placeholder="Custom code (blank = auto-generate)"
                         value={newKeySecret}
                         onChange={(e) => setNewKeySecret(e.target.value)}
                         className="bg-muted/30 border-border text-xs h-8 max-w-[240px] font-mono"

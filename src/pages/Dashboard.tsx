@@ -242,12 +242,19 @@ export default function Dashboard() {
 
 
   const fetchApiKeys = async () => {
-    const { data } = await supabase.from("api_keys").select("*").order("created_at", { ascending: false });
+    if (!user) return;
+    // Explicit user_id filter, not just RLS: staff roles have a "view all"
+    // policy on this table for the admin dashboard, so an unfiltered query
+    // here would leak every user's key into a staff member's own Dashboard.
+    const { data } = await supabase.from("api_keys").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setApiKeys(data);
   };
 
   const fetchPayments = async () => {
-    const { data } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
+    if (!user) return;
+    // Same reasoning as fetchApiKeys — payment managers/admins have a
+    // "view all" RLS policy on payments too.
+    const { data } = await supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setPayments(data);
   };
 
