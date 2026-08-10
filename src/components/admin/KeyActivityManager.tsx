@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import UserDetailDrawer from "./UserDetailDrawer";
+import KeySessionDetailDialog from "./KeySessionDetailDialog";
 
 type Row = {
   key_id: string;
@@ -18,6 +19,8 @@ type Row = {
   first_session_at: string | null;
   last_activity_at: string | null;
   total_used_ms: number;
+  handshake_burn_ms: number;
+  unlinked_mint_count: number;
   status: string;
 };
 
@@ -59,6 +62,7 @@ export default function KeyActivityManager() {
   const [days, setDays] = useState(90);
   const [search, setSearch] = useState("");
   const [openUser, setOpenUser] = useState<string | null>(null);
+  const [openKeyDetail, setOpenKeyDetail] = useState<string | null>(null);
 
   const fetchRows = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -140,15 +144,17 @@ export default function KeyActivityManager() {
                 <th className="text-left px-3 py-2">First connect</th>
                 <th className="text-left px-3 py-2">Last activity</th>
                 <th className="text-left px-3 py-2">Used / Remaining</th>
+                <th className="text-left px-3 py-2" title="Real Decart credential issued but the client never sent a heartbeat — penalized so the mint isn't a free burn">Handshake burns</th>
                 <th className="text-left px-3 py-2">Status</th>
+                <th className="text-left px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={9} className="text-center px-3 py-6 text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={11} className="text-center px-3 py-6 text-muted-foreground">Loading…</td></tr>
               )}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={9} className="text-center px-3 py-6 text-muted-foreground">No keys match these filters.</td></tr>
+                <tr><td colSpan={11} className="text-center px-3 py-6 text-muted-foreground">No keys match these filters.</td></tr>
               )}
               {!loading && filtered.map((r) => {
                 const st = statusStyle(r.status);
@@ -169,7 +175,26 @@ export default function KeyActivityManager() {
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.first_session_at)}</td>
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.last_activity_at)}</td>
                     <td className="px-3 py-2 text-muted-foreground">{fmtMs(r.total_used_ms)} / {fmtMs(Number(r.remaining_ms ?? 0))}</td>
+                    <td className="px-3 py-2">
+                      {r.unlinked_mint_count > 0 ? (
+                        <span className="text-amber-400" title={`${r.unlinked_mint_count} mint(s) never connected`}>
+                          {fmtMs(r.handshake_burn_ms)} ({r.unlinked_mint_count})
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded ${st.cls} font-heading`}>{st.label}</span></td>
+                    <td className="px-3 py-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="font-heading text-xs h-6 px-2"
+                        onClick={(e) => { e.stopPropagation(); setOpenKeyDetail(r.key_id); }}
+                      >
+                        Audit
+                      </Button>
+                    </td>
                   </tr>
                 );
               })}
@@ -179,6 +204,7 @@ export default function KeyActivityManager() {
       </div>
 
       <UserDetailDrawer userId={openUser} onClose={() => setOpenUser(null)} />
+      <KeySessionDetailDialog keyId={openKeyDetail} onClose={() => setOpenKeyDetail(null)} />
     </div>
   );
 }

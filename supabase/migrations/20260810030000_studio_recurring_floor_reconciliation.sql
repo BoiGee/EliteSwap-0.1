@@ -108,9 +108,12 @@ BEGIN
   IF v_jobid IS NOT NULL THEN
     PERFORM cron.unschedule(v_jobid);
   END IF;
+  -- pg_cron's bare-string schedule syntax only accepts "N seconds" (verified
+  -- against the live extension — 1.6.4 rejected "10 minutes" as invalid);
+  -- anything coarser needs standard 5-field cron syntax.
   PERFORM cron.schedule(
     'reconcile-studio-session-floors',
-    '10 minutes',
+    '*/10 * * * *',
     $cron$SELECT public.reconcile_studio_session_floors();$cron$
   );
 END $$;
