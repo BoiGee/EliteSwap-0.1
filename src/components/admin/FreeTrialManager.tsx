@@ -227,6 +227,10 @@ export default function FreeTrialManager({ emailForUser }: Props) {
   const total = keys.length;
   const claimed = keys.filter((k) => k.claimed_by_user_id !== null).length;
   const available = total - claimed;
+  // This pool backs both free trial claims AND $10 trial purchase confirmations
+  // (assign_trial_key_from_purchase draws from the same table) — running out
+  // means both flows start hard-failing, not just free trials.
+  const LOW_STOCK_THRESHOLD = 10;
 
   const filtered = keys.filter((k) => {
     if (filter === "available") return k.claimed_by_user_id === null;
@@ -341,10 +345,20 @@ export default function FreeTrialManager({ emailForUser }: Props) {
       {view === "keys" && (
         <>
 
+      {available < LOW_STOCK_THRESHOLD && (
+        <div className={`glass border rounded-xl p-3 text-xs font-heading ${
+          available === 0 ? "border-destructive/50 text-destructive" : "border-amber-500/50 text-amber-400"
+        }`}>
+          {available === 0
+            ? "⚠️ Pool exhausted — free trial claims AND $10 trial purchase confirmations will fail until more keys are added."
+            : `⚠️ Only ${available} unclaimed key${available === 1 ? "" : "s"} left — this pool backs $10 trial purchases too, not just free trials.`}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Total", value: total, color: "text-foreground" },
-          { label: "Available", value: available, color: "text-primary" },
+          { label: "Available", value: available, color: available < LOW_STOCK_THRESHOLD ? "text-destructive" : "text-primary" },
           { label: "Claimed", value: claimed, color: "text-muted-foreground" },
         ].map((s) => (
           <div key={s.label} className="glass neon-border rounded-xl p-4 text-center">

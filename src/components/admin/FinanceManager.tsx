@@ -107,21 +107,6 @@ interface ExpenseRow {
   created_at: string;
 }
 
-interface TrialRow {
-  id: string;
-  user_id: string;
-  payment_method: string;
-  amount_usd: number | null;
-  amount_local: number | null;
-  currency: string | null;
-  status: string;
-  provider_reference: string | null;
-  usdt_network: string | null;
-  assigned_key_id: string | null;
-  confirmed_at: string | null;
-  created_at: string;
-}
-
 const presets: { label: string; days: number | "all" | "ytd" | "mtd" | "last" }[] = [
   { label: "All time", days: "all" },
   { label: "YTD", days: "ytd" },
@@ -157,8 +142,7 @@ function computeRange(preset: string, customFrom: string, customTo: string): { f
 
 export default function FinanceManager() {
   const { toast } = useToast();
-  const { canManagePayments, isAdmin, loading: rolesLoading } = useAdmin();
-  const [trialBusy, setTrialBusy] = useState<string | null>(null);
+  const { isAdmin, loading: rolesLoading } = useAdmin();
   const [preset, setPreset] = useState<string>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -167,21 +151,12 @@ export default function FinanceManager() {
   const [partners, setPartners] = useState<PartnerRollup[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
-  const [profileNames, setProfileNames] = useState<Record<string, string>>({});
   const [plans, setPlans] = useState<Record<string, string>>({});
   const [attributions, setAttributions] = useState<Record<string, string>>({}); // user_id -> partner_id
   const [partnerCodes, setPartnerCodes] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
-  const [trials, setTrials] = useState<TrialRow[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Trial filters
-  const [trialMethod, setTrialMethod] = useState<string>("all");
-  const [trialStatus, setTrialStatus] = useState<string>("all");
-  const [trialKey, setTrialKey] = useState<string>("all");
-  const [trialSearch, setTrialSearch] = useState("");
-  const [trialSort, setTrialSort] = useState<string>("date_desc");
 
   // Revenue filters
   const [revCurrency, setRevCurrency] = useState<string>("all");
@@ -203,7 +178,7 @@ export default function FinanceManager() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     const args = { p_from: range.from, p_to: range.to };
-    const [ovr, mo, pr, pay, prof, pl, attr, prs, cat, exp, tri] = await Promise.all([
+    const [ovr, mo, pr, pay, prof, pl, attr, prs, cat, exp] = await Promise.all([
       supabase.rpc("finance_overview" as any, args),
       supabase.rpc("finance_monthly_series" as any, args),
       supabase.rpc("finance_partner_rollup" as any, args),
@@ -214,7 +189,6 @@ export default function FinanceManager() {
       supabase.from("partners" as any).select("id,code"),
       supabase.from("expense_categories" as any).select("*").order("name"),
       supabase.from("operating_expenses" as any).select("*").order("occurred_on", { ascending: false }),
-      supabase.from("trial_purchases" as any).select("id,user_id,payment_method,amount_usd,amount_local,currency,status,provider_reference,usdt_network,assigned_key_id,confirmed_at,created_at").order("created_at", { ascending: false }).limit(5000),
     ]);
     if (ovr.data && Array.isArray(ovr.data) && ovr.data[0]) setOverview(ovr.data[0] as any);
     if (mo.data) setMonthly(mo.data as any);
@@ -222,14 +196,12 @@ export default function FinanceManager() {
     if (pay.data) setPayments(pay.data as any);
     if (prof.data) {
       setProfiles(Object.fromEntries(prof.data.map((p: any) => [p.user_id, p.email ?? ""])));
-      setProfileNames(Object.fromEntries(prof.data.map((p: any) => [p.user_id, p.display_name ?? ""])));
     }
     if (pl.data) setPlans(Object.fromEntries(pl.data.map((p: any) => [p.id, p.name])));
     if (attr.data) setAttributions(Object.fromEntries((attr.data as any[]).map((a) => [a.user_id, a.partner_id])));
     if (prs.data) setPartnerCodes(Object.fromEntries((prs.data as any[]).map((p) => [p.id, p.code])));
     if (cat.data) setCategories(cat.data as any);
     if (exp.data) setExpenses(exp.data as any);
-    if (tri.data) setTrials(tri.data as any);
     setLoading(false);
   }, [range.from, range.to]);
 
@@ -266,92 +238,6 @@ export default function FinanceManager() {
       return true;
     });
   }, [expenses, expCategory, range]);
-
-  const filteredTrials = useMemo(() => {
-    const list = trials.filter((t) => {
-      const dateStr = t.confirmed_at || t.created_at;
-      if (range.from && new Date(dateStr) < new Date(range.from)) return false;
-      if (range.to && new Date(dateStr) >= new Date(range.to)) return false;
-      if (trialStatus !== "all" && t.status !== trialStatus) return false;
-      if (trialMethod !== "all" && t.payment_method !== trialMethod) return false;
-      if (trialKey === "assigned" && !t.assigned_key_id) return false;
-      if (trialKey === "unassigned" && !!t.assigned_key_id) return false;
-      if (trialSearch) {
-        const q = trialSearch.toLowerCase().trim();
-        const email = (profiles[t.user_id] || "").toLowerCase();
-        const name = (profileNames[t.user_id] || "").toLowerCase();
-        const ref = (t.provider_reference || "").toLowerCase();
-        const uid = t.user_id.toLowerCase();
-        const keyId = (t.assigned_key_id || "").toLowerCase();
-        const net = (t.usdt_network || "").toLowerCase();
-        const cur = (t.currency || "").toLowerCase();
-        const amt = String(t.amount_usd ?? "");
-        const hay = `${email} ${name} ${ref} ${uid} ${keyId} ${net} ${cur} ${amt}`;
-        // Support multi-token search (all tokens must match somewhere)
-        const tokens = q.split(/\s+/).filter(Boolean);
-        if (!tokens.every((tok) => hay.includes(tok))) return false;
-      }
-      return true;
-    });
-    const dateOf = (t: TrialRow) => new Date(t.confirmed_at || t.created_at).getTime();
-    const emailOf = (t: TrialRow) => (profiles[t.user_id] || profileNames[t.user_id] || "").toLowerCase();
-    list.sort((a, b) => {
-      switch (trialSort) {
-        case "date_asc": return dateOf(a) - dateOf(b);
-        case "amount_desc": return Number(b.amount_usd || 0) - Number(a.amount_usd || 0);
-        case "amount_asc": return Number(a.amount_usd || 0) - Number(b.amount_usd || 0);
-        case "email_asc": return emailOf(a).localeCompare(emailOf(b));
-        case "email_desc": return emailOf(b).localeCompare(emailOf(a));
-        case "status": return (a.status || "").localeCompare(b.status || "");
-        case "method": return (a.payment_method || "").localeCompare(b.payment_method || "");
-        case "date_desc":
-        default: return dateOf(b) - dateOf(a);
-      }
-    });
-    return list;
-  }, [trials, range, trialStatus, trialMethod, trialKey, trialSearch, trialSort, profiles, profileNames]);
-
-  const trialStats = useMemo(() => {
-    const confirmed = filteredTrials.filter((t) => t.status === "confirmed");
-    const usdt = confirmed.filter((t) => t.payment_method === "usdt");
-    const ps = confirmed.filter((t) => t.payment_method === "paystack");
-    const sum = (arr: TrialRow[]) => arr.reduce((s, t) => s + Number(t.amount_usd || 0), 0);
-    return {
-      total_usd: sum(confirmed),
-      total_count: confirmed.length,
-      usdt_usd: sum(usdt),
-      usdt_count: usdt.length,
-      paystack_usd: sum(ps),
-      paystack_count: ps.length,
-      assigned_count: confirmed.filter((t) => !!t.assigned_key_id).length,
-      pending_count: filteredTrials.filter((t) => t.status === "pending").length,
-    };
-  }, [filteredTrials]);
-
-  const handleTrialAction = useCallback(async (
-    purchaseId: string,
-    action: "confirm" | "reject" | "reset_pending",
-    label: string,
-  ) => {
-    if (!canManagePayments) return;
-    if (!window.confirm(`${label} this $10 trial purchase?`)) return;
-    setTrialBusy(purchaseId);
-    try {
-      const { data, error } = await supabase.rpc("admin_manage_trial_purchase" as any, {
-        p_purchase_id: purchaseId,
-        p_action: action,
-      });
-      if (error) throw error;
-      toast({ title: `Trial ${label.toLowerCase()}ed`, description: JSON.stringify(data) });
-      await loadAll();
-    } catch (e: any) {
-      toast({ title: "Action failed", description: e?.message || String(e), variant: "destructive" });
-    } finally {
-      setTrialBusy(null);
-    }
-  }, [canManagePayments, toast]);
-
-
 
   const currencies = useMemo(() => {
     const s = new Set<string>();
@@ -467,23 +353,6 @@ export default function FinanceManager() {
     download(`expenses_${Date.now()}.csv`, toCSV(rows));
   };
 
-  const exportTrials = () => {
-    const rows = filteredTrials.map((t) => ({
-      date: t.confirmed_at || t.created_at,
-      email: profiles[t.user_id] || "",
-      method: t.payment_method === "usdt"
-        ? `USDT${t.usdt_network ? ` (${t.usdt_network})` : ""}`
-        : t.payment_method === "paystack" ? "Momo/Card" : t.payment_method,
-      amount_usd: t.amount_usd ?? "",
-      amount_local: t.amount_local ?? "",
-      currency: t.currency || "",
-      provider_reference: t.provider_reference || "",
-      key_assigned: t.assigned_key_id ? "yes" : "no",
-      status: t.status,
-    }));
-    download(`trial_revenue_${Date.now()}.csv`, toCSV(rows));
-  };
-
   const kpis = overview;
 
   // Finance is admin-only. Sec admins and moderators must never see this pane,
@@ -526,7 +395,6 @@ export default function FinanceManager() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="trials">$10 Trials</TabsTrigger>
           <TabsTrigger value="partners">Partners</TabsTrigger>
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
           <TabsTrigger value="chart">P&L Chart</TabsTrigger>
@@ -557,6 +425,7 @@ export default function FinanceManager() {
           </div>
           <div className="text-xs text-muted-foreground">
             Net profit = Net revenue − Partner commissions (direct) − Override commissions − Operating expenses. Uses each payment's snapshot percentage so historical changes are correct.
+            $10 trial revenue is tracked separately in the "$10 Trials" tab and is not folded into these figures.
           </div>
         </TabsContent>
 
@@ -624,167 +493,6 @@ export default function FinanceManager() {
             </Table>
           </div>
         </TabsContent>
-
-        {/* $10 Trials */}
-        <TabsContent value="trials" className="space-y-3">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: "Trial revenue (confirmed)", value: fmtUsd(trialStats.total_usd), icon: "💵" },
-              { label: "Confirmed trials", value: String(trialStats.total_count), icon: "✅" },
-              { label: "USDT revenue", value: `${fmtUsd(trialStats.usdt_usd)} (${trialStats.usdt_count})`, icon: "🪙" },
-              { label: "Momo/Card revenue", value: `${fmtUsd(trialStats.paystack_usd)} (${trialStats.paystack_count})`, icon: "💳" },
-              { label: "Keys auto-assigned", value: String(trialStats.assigned_count), icon: "🔑" },
-              { label: "Pending trials", value: String(trialStats.pending_count), icon: "⏳" },
-            ].map((s) => (
-              <div key={s.label} className="glass neon-border rounded-xl p-4 space-y-1">
-                <div className="text-xl">{s.icon}</div>
-                <div className="text-xl font-heading font-bold text-foreground">{s.value}</div>
-                <div className="text-xs text-muted-foreground font-heading">{s.label}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <Input
-              placeholder="Search email, name, user id, reference, key id, amount…"
-              value={trialSearch}
-              onChange={(e) => setTrialSearch(e.target.value)}
-              className="w-[300px]"
-            />
-            <Select value={trialStatus} onValueChange={setTrialStatus}>
-              <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={trialMethod} onValueChange={setTrialMethod}>
-              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All methods</SelectItem>
-                <SelectItem value="usdt">USDT</SelectItem>
-                <SelectItem value="paystack">Momo/Card</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={trialKey} onValueChange={setTrialKey}>
-              <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any key state</SelectItem>
-                <SelectItem value="assigned">Key assigned</SelectItem>
-                <SelectItem value="unassigned">No key yet</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={trialSort} onValueChange={setTrialSort}>
-              <SelectTrigger className="w-[170px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="date_desc">Newest first</SelectItem>
-                <SelectItem value="date_asc">Oldest first</SelectItem>
-                <SelectItem value="amount_desc">Amount ↓</SelectItem>
-                <SelectItem value="amount_asc">Amount ↑</SelectItem>
-                <SelectItem value="email_asc">Email A–Z</SelectItem>
-                <SelectItem value="email_desc">Email Z–A</SelectItem>
-                <SelectItem value="status">Status</SelectItem>
-                <SelectItem value="method">Method</SelectItem>
-              </SelectContent>
-            </Select>
-            {(trialSearch || trialStatus !== "all" || trialMethod !== "all" || trialKey !== "all") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setTrialSearch(""); setTrialStatus("all"); setTrialMethod("all"); setTrialKey("all"); }}
-                className="font-heading text-xs"
-              >
-                Clear
-              </Button>
-            )}
-            <div className="ml-auto text-xs text-muted-foreground">{filteredTrials.length} rows</div>
-            <Button variant="outline" size="sm" onClick={exportTrials} className="font-heading">Export CSV</Button>
-          </div>
-
-
-          <div className="glass rounded-xl overflow-auto max-h-[60vh]">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Local</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canManagePayments && <TableHead>Actions</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTrials.map((t) => {
-                  const d = t.confirmed_at || t.created_at;
-                  const method = t.payment_method === "usdt"
-                    ? `USDT${t.usdt_network ? ` (${t.usdt_network})` : ""}`
-                    : t.payment_method === "paystack" ? "Momo/Card" : t.payment_method;
-                  const busy = trialBusy === t.id;
-                  return (
-                    <TableRow key={t.id}>
-                      <TableCell className="text-xs">{new Date(d).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-xs max-w-[220px]">
-                        <div className="truncate font-heading text-foreground" title={profileNames[t.user_id] || profiles[t.user_id] || t.user_id}>
-                          {profileNames[t.user_id] || profiles[t.user_id] || t.user_id.slice(0, 8)}
-                        </div>
-                        {profileNames[t.user_id] && profiles[t.user_id] && (
-                          <div className="truncate text-[10px] text-muted-foreground" title={profiles[t.user_id]}>{profiles[t.user_id]}</div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs">{method}</TableCell>
-                      <TableCell className="text-xs text-right">{fmtUsd(t.amount_usd)}</TableCell>
-                      <TableCell className="text-xs">{t.amount_local ? `${t.amount_local} ${t.currency || ""}` : "—"}</TableCell>
-                      <TableCell className="text-xs font-mono truncate max-w-[160px]">{t.provider_reference || "—"}</TableCell>
-                      <TableCell className="text-xs">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${t.assigned_key_id ? "bg-emerald-500/15 text-emerald-400" : "bg-muted/30 text-muted-foreground"}`}>
-                          {t.assigned_key_id ? "Assigned" : "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs">{t.status}</TableCell>
-                      {canManagePayments && (
-                        <TableCell className="text-xs">
-                          <div className="flex flex-wrap gap-1">
-                            {(t.status !== "confirmed" || !t.assigned_key_id) && (
-                              <Button size="sm" variant="outline" disabled={busy}
-                                onClick={() => handleTrialAction(t.id, "confirm", t.assigned_key_id ? "Re-confirm" : "Confirm & assign key")}>
-                                {t.status === "confirmed" && !t.assigned_key_id ? "Assign key" : "Confirm"}
-                              </Button>
-                            )}
-                            {t.status === "pending" && (
-                              <Button size="sm" variant="destructive" disabled={busy}
-                                onClick={() => handleTrialAction(t.id, "reject", "Mark failed")}>
-                                Reject
-                              </Button>
-                            )}
-                            {t.status === "failed" && (
-                              <Button size="sm" variant="ghost" disabled={busy}
-                                onClick={() => handleTrialAction(t.id, "reset_pending", "Reopen as pending")}>
-                                Reopen
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
-                {filteredTrials.length === 0 && (
-                  <TableRow><TableCell colSpan={canManagePayments ? 9 : 8} className="text-center text-muted-foreground text-xs py-6">No trial purchases in this range.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            $10 trial revenue is tracked separately and is not folded into the main Revenue / Net revenue figures above.
-          </div>
-        </TabsContent>
-
 
         {/* Partners */}
         <TabsContent value="partners" className="space-y-3">

@@ -32,6 +32,7 @@ import AccountDeletionQueue from "@/components/admin/AccountDeletionQueue";
 import BackupManager from "@/components/admin/BackupManager";
 import ForumManager from "@/components/admin/ForumManager";
 import TimeLedgerManager from "@/components/admin/TimeLedgerManager";
+import TrialPurchaseManager from "@/components/admin/TrialPurchaseManager";
 import { useSupportChatNotifications } from "@/hooks/useSupportChatNotifications";
 import { notifyAdminPaymentEvent } from "@/lib/adminNotify";
 import { isDevAdminOverrideEnabled } from "@/lib/devAdmin";
@@ -80,7 +81,7 @@ interface FreeTrialAssignment {
   created_at: string;
 }
 
-type Tab = "analytics" | "payments" | "users" | "paid_users" | "api_keys" | "key_pool" | "key_activity" | "pricing" | "support" | "activity" | "reviews" | "free_trial" | "discounts" | "mailer" | "funnel" | "partners" | "finance" | "live" | "usage" | "time_ledger" | "announcements" | "deletions" | "backups" | "forum" | "audit";
+type Tab = "analytics" | "payments" | "users" | "paid_users" | "api_keys" | "key_pool" | "key_activity" | "pricing" | "support" | "activity" | "reviews" | "free_trial" | "discounts" | "mailer" | "funnel" | "partners" | "finance" | "trials" | "live" | "usage" | "time_ledger" | "announcements" | "deletions" | "backups" | "forum" | "audit";
 
 export default function Admin() {
   const { user, signOut } = useAuth();
@@ -278,6 +279,7 @@ export default function Admin() {
   const allTabs: { id: Tab; label: string; icon: string }[] = [
     { id: "analytics", label: "Overview", icon: "📊" },
     { id: "finance", label: "Finance", icon: "📈" },
+    { id: "trials", label: "$10 Trials", icon: "💵" },
     { id: "users", label: "Users", icon: "👥" },
     { id: "paid_users", label: "Paid Users", icon: "💎" },
     { id: "live", label: "Live", icon: "🟢" },
@@ -314,6 +316,10 @@ export default function Admin() {
     }
     if (canManageDiscounts || isSecAdmin) allowed.add("discounts");
     if (isSecAdmin) allowed.add("audit");
+    // $10 Trials matches admin_manage_trial_purchase()'s own authorization
+    // exactly (admin OR sec_admin — verified against the live function) —
+    // not canManagePayments, which that RPC doesn't recognize at all.
+    if (isSecAdmin) allowed.add("trials");
     // Finance + Time Ledger are admin-only. Never surface them to sec_admin or moderator.
     allowed.delete("finance");
     allowed.delete("time_ledger");
@@ -502,6 +508,8 @@ export default function Admin() {
           {tab === "time_ledger" && <TimeLedgerManager />}
 
           {tab === "finance" && <FinanceManager />}
+
+          {tab === "trials" && <TrialPurchaseManager />}
 
           {tab === "paid_users" && <PaidUsersManager profiles={profiles} payments={payments} />}
 
