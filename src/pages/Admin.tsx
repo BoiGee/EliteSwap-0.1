@@ -139,6 +139,27 @@ export default function Admin() {
     if (isStaff) fetchAll();
   }, [isStaff, fetchAll]);
 
+  // Keep the "Total Users" tally live: fetchAll() above only runs once on
+  // mount, so without this, a signup that happens while the dashboard is
+  // open would never show up until someone manually triggers a refetch.
+  useEffect(() => {
+    if (!isStaff) return;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(fetchAll, 500);
+    };
+    const channel = supabase
+      .channel("admin-profiles-tally")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, scheduleRefresh)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, scheduleRefresh)
+      .subscribe();
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      supabase.removeChannel(channel);
+    };
+  }, [isStaff, fetchAll]);
+
   const updatePaymentStatus = async (id: string, status: "confirmed" | "rejected") => {
     const pay = payments.find((p) => p.id === id);
     const { error } = await supabase.rpc("admin_set_payment_status" as any, {
