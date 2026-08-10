@@ -1,6 +1,9 @@
-project_id = "clxdvyeumnvmalxbymwh"
+project_id = "bbxahisheugfryyxfidg"
 
 [functions.translate-batch]
+verify_jwt = false
+
+[functions.sync-internal-service-key]
 verify_jwt = false
 
 [functions.paystack-webhook]

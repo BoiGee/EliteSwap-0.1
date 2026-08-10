@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>EliteSwap</title>
+    <script>
+      // GitHub Pages serves this for any path it doesn't have a file for —
+      // which, for a client-side-routed SPA, is every real in-app route
+      // (/auth, /dashboard, /admin, ...). Encode the intended path into a
+      // query string and redirect to index.html, which restores it via
+      // history.replaceState before the router mounts.
+      // pathSegmentsToKeep = 1 matches the /EliteSwap-0.1/ base path while
+      // serving from the default github.io URL. Set to 0 (and drop the
+      // GITHUB_PAGES_BASE build var) once the custom domain is attached and
+      // the site serves from /.
+      // Pattern: https://github.com/rafgraph/spa-github-pages
+      var pathSegmentsToKeep = 1;
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>

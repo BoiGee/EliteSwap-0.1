@@ -24,9 +24,26 @@
 
     <link rel="preconnect" href="https://api.decart.ai" crossorigin>
     <link rel="dns-prefetch" href="https://api.decart.ai">
-    <link rel="preconnect" href="https://clxdvyeumnvmalxbymwh.supabase.co" crossorigin>
-    
-    
+    <link rel="preconnect" href="https://bbxahisheugfryyxfidg.supabase.co" crossorigin>
+
+    <script>
+      // Companion to public/404.html — restores the real path GitHub Pages'
+      // 404 redirect encoded into the query string, before the router mounts.
+      // Pattern: https://github.com/rafgraph/spa-github-pages
+      (function (l) {
+        if (l.search[1] === "/") {
+          var decoded = l.search
+            .slice(1)
+            .split("&")
+            .map(function (s) {
+              return s.replace(/~and~/g, "&");
+            })
+            .join("?");
+          window.history.replaceState(null, null, l.pathname.slice(0, -1) + decoded + l.hash);
+        }
+      })(window.location);
+    </script>
+
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://storage.googleapis.com/gpt-engineer-file-uploads/V3c0dOBoJIQgrChG4FA6j3b7MHF2/social-images/social-1776280843038-ETLogo.webp">
 

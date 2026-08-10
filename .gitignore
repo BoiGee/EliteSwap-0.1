@@ -37,3 +37,6 @@ __pycache__
 
 # Test coverage output
 coverage
+
+# Local Supabase CLI link state
+supabase/.temp

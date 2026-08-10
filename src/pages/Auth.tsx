@@ -70,8 +70,11 @@ export default function Auth() {
           setLoading(false);
           return;
         }
-        await signUp(normalizedEmail, password);
-        // Stamp acceptance on the user's profile + audit log.
+        await signUp(normalizedEmail, password, `${window.location.origin}/auth?verified=1`);
+        // Stamp acceptance on the user's profile + audit log. Best-effort:
+        // signUp() with email confirmation required returns no session, so
+        // getUser() below has nothing to identify — this only actually
+        // stamps anything if confirmation is ever disabled again.
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
@@ -103,21 +106,11 @@ export default function Auth() {
             }
           }).catch(() => {});
         }
-        // Attempt sign-in immediately — auto-verification is enabled.
-        try {
-          await signIn(normalizedEmail, password);
-          toast({
-            title: "Account created — you're auto-verified ✅",
-            description: "Email confirmation is temporarily paused. You're signed in and ready to go.",
-          });
-          navigate(await resolveDestination());
-        } catch {
-          toast({
-            title: "Account created ✅",
-            description: "You're auto-verified. Please sign in to continue.",
-          });
-          setIsSignUp(false);
-        }
+        toast({
+          title: "Check your email 📧",
+          description: "We sent you a confirmation link. Click it, then sign in here.",
+        });
+        setIsSignUp(false);
       } else {
         await signIn(normalizedEmail, password);
         if (getPendingPartnerCode()) {
@@ -172,15 +165,6 @@ export default function Auth() {
               : isSignUp ? "Create your account" : "Sign in to your account"}
           </p>
         </div>
-
-        <section className="rounded-2xl border border-primary/30 bg-primary/10 p-4 text-left shadow-sm">
-          <p className="text-sm font-heading font-semibold text-foreground">
-            Heads up — email verification is temporarily paused
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground font-body">
-            We're fixing a small issue with our verification emails. In the meantime, new accounts are <strong>automatically verified</strong> — just sign up and you're straight in. Everything else on EliteSwap works as normal.
-          </p>
-        </section>
 
         <form onSubmit={handleSubmit} className="glass neon-border rounded-2xl p-6 space-y-4">
           <div className="space-y-2 text-left">
@@ -265,7 +249,7 @@ export default function Auth() {
           )}
           {isSignUp && (
             <p className="text-[11px] text-muted-foreground/80 font-body leading-relaxed mt-1">
-              No verification email needed right now — you'll be signed in automatically after creating your account.
+              We'll send a confirmation link to your email before you can sign in.
             </p>
           )}
         </form>

@@ -1,4 +1,3 @@
-import { sendLovableEmail } from 'npm:@lovable.dev/email-js'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const MAX_RETRIES = 5
@@ -6,31 +5,78 @@ const DEFAULT_BATCH_SIZE = 10
 const DEFAULT_SEND_DELAY_MS = 200
 const DEFAULT_AUTH_TTL_MINUTES = 15
 const DEFAULT_TRANSACTIONAL_TTL_MINUTES = 60
+const RESEND_API_URL = 'https://api.resend.com/emails'
+
+// Thrown by sendViaResend() on any non-2xx response. Carries the HTTP status
+// and (for 429s) the provider's Retry-After hint so the existing DLQ/backoff
+// logic below can key off them exactly as it did with the old SDK's errors.
+class EmailSendError extends Error {
+  status: number
+  retryAfterSeconds: number | null
+  constructor(status: number, message: string, retryAfterSeconds: number | null = null) {
+    super(message)
+    this.status = status
+    this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
+// Send one email via Resend's HTTP API. https://resend.com/docs/api-reference/emails/send-email
+// Field mapping notes vs. the old Lovable payload:
+//   - sender_domain / purpose / message_id: Lovable-specific routing/analytics
+//     fields with no Resend equivalent — dropped from the outbound request
+//     (message_id is still logged locally to email_send_log, just not sent).
+//   - idempotency_key: Resend takes this as an `Idempotency-Key` HEADER, not
+//     a body field (confirmed against Resend's docs — different shape than
+//     the old SDK's body-field version).
+async function sendViaResend(
+  apiKey: string,
+  payload: Record<string, any>
+): Promise<{ id: string }> {
+  const body: Record<string, unknown> = {
+    from: payload.from,
+    to: payload.to,
+    subject: payload.subject,
+  }
+  if (payload.html) body.html = payload.html
+  if (payload.text) body.text = payload.text
+  if (payload.reply_to) body.reply_to = payload.reply_to
+  if (payload.headers) body.headers = payload.headers
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  }
+  if (payload.idempotency_key) headers['Idempotency-Key'] = String(payload.idempotency_key)
+
+  const resp = await fetch(RESEND_API_URL, { method: 'POST', headers, body: JSON.stringify(body) })
+
+  if (!resp.ok) {
+    const retryAfterHeader = resp.headers.get('retry-after')
+    const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) || 60 : null
+    let detail = ''
+    try { detail = await resp.text() } catch { /* best-effort */ }
+    throw new EmailSendError(resp.status, `Resend API ${resp.status}: ${detail.slice(0, 500)}`, retryAfterSeconds)
+  }
+
+  return (await resp.json()) as { id: string }
+}
 
 // Check if an error is a rate-limit (429) response.
-// Uses EmailAPIError.status when available (email-js >=0.x with structured errors),
-// falls back to parsing the error message for older versions.
 function isRateLimited(error: unknown): boolean {
-  if (error && typeof error === 'object' && 'status' in error) {
-    return (error as { status: number }).status === 429
-  }
+  if (error instanceof EmailSendError) return error.status === 429
   return error instanceof Error && error.message.includes('429')
 }
 
 // Check if an error is a forbidden (403) response. Retrying won't help.
 // Move straight to DLQ.
 function isForbidden(error: unknown): boolean {
-  if (error && typeof error === 'object' && 'status' in error) {
-    return (error as { status: number }).status === 403
-  }
+  if (error instanceof EmailSendError) return error.status === 403
   return error instanceof Error && error.message.includes('403')
 }
 
-// Extract Retry-After seconds from a structured EmailAPIError, or default to 60s.
+// Extract Retry-After seconds (from Resend's `retry-after` response header), or default to 60s.
 function getRetryAfterSeconds(error: unknown): number {
-  if (error && typeof error === 'object' && 'retryAfterSeconds' in error) {
-    return (error as { retryAfterSeconds: number | null }).retryAfterSeconds ?? 60
-  }
+  if (error instanceof EmailSendError) return error.retryAfterSeconds ?? 60
   return 60
 }
 
@@ -69,7 +115,7 @@ async function moveToDlq(
 }
 
 Deno.serve(async (req) => {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY')
+  const apiKey = Deno.env.get('RESEND_API_KEY')
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
@@ -241,26 +287,27 @@ Deno.serve(async (req) => {
       }
 
       try {
-        await sendLovableEmail(
-          {
-            run_id: payload.run_id,
-            to: payload.to,
-            from: payload.from,
-            sender_domain: payload.sender_domain,
-            subject: payload.subject,
-            html: payload.html,
-            text: payload.text,
-            purpose: payload.purpose,
-            label: payload.label,
-            idempotency_key: payload.idempotency_key,
-            unsubscribe_token: payload.unsubscribe_token,
-            message_id: payload.message_id,
-          },
-          // sendUrl is optional — when LOVABLE_SEND_URL is not set, the library
-          // falls back to the default Lovable API endpoint (https://api.lovable.dev).
-          // Set LOVABLE_SEND_URL as a Supabase secret to override (e.g. for local dev).
-          { apiKey, sendUrl: Deno.env.get('LOVABLE_SEND_URL') }
-        )
+        // Build RFC 8058 one-click unsubscribe headers from the token minted
+        // by send-transactional-email, pointing at our own handle-email-unsubscribe
+        // function (see that function's GET/POST token handling).
+        const sendPayload: Record<string, any> = {
+          to: payload.to,
+          from: payload.from,
+          subject: payload.subject,
+          html: payload.html,
+          text: payload.text,
+          idempotency_key: payload.idempotency_key,
+        }
+        if (payload.reply_to) sendPayload.reply_to = payload.reply_to
+        if (payload.unsubscribe_token) {
+          const unsubUrl = `${supabaseUrl}/functions/v1/handle-email-unsubscribe?token=${encodeURIComponent(payload.unsubscribe_token)}`
+          sendPayload.headers = {
+            'List-Unsubscribe': `<${unsubUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          }
+        }
+
+        await sendViaResend(apiKey, sendPayload)
 
         // Log success
         await supabase.from('email_send_log').insert({
