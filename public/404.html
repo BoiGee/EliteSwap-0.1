@@ -9,12 +9,10 @@
       // (/auth, /dashboard, /admin, ...). Encode the intended path into a
       // query string and redirect to index.html, which restores it via
       // history.replaceState before the router mounts.
-      // pathSegmentsToKeep = 1 matches the /EliteSwap-0.1/ base path while
-      // serving from the default github.io URL. Set to 0 (and drop the
-      // GITHUB_PAGES_BASE build var) once the custom domain is attached and
-      // the site serves from /.
+      // pathSegmentsToKeep = 0: serving from the eliteswap.online custom
+      // domain (public/CNAME) at root now, not the /EliteSwap-0.1/ subpath.
       // Pattern: https://github.com/rafgraph/spa-github-pages
-      var pathSegmentsToKeep = 1;
+      var pathSegmentsToKeep = 0;
       var l = window.location;
       l.replace(
         l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +

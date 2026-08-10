@@ -36,10 +36,8 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
-          # Project-site base path (/EliteSwap-0.1/). Drop this var once a
-          # custom domain is attached and the site serves from / — see the
-          # matching note in vite.config.ts and public/404.html.
-          GITHUB_PAGES_BASE: /EliteSwap-0.1/
+          # GITHUB_PAGES_BASE intentionally unset — custom domain (public/CNAME)
+          # serves from /, so vite.config.ts's default base of "/" is correct.
 
       - uses: actions/upload-pages-artifact@v3
         with:
