@@ -632,7 +632,7 @@ export default function LiveConnectionsManager() {
               ({activeKeyCounts.paid} paid · {activeKeyCounts.trial} trial)
             </span>
           </h3>
-          <span className="text-[10px] text-muted-foreground font-heading">refreshes every 3s</span>
+          <span className="text-[10px] text-muted-foreground font-heading">refreshes every 10s</span>
         </div>
         {activeKeys.length === 0 ? (
           <p className="text-xs text-muted-foreground py-4 text-center">No active keys right now.</p>
