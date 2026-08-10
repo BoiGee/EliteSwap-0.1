@@ -1,0 +1,39 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Env files — VITE_ vars end up in the client bundle anyway (not secret),
+# but keep local env files out of the repo as a matter of course.
+.env
+.env.*
+!.env.example
+
+# Python (decart_studio_engine.py tooling)
+.venv
+__pycache__
+*.pyc
+
+# Editor / local tool directories
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.continue
+
+# Test coverage output
+coverage

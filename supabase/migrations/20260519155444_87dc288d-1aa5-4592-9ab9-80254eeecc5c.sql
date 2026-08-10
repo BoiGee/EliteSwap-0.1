@@ -1,0 +1,2 @@
+ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_currency_check;
+ALTER TABLE public.payments ADD CONSTRAINT payments_currency_check CHECK (currency IN ('BTC','BNB','USDT-BEP20','USDT-TRC20'));

@@ -1,0 +1,1 @@
+GRANT SELECT ON public.pricing_plans_public TO anon, authenticated;

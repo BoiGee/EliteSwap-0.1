@@ -1,0 +1,11 @@
+# EliteSwap
+
+> Realtime AI face and character swap tool for streamers and creators. Low-latency, webcam-driven, and compatible with OBS Studio.
+
+EliteSwap (also called Elite Swap) lets you transform yourself into any character on a live webcam feed and pipe the result straight into OBS Studio for streaming or recording.
+
+## Pages
+
+- [Home](/): Product overview, demo video, and quick start.
+- [Pricing](/pricing): Plans, pricing tiers, and what each plan includes.
+- [Reviews](/reviews): User reviews and ratings.

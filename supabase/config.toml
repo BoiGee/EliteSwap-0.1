@@ -1,0 +1,40 @@
+project_id = "clxdvyeumnvmalxbymwh"
+
+[functions.translate-batch]
+verify_jwt = false
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.handle-email-suppression]
+verify_jwt = false
+
+[functions.handle-email-unsubscribe]
+verify_jwt = false
+
+[functions.notify-admin-payment-event]
+verify_jwt = false
+
+[functions.process-scheduled-broadcasts]
+verify_jwt = false
+
+[functions.reconcile-trial-purchases]
+verify_jwt = false
+
+[functions.verify-crypto-payment]
+verify_jwt = false
+
+[functions.daily-db-backup]
+verify_jwt = false
+
+[functions.preview-transactional-email]
+verify_jwt = false
+
+[functions.send-transactional-email]
+verify_jwt = false
+
+[functions.admin-broadcast-email]
+verify_jwt = false
+
+[functions.process-email-queue]
+verify_jwt = false

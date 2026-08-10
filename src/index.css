@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fonts loaded via index.html <link> for better LCP */
+
+@layer base {
+  :root {
+    --background: 220 20% 4%;
+    --foreground: 210 40% 95%;
+
+    --card: 220 18% 8%;
+    --card-foreground: 210 40% 95%;
+
+    --popover: 220 18% 8%;
+    --popover-foreground: 210 40% 95%;
+
+    --primary: 180 100% 50%;
+    --primary-foreground: 220 20% 4%;
+
+    --secondary: 320 100% 60%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 220 15% 15%;
+    --muted-foreground: 220 10% 55%;
+
+    --accent: 270 100% 65%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 15% 18%;
+    --input: 220 15% 15%;
+    --ring: 180 100% 50%;
+
+    --radius: 0.75rem;
+
+    --neon-cyan: 180 100% 50%;
+    --neon-magenta: 320 100% 60%;
+    --neon-purple: 270 100% 65%;
+    --neon-green: 150 100% 50%;
+
+    --glow-cyan: 0 0 20px hsl(180 100% 50% / 0.4), 0 0 60px hsl(180 100% 50% / 0.1);
+    --glow-magenta: 0 0 20px hsl(320 100% 60% / 0.4), 0 0 60px hsl(320 100% 60% / 0.1);
+    --glow-purple: 0 0 20px hsl(270 100% 65% / 0.4), 0 0 60px hsl(270 100% 65% / 0.1);
+
+    --gradient-neon: linear-gradient(135deg, hsl(180 100% 50%), hsl(270 100% 65%), hsl(320 100% 60%));
+    --gradient-card: linear-gradient(145deg, hsl(220 18% 10%), hsl(220 18% 6%));
+
+    --sidebar-background: 220 18% 6%;
+    --sidebar-foreground: 220 10% 70%;
+    --sidebar-primary: 180 100% 50%;
+    --sidebar-primary-foreground: 220 20% 4%;
+    --sidebar-accent: 220 15% 12%;
+    --sidebar-accent-foreground: 210 40% 95%;
+    --sidebar-border: 220 15% 18%;
+    --sidebar-ring: 180 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer utilities {
+  .neon-glow {
+    box-shadow: var(--glow-cyan);
+  }
+
+  .neon-glow-magenta {
+    box-shadow: var(--glow-magenta);
+  }
+
+  .neon-glow-purple {
+    box-shadow: var(--glow-purple);
+  }
+
+  .neon-text {
+    text-shadow: 0 0 10px hsl(180 100% 50% / 0.6), 0 0 30px hsl(180 100% 50% / 0.2);
+  }
+
+  .neon-border {
+    border: 1px solid hsl(180 100% 50% / 0.3);
+    box-shadow: inset 0 0 20px hsl(180 100% 50% / 0.05), 0 0 20px hsl(180 100% 50% / 0.1);
+  }
+
+  /* Cheap "glass" — solid translucent surface, no per-frame backdrop blur.
+     The blur was the single biggest GPU cost on integrated graphics. */
+  .glass {
+    background: hsl(220 18% 8% / 0.92);
+  }
+
+  /* Opt-in expensive variant for non-perf-critical surfaces (marketing pages).
+     Falls back to plain solid background where backdrop-filter is unsupported. */
+  .glass-blur {
+    background: hsl(220 18% 8% / 0.7);
+  }
+  @supports (backdrop-filter: blur(1px)) {
+    .glass-blur {
+      backdrop-filter: blur(20px);
+      background: hsl(220 18% 8% / 0.6);
+    }
+  }
+
+  /* Lite mode disables all decorative animations on the studio. */
+  .lite-mode .animate-pulse-neon,
+  .lite-mode .animate-float,
+  .lite-mode .animate-pulse {
+    animation: none !important;
+  }
+  .lite-mode .gradient-text {
+    background: none;
+    -webkit-text-fill-color: hsl(var(--primary));
+    color: hsl(var(--primary));
+  }
+  .lite-mode .neon-glow,
+  .lite-mode .neon-border {
+    box-shadow: none;
+  }
+
+  .gradient-text {
+    background: var(--gradient-neon);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Scanline kept for non-video decoration only — never overlaid on a live <video>. */
+  .scanline {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(180 100% 50% / 0.03) 2px,
+      hsl(180 100% 50% / 0.03) 4px
+    );
+  }
+}
+
+@keyframes pulse-neon {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

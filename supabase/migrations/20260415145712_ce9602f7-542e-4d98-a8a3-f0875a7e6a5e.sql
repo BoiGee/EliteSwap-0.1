@@ -1,0 +1,1 @@
+ALTER TABLE public.pricing_plans ADD COLUMN price_usd_annual NUMERIC DEFAULT NULL;

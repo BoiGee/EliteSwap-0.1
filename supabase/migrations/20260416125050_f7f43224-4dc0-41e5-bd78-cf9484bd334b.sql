@@ -1,0 +1,1 @@
+ALTER TABLE public.api_keys ADD COLUMN remaining_ms bigint DEFAULT NULL;

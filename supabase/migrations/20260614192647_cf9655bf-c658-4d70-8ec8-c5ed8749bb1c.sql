@@ -1,0 +1,1 @@
+ALTER VIEW public.pricing_plans_public SET (security_invoker = off);

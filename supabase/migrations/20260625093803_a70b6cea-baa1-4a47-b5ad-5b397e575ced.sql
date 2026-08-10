@@ -1,0 +1,1 @@
+CREATE POLICY "Users read their own forum stats" ON public.forum_user_stats FOR SELECT TO authenticated USING (auth.uid() = user_id);

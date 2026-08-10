@@ -1,0 +1,1 @@
+UPDATE public.profiles SET email = 'admin@eliteswap.online' WHERE user_id = '6b536588-44c9-4986-b64f-8824454dc06f';

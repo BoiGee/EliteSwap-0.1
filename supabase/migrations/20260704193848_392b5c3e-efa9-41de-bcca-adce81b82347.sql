@@ -1,0 +1,1 @@
+UPDATE public.profiles SET email = 'elotetoolz@gmail.com' WHERE lower(email) = 'elitetoolz@outlook.com';
