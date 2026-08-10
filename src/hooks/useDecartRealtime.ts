@@ -424,7 +424,12 @@ export function useDecartRealtime() {
               height: { ideal: 540 },
             };
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
+          // Lipsync accuracy depends on the model reading raw vocal timing —
+          // noiseSuppression/autoGainControl are both known to smear or gate
+          // transients (the exact cues that drive mouth-shape timing).
+          // echoCancellation stays on: it targets acoustic feedback, not
+          // voice fidelity, and protects anyone not on headphones.
+          audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
           video: videoConstraints,
         });
       }
@@ -438,6 +443,14 @@ export function useDecartRealtime() {
       // spins forever and users just see "Loading" with no recourse.
       const connectPromise = client.realtime.connect(stream, {
         model,
+        // Pin explicitly instead of leaving it to Decart's default: h264 has
+        // near-universal hardware decode support (lower, more consistent
+        // decode latency than vp9 on weak/mobile hardware), and 720p matches
+        // our own capture ceiling in every quality tier — requesting 1080p
+        // here would just add encode/decode work with nothing upstream ever
+        // sending more than 720p worth of detail.
+        preferredVideoCodec: "h264",
+        resolution: "720p",
         onRemoteStream: (transformedStream: MediaStream) => {
           onRemoteStream(transformedStream);
         },
