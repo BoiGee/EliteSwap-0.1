@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import UserDetailDrawer from "./UserDetailDrawer";
@@ -21,28 +22,48 @@ export default function PaidUsersManager({ profiles, payments }: Props) {
   const [plans, setPlans] = useState<Record<string, string>>({});
   const [sessionsByUser, setSessionsByUser] = useState<Record<string, number>>({});
   const [attributions, setAttributions] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const [pl, sess, attrs, parts] = await Promise.all([
-        supabase.from("pricing_plans").select("id,name"),
-        supabase.from("studio_sessions" as any).select("user_id,duration_ms"),
-        supabase.from("partner_attributions" as any).select("user_id,partner_id"),
-        supabase.from("partners" as any).select("id,code"),
-      ]);
-      const planMap: Record<string, string> = {};
-      (pl.data ?? []).forEach((p: any) => { planMap[p.id] = p.name; });
-      setPlans(planMap);
-      const totals: Record<string, number> = {};
-      (sess.data as any[] ?? []).forEach((s) => { totals[s.user_id] = (totals[s.user_id] ?? 0) + Number(s.duration_ms ?? 0); });
-      setSessionsByUser(totals);
-      const partMap: Record<string, string> = {};
-      (parts.data as any[] ?? []).forEach((p: any) => { partMap[p.id] = p.code; });
-      const attrMap: Record<string, string> = {};
-      (attrs.data as any[] ?? []).forEach((a: any) => { attrMap[a.user_id] = partMap[a.partner_id] ?? "—"; });
-      setAttributions(attrMap);
-    })();
+  // Studio time and partner attribution are computed server-side via
+  // admin_paid_user_stats() — a raw client-side fetch of studio_sessions
+  // used to silently cap at PostgREST's default 1000 rows (the table has
+  // 5,575+ rows), undercounting every user's studio time to a fraction of
+  // reality. Aggregating with GROUP BY server-side is correct regardless
+  // of table size.
+  const loadStats = useCallback(async () => {
+    setLoading(true);
+    const [pl, stats] = await Promise.all([
+      supabase.from("pricing_plans").select("id,name"),
+      supabase.rpc("admin_paid_user_stats" as any),
+    ]);
+    setLoading(false);
+    const planMap: Record<string, string> = {};
+    (pl.data ?? []).forEach((p: any) => { planMap[p.id] = p.name; });
+    setPlans(planMap);
+    const totals: Record<string, number> = {};
+    const attrMap: Record<string, string> = {};
+    (stats.data as any[] ?? []).forEach((s) => {
+      totals[s.user_id] = Number(s.studio_ms ?? 0);
+      if (s.partner_code) attrMap[s.user_id] = s.partner_code;
+    });
+    setSessionsByUser(totals);
+    setAttributions(attrMap);
   }, []);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
+
+  // Periodic refresh: studio time changes constantly from real usage with
+  // zero admin action involved, and this tab previously had no way to see
+  // fresh data short of navigating away and back. A plain poll (not a
+  // postgres_changes subscription) deliberately — studio_sessions gets a
+  // heartbeat UPDATE every few seconds per active session, and with 1800+
+  // users there's rarely a quiet moment, so an event-driven debounce risks
+  // never actually firing. This aggregate doesn't need second-level
+  // freshness, just to not go stale for an admin's whole session.
+  useEffect(() => {
+    const id = setInterval(loadStats, 30000);
+    return () => clearInterval(id);
+  }, [loadStats]);
 
   const rows = useMemo(() => {
     const byUser: Record<string, { spend: number; count: number; lastPaid: number; planIds: Set<string> }> = {};
@@ -99,9 +120,10 @@ export default function PaidUsersManager({ profiles, payments }: Props) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-bold text-foreground">Paid Users</h2>
-        <div className="flex gap-2 text-xs">
+        <div className="flex gap-2 text-xs items-center">
           <span className="bg-primary/10 text-primary px-3 py-1.5 rounded-full font-heading">{rows.length} customers</span>
           <span className="bg-primary/10 text-primary px-3 py-1.5 rounded-full font-heading">${totalRevenue.toFixed(2)} lifetime</span>
+          <Button variant="outline" size="sm" onClick={loadStats} disabled={loading} className="font-heading text-xs">{loading ? "…" : "Refresh"}</Button>
         </div>
       </div>
 
