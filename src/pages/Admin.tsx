@@ -139,9 +139,13 @@ export default function Admin() {
     if (isStaff) fetchAll();
   }, [isStaff, fetchAll]);
 
-  // Keep the "Total Users" tally live: fetchAll() above only runs once on
-  // mount, so without this, a signup that happens while the dashboard is
-  // open would never show up until someone manually triggers a refetch.
+  // Keep the Overview tab's stats live: fetchAll() above only runs once on
+  // mount (plus after the admin's own mutations), so without this, a
+  // signup, a new payment, or a key getting deactivated on exhaustion —
+  // none of which involve the admin doing anything — would never show up
+  // until something else happened to trigger a refetch. That includes the
+  // sidebar's pending-payments badge, which exists specifically to draw
+  // attention to a payment the admin hasn't seen yet.
   useEffect(() => {
     if (!isStaff) return;
     let debounce: ReturnType<typeof setTimeout> | null = null;
@@ -150,9 +154,13 @@ export default function Admin() {
       debounce = setTimeout(fetchAll, 500);
     };
     const channel = supabase
-      .channel("admin-profiles-tally")
+      .channel("admin-overview-live")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, scheduleRefresh)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "payments" }, scheduleRefresh)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "payments" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "api_keys" }, scheduleRefresh)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "api_keys" }, scheduleRefresh)
       .subscribe();
     return () => {
       if (debounce) clearTimeout(debounce);
