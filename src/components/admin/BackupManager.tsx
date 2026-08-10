@@ -137,7 +137,7 @@ export default function BackupManager() {
           <li><span className="text-foreground">README.txt</span> — coverage notes and limits.</li>
         </ul>
         <div className="pt-2 font-heading text-sm text-foreground">Not included (by design)</div>
-        <p>Password hashes, OAuth refresh tokens, project secrets, and edge function source. These live outside the database and are Lovable-managed.</p>
+        <p>Password hashes, OAuth refresh tokens, project secrets, and edge function source. These live outside the database — secrets are managed in Supabase project settings, and edge function source lives in the GitHub repo.</p>
       </div>
 
       <div className="glass neon-border rounded-xl overflow-hidden">

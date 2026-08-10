@@ -24,7 +24,7 @@ import FinanceManager from "@/components/admin/FinanceManager";
 import LiveConnectionsManager from "@/components/admin/LiveConnectionsManager";
 import UsageManager from "@/components/admin/UsageManager";
 import PaidUsersManager from "@/components/admin/PaidUsersManager";
-import KeyPoolManager from "@/components/admin/KeyPoolManager";
+import DecartPoolManager from "@/components/admin/DecartPoolManager";
 import KeyActivityManager from "@/components/admin/KeyActivityManager";
 import AnnouncementManager from "@/components/admin/AnnouncementManager";
 import AuditLogManager from "@/components/admin/AuditLogManager";
@@ -257,7 +257,7 @@ export default function Admin() {
     { id: "payments", label: "Payments", icon: "💰" },
     { id: "funnel", label: "Funnel", icon: "🎯" },
     { id: "api_keys", label: "API Keys", icon: "🔑" },
-    { id: "key_pool", label: "Key Pool", icon: "🗝️" },
+    { id: "key_pool", label: "Decart Pool", icon: "🗝️" },
     { id: "key_activity", label: "Key Activity", icon: "📜" },
     { id: "pricing", label: "Pricing", icon: "💎" },
     { id: "partners", label: "Partners", icon: "🤝" },
@@ -438,7 +438,7 @@ export default function Admin() {
 
           {tab === "pricing" && <PricingManager />}
 
-          {tab === "key_pool" && <KeyPoolManager />}
+          {tab === "key_pool" && <DecartPoolManager />}
 
           {tab === "key_activity" && <KeyActivityManager />}
 
