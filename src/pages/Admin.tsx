@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { getSafeErrorMessage } from "@/lib/errors";
 import PricingManager from "@/components/admin/PricingManager";
 import UserManager from "@/components/admin/UserManager";
 import PaymentManager from "@/components/admin/PaymentManager";
@@ -34,7 +33,6 @@ import ForumManager from "@/components/admin/ForumManager";
 import TimeLedgerManager from "@/components/admin/TimeLedgerManager";
 import TrialPurchaseManager from "@/components/admin/TrialPurchaseManager";
 import { useSupportChatNotifications } from "@/hooks/useSupportChatNotifications";
-import { notifyAdminPaymentEvent } from "@/lib/adminNotify";
 import { isDevAdminOverrideEnabled } from "@/lib/devAdmin";
 import NotificationBell from "@/components/NotificationBell";
 import AdminAlertStatus from "@/components/admin/AdminAlertStatus";
@@ -168,39 +166,6 @@ export default function Admin() {
       supabase.removeChannel(channel);
     };
   }, [isStaff, fetchAll]);
-
-  const updatePaymentStatus = async (id: string, status: "confirmed" | "rejected") => {
-    const pay = payments.find((p) => p.id === id);
-    const { error } = await supabase.rpc("admin_set_payment_status" as any, {
-      p_payment_id: id,
-      p_status: status,
-      p_plan_id: null,
-      p_amount_usd: status === "confirmed" ? pay?.amount_usd ?? null : null,
-    });
-    if (error) {
-      console.error('[Admin.updatePaymentStatus]', error);
-      toast({
-        title: "Error",
-        description: `${getSafeErrorMessage(error.code)} — ${error.message}`,
-        variant: "destructive",
-      });
-    } else {
-      toast({ title: `Payment ${status}! ✅` });
-      // Fire-and-forget admin alert.
-      const prof = pay ? profiles.find((pr) => pr.user_id === pay.user_id) : undefined;
-      notifyAdminPaymentEvent({
-        paymentId: id,
-        eventType: status === "confirmed" ? "admin_confirmed" : "admin_rejected",
-        userEmail: prof?.email ?? null,
-        userDisplayName: prof?.display_name ?? null,
-        amountUsd: pay?.amount_usd ?? null,
-        currency: pay?.currency ?? null,
-        paymentMethod: (pay as any)?.payment_method ?? null,
-        reference: pay?.tx_hash ?? null,
-      });
-      fetchAll();
-    }
-  };
 
   const toggleApiKey = async (id: string, is_active: boolean) => {
     const { error } = await supabase.from("api_keys").update({ is_active: !is_active }).eq("id", id);
@@ -433,7 +398,6 @@ export default function Admin() {
             <PaymentManager
               payments={payments}
               profiles={profiles}
-              onUpdateStatus={updatePaymentStatus}
               onRefresh={fetchAll}
             />
           )}

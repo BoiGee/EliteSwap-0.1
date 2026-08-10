@@ -72,6 +72,11 @@ Deno.serve(async (req) => {
   const eventType: string = body?.eventType
   const actorEmail: string | null = typeof body?.actorEmail === 'string' ? body.actorEmail : null
   const actorRole: string | null = typeof body?.actorRole === 'string' ? body.actorRole : null
+  // Set by callers that are about to send their own richer user-facing
+  // email directly (e.g. PaymentActionDialog, with an admin-composed
+  // note) — skips ONLY the generic user-email fan-out below; the admin
+  // push notification still fires either way.
+  const skipUserEmail: boolean = body?.skipUserEmail === true
   if (!paymentId || !eventType || !ALLOWED_EVENTS.has(eventType)) {
     return new Response(JSON.stringify({ error: 'Invalid request' }), {
       status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -174,7 +179,7 @@ Deno.serve(async (req) => {
   // Uses idempotency keys matching the admin UI and verifier paths so duplicate invocations
   // (e.g. UI + DB trigger) are deduped at the send layer.
   const userEmailSpec = USER_EMAIL_FOR_EVENT[eventType]
-  if (userEmailSpec && ownerProfile?.email) {
+  if (!skipUserEmail && userEmailSpec && ownerProfile?.email) {
     const isApproved = userEmailSpec.template === 'payment-approved'
     const adminNote = isApproved
       ? (eventType === 'auto_confirmed_key_pending'

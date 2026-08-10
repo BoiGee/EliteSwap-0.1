@@ -155,7 +155,12 @@ export default function PaymentActionDialog({
   const isApprove = action === "confirmed";
   const presets = isApprove ? APPROVE_PRESETS : REJECT_PRESETS;
   const reference = payment.tx_hash || "—";
-  const method = "Crypto";
+  // Defensive, not currently load-bearing: every real row in `payments` has
+  // payment_method='crypto' today (paystack/momo only exists on the
+  // separate trial_purchases flow), but hardcoding this regardless of the
+  // actual field would silently mislabel the admin UI and the customer
+  // email the moment that ever changes.
+  const method = payment.payment_method === "crypto" || !payment.payment_method ? "Crypto" : payment.payment_method;
 
   const handlePresetChange = (id: string) => {
     setPresetId(id);
@@ -177,11 +182,15 @@ export default function PaymentActionDialog({
     }
     setSaving(true);
     // 1. Update status through the guarded backend path so partner earnings can always resolve.
+    // p_suppress_notify: true — this dialog always sends its own richer
+    // email below (step 2), so the generic DB-trigger fallback would
+    // otherwise race it for the same customer send.
     const { error: updateError } = await supabase.rpc("admin_set_payment_status" as any, {
       p_payment_id: payment.id,
       p_status: action,
       p_plan_id: isApprove && selectedPlanId ? selectedPlanId : null,
       p_amount_usd: isApprove ? parsedAmount : null,
+      p_suppress_notify: true,
     });
     if (updateError) {
       toast({ title: "Error", description: updateError.message, variant: "destructive" });
@@ -190,6 +199,7 @@ export default function PaymentActionDialog({
     }
 
     // 1b. Fire-and-forget admin alert (separate from the user-facing email).
+    // skipUserEmail: true — step 2 below is this dialog's own richer send.
     notifyAdminPaymentEvent({
       paymentId: payment.id,
       eventType: isApprove ? "admin_confirmed" : "admin_rejected",
@@ -199,6 +209,7 @@ export default function PaymentActionDialog({
       currency: payment.currency,
       paymentMethod: method,
       reference,
+      skipUserEmail: true,
     });
 
     // 2. Optional user-facing email

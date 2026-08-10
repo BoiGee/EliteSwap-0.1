@@ -19,6 +19,10 @@ export interface AdminAlertPayload {
   paymentMethod?: string | null;
   reference?: string | null;
   discountCode?: string | null;
+  // Set when the caller is about to send its own richer user-facing email
+  // directly (e.g. an admin-composed note) — skips only the server's
+  // generic user-email fallback; the admin push notification is unaffected.
+  skipUserEmail?: boolean;
 }
 
 /**
@@ -33,6 +37,7 @@ export function notifyAdminPaymentEvent(payload: AdminAlertPayload): void {
         body: {
           paymentId: payload.paymentId,
           eventType: payload.eventType,
+          skipUserEmail: payload.skipUserEmail === true,
         },
       });
     } catch (e) {

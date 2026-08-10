@@ -27,11 +27,10 @@ interface Profile {
 interface PaymentManagerProps {
   payments: Payment[];
   profiles: Profile[];
-  onUpdateStatus: (id: string, status: "confirmed" | "rejected") => void;
   onRefresh?: () => void;
 }
 
-export default function PaymentManager({ payments, profiles, onUpdateStatus, onRefresh }: PaymentManagerProps) {
+export default function PaymentManager({ payments, profiles, onRefresh }: PaymentManagerProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "pending" | "pending_review" | "confirmed" | "rejected">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
