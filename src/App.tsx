@@ -73,7 +73,12 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      {/* basename tracks Vite's `base` (import.meta.env.BASE_URL) automatically —
+          /EliteSwap-0.1/ on the GitHub Pages project site, / once a custom
+          domain is attached. Without this, BrowserRouter matches routes
+          against the full pathname (which includes the subpath prefix) and
+          every route 404s. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthProvider>
           <TranslationProvider>
           <ActivityTrackerWrapper>
