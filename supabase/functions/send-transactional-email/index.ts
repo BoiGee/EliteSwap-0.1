@@ -3,17 +3,15 @@ import { renderAsync } from 'npm:@react-email/components@0.0.22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
 
-// Configuration baked in at scaffold time — do NOT change these manually.
-// To update, re-run the email domain setup flow.
 const SITE_NAME = "EliteSwap"
-// SENDER_DOMAIN is the verified sender subdomain FQDN (e.g., "notify.example.com").
-// It MUST match the subdomain delegated to Lovable's nameservers — never the root domain.
-// The email API looks up this exact domain; a mismatch causes "No email domain record found".
-const SENDER_DOMAIN = "notify.eliteswap.online"
-// FROM_DOMAIN is the domain shown in the From: header (e.g., "example.com").
-// When display_from_root is enabled, this can be the root domain for cleaner branding,
-// even though actual sending uses the subdomain above.
-const FROM_DOMAIN = "notify.eliteswap.online"
+// The "notify." subdomain scheme here was Lovable-era scaffolding — that
+// subdomain was never verified on the current Resend account (verified via
+// Resend's own API: only the root domain "eliteswap.online" is verified,
+// added 2026-08-10 when the user set up Resend directly). Every send was
+// failing with a 403 "domain not verified" until this was caught — matches
+// what Supabase Auth's own SMTP config already correctly uses
+// (hello@eliteswap.online).
+const FROM_DOMAIN = "eliteswap.online"
 const CURRENT_ADMIN_EMAIL = 'elotetoolz@gmail.com'
 const emailFromCodes = (codes: number[]) => String.fromCharCode(...codes)
 const LEGACY_ADMIN_EMAILS = new Set([
@@ -375,7 +373,6 @@ Deno.serve(async (req) => {
       to: effectiveRecipient,
       from: `${SITE_NAME} <hello@${FROM_DOMAIN}>`,
       reply_to: 'support@eliteswap.online',
-      sender_domain: SENDER_DOMAIN,
       subject: resolvedSubject,
       html,
       text: plainText,

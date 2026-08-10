@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import RecipientPreviewDialog, { RecipientPreviewRow } from "./RecipientPreviewDialog";
 import BroadcastHistory from "./BroadcastHistory";
+import EmailHealthPanel from "./EmailHealthPanel";
 import { Calendar as CalendarIcon, Send, Clock } from "lucide-react";
 
 interface Profile {
@@ -208,6 +209,7 @@ export default function MailerManager({ profiles }: Props) {
         <TabsList>
           <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="health">Delivery Health</TabsTrigger>
         </TabsList>
 
         <TabsContent value="compose" className="mt-6">
@@ -360,6 +362,10 @@ export default function MailerManager({ profiles }: Props) {
 
         <TabsContent value="history" className="mt-6">
           <BroadcastHistory />
+        </TabsContent>
+
+        <TabsContent value="health" className="mt-6">
+          <EmailHealthPanel />
         </TabsContent>
       </Tabs>
 
