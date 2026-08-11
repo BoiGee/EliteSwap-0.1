@@ -33,10 +33,30 @@ type MintRow = {
   admin_debited_ms: number;
 };
 
+type DebtCollectedRow = {
+  collected_at: string;
+  taken_ms: number;
+  debt_id: string | null;
+};
+
+type DebtOutstandingRow = {
+  created_at: string;
+  owed_ms: number;
+  settled_ms: number;
+  reason: string | null;
+};
+
+type Debts = {
+  collected: DebtCollectedRow[];
+  outstanding_ms: number;
+  outstanding_detail: DebtOutstandingRow[];
+};
+
 type Detail = {
   key: Record<string, unknown>;
   sessions: SessionRow[];
   mints: MintRow[];
+  debts: Debts;
 };
 
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString() : "—");
@@ -123,6 +143,36 @@ export default function KeySessionDetailDialog({ keyId, onClose }: { keyId: stri
                 {detail.mints.length === 0 && <p className="text-xs text-muted-foreground">No mint attempts recorded.</p>}
               </div>
             </div>
+
+            {(detail.debts.collected.length > 0 || detail.debts.outstanding_ms > 0) && (
+              <div>
+                <h4 className="text-xs font-heading text-muted-foreground uppercase tracking-wider mb-2">
+                  Time-debt collections
+                </h4>
+                <p className="text-[10px] text-muted-foreground mb-2">
+                  A separate reclaim mechanism: waste (short sessions / handshake burns) an admin reclaimed while this
+                  user's balance was too low to cover it, deferred as a debt and silently taken from whichever key
+                  next gained balance. These deductions never create a session or mint row — this is the only place
+                  they're visible.
+                </p>
+                <div className="space-y-1.5">
+                  {detail.debts.collected.map((d, i) => (
+                    <div key={d.debt_id ?? i} className="bg-muted/20 rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-muted-foreground">{fmt(d.collected_at)}</span>
+                      <span className="text-amber-400 font-heading">{fmtMs(d.taken_ms)} debited (debt reclaim)</span>
+                    </div>
+                  ))}
+                  {detail.debts.outstanding_ms > 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs">
+                      <span className="text-amber-400 font-heading">
+                        ⚠ {fmtMs(detail.debts.outstanding_ms)} still owed by this user
+                      </span>
+                      <span className="text-muted-foreground"> — will be silently taken from the next key that gains balance (any of this user's keys, not necessarily this one).</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

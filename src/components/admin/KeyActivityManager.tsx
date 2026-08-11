@@ -21,7 +21,18 @@ type Row = {
   total_used_ms: number;
   handshake_burn_ms: number;
   unlinked_mint_count: number;
+  debt_collected_ms: number;
+  pending_debt_ms: number;
   status: string;
+};
+
+type PendingDebt = {
+  user_id: string;
+  user_email: string | null;
+  display_name: string | null;
+  pending_ms: number;
+  debt_count: number;
+  oldest_debt_at: string;
 };
 
 type Filter = "all" | "never_used" | "active" | "expired_unused" | "trial";
@@ -63,12 +74,18 @@ export default function KeyActivityManager() {
   const [search, setSearch] = useState("");
   const [openUser, setOpenUser] = useState<string | null>(null);
   const [openKeyDetail, setOpenKeyDetail] = useState<string | null>(null);
+  const [pendingDebts, setPendingDebts] = useState<PendingDebt[]>([]);
+  const [showDebts, setShowDebts] = useState(false);
 
   const fetchRows = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
-    const { data, error } = await supabase.rpc("admin_list_key_activity" as any, { p_days: days, p_filter: filter });
+    const [{ data, error }, debtRes] = await Promise.all([
+      supabase.rpc("admin_list_key_activity" as any, { p_days: days, p_filter: filter }),
+      supabase.rpc("admin_list_pending_time_debts" as any),
+    ]);
     if (!opts?.silent) setLoading(false);
     if (!error && data) setRows(data as Row[]);
+    if (!debtRes.error && debtRes.data) setPendingDebts(debtRes.data as PendingDebt[]);
   }, [days, filter]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
@@ -119,6 +136,38 @@ export default function KeyActivityManager() {
         </div>
       </div>
 
+      {pendingDebts.length > 0 && (
+        <div className="glass rounded-xl border border-amber-500/30 p-3 text-xs">
+          <button
+            onClick={() => setShowDebts((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left"
+          >
+            <span className="text-amber-400 font-heading font-semibold">
+              ⚠ {pendingDebts.length} user{pendingDebts.length === 1 ? "" : "s"} with pending time-debt (
+              {fmtMs(pendingDebts.reduce((sum, d) => sum + d.pending_ms, 0))} total) — silently deducted from their
+              next balance increase, no session/mint will show for it
+            </span>
+            <span className="text-muted-foreground">{showDebts ? "Hide" : "Show"}</span>
+          </button>
+          {showDebts && (
+            <div className="mt-2 space-y-1">
+              {pendingDebts.map((d) => (
+                <button
+                  key={d.user_id}
+                  onClick={() => setOpenUser(d.user_id)}
+                  className="w-full flex items-center justify-between gap-2 bg-muted/20 hover:bg-muted/30 rounded-lg px-3 py-1.5 text-left"
+                >
+                  <span className="truncate">{d.user_email ?? d.user_id.slice(0, 8)} {d.display_name ? `(${d.display_name})` : ""}</span>
+                  <span className="text-amber-400 font-heading shrink-0">
+                    {fmtMs(d.pending_ms)} owed since {new Date(d.oldest_debt_at).toLocaleDateString()}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button
@@ -145,16 +194,17 @@ export default function KeyActivityManager() {
                 <th className="text-left px-3 py-2">Last activity</th>
                 <th className="text-left px-3 py-2">Used / Remaining</th>
                 <th className="text-left px-3 py-2" title="Real Decart credential issued but the client never sent a heartbeat — penalized so the mint isn't a free burn">Handshake burns</th>
+                <th className="text-left px-3 py-2" title="Reclaimed waste (short sessions / handshake burns) collected from this key once it had balance — see the Audit trail for exactly when">Debt collected</th>
                 <th className="text-left px-3 py-2">Status</th>
                 <th className="text-left px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={11} className="text-center px-3 py-6 text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={12} className="text-center px-3 py-6 text-muted-foreground">Loading…</td></tr>
               )}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={11} className="text-center px-3 py-6 text-muted-foreground">No keys match these filters.</td></tr>
+                <tr><td colSpan={12} className="text-center px-3 py-6 text-muted-foreground">No keys match these filters.</td></tr>
               )}
               {!loading && filtered.map((r) => {
                 const st = statusStyle(r.status);
@@ -164,7 +214,12 @@ export default function KeyActivityManager() {
                     className="border-t border-border/40 hover:bg-muted/20 cursor-pointer"
                     onClick={() => setOpenUser(r.user_id)}
                   >
-                    <td className="px-3 py-2 max-w-[220px] truncate" title={r.user_email ?? ""}>{r.user_email ?? r.user_id.slice(0, 8)}</td>
+                    <td className="px-3 py-2 max-w-[220px] truncate" title={r.user_email ?? ""}>
+                      {r.user_email ?? r.user_id.slice(0, 8)}
+                      {r.pending_debt_ms > 0 && (
+                        <span className="ml-1 text-amber-400" title={`${fmtMs(r.pending_debt_ms)} of pending time-debt will silently deduct from this user's next balance increase`}>⚠</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       {r.label || "Default"}
                       {r.is_trial && <span className="ml-1 text-[10px] text-amber-400">trial</span>}
@@ -179,6 +234,15 @@ export default function KeyActivityManager() {
                       {r.unlinked_mint_count > 0 ? (
                         <span className="text-amber-400" title={`${r.unlinked_mint_count} mint(s) never connected`}>
                           {fmtMs(r.handshake_burn_ms)} ({r.unlinked_mint_count})
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {r.debt_collected_ms > 0 ? (
+                        <span className="text-amber-400" title="Reclaimed time-debt taken from this key's balance — see Audit for the collection event(s)">
+                          {fmtMs(r.debt_collected_ms)}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
