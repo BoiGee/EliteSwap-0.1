@@ -18,6 +18,13 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  // ES module format (not the default iife) so a worker bundle can contain a
+  // dynamic import() — backgroundSegmentation.worker.ts lazy-loads
+  // @mediapipe/tasks-vision so that ~9MB WASM runtime only ever downloads
+  // for sessions that actually turn the custom-background feature on.
+  worker: {
+    format: "es",
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

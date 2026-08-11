@@ -20,6 +20,8 @@ import { buildPromptWithIdentityGuard } from "@/lib/lucyPromptGuard";
 import { DecartStudioEngine } from "@/lib/decartStudioEngine";
 import { ReferenceBlockedDialog } from "./studio/ReferenceBlockedDialog";
 import { PhotoTipsPopover } from "./studio/PhotoTipsPopover";
+import { StudioBackgroundPanel } from "./studio/StudioBackgroundPanel";
+import { useBackgroundCompositor, type BackgroundConfig } from "@/hooks/useBackgroundCompositor";
 
 // Feature flag — flip to false if thresholds prove too strict in production.
 const REFERENCE_GATE_ENABLED = true;
@@ -34,6 +36,26 @@ export function DeepfakeStudio() {
   const [customPrompt, setCustomPrompt] = useState("");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
+  // Custom studio background (Professional/Enterprise only). planTier is
+  // looked up for whichever key is currently in the input — not the
+  // account overall — so a Basic key never surfaces the feature even if
+  // the same account also owns a Pro key. The compositor hook is a true
+  // no-op (no canvas, no worker) whenever backgroundConfig is null, which
+  // covers every session for every user who isn't using this feature.
+  const [planTier, setPlanTier] = useState<string | null>(null);
+  const [backgroundConfig, setBackgroundConfig] = useState<BackgroundConfig | null>(null);
+  const canUseCustomBackground = planTier === "Professional" || planTier === "Enterprise";
+  useEffect(() => {
+    const key = apiKey.trim();
+    if (!key) { setPlanTier(null); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const { data } = await supabase.rpc("get_api_key_plan_tier", { p_key: key } as any);
+      if (!cancelled) setPlanTier((data as unknown as string) ?? null);
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [apiKey]);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
@@ -203,6 +225,19 @@ export function DeepfakeStudio() {
       return next;
     });
   }, []);
+
+  // Custom background compositor: a true pass-through when backgroundConfig
+  // is null (the common case), so this costs nothing for sessions that
+  // don't use it. `outputStream` mirrors into `remoteStream` below so every
+  // existing consumer (the output <video>, the OBS relay, diagnostics)
+  // automatically gets the composited feed with zero changes to that code.
+  const backgroundCompositor = useBackgroundCompositor(backgroundConfig, liteMode ? "lite" : "mid");
+  useEffect(() => {
+    setRemoteStream(backgroundCompositor.outputStream);
+  }, [backgroundCompositor.outputStream]);
+  const handleRemoteStream = useCallback((transformed: MediaStream) => {
+    backgroundCompositor.setSource(transformed);
+  }, [backgroundCompositor]);
 
   // Restore the user's OBS preference per-key (set after handleStart commits).
   useEffect(() => {
@@ -1435,7 +1470,7 @@ export function DeepfakeStudio() {
             try { localStream?.getTracks().forEach((t) => t.stop()); } catch { /* noop */ }
             const liveResult = await connect(
               previewDecartKey,
-              (transformed) => setRemoteStream(transformed),
+              handleRemoteStream,
               "Enhance the video slightly",
               { lite: liteMode },
             );
@@ -1594,9 +1629,7 @@ export function DeepfakeStudio() {
 
     while (true) {
       try {
-        connectResult = await connect(decartKey, (transformed) => {
-          setRemoteStream(transformed);
-        }, "Enhance the video slightly", { lite: liteMode });
+        connectResult = await connect(decartKey, handleRemoteStream, "Enhance the video slightly", { lite: liteMode });
         break;
       } catch (e: any) {
         const raw0 = (e?.message || e?.error?.message || e?.toString?.() || "") + " " + (e?.name || "");
@@ -1771,13 +1804,14 @@ export function DeepfakeStudio() {
     try { await disconnect(); } catch { /* noop */ }
     try { localStream?.getTracks().forEach(t => t.stop()); } catch { /* noop */ }
     setLocalStream(null);
+    backgroundCompositor.setSource(null);
     setRemoteStream(null);
     // Small settle window so ICE/DTLS close + camera release finish before
     // the user's next click. 600ms is generous for desktop, unnoticeable for UX.
     await new Promise((r) => setTimeout(r, 600));
     lastDisconnectAtRef.current = Date.now();
     setIsStarted(false);
-  }, [disconnect, localStream, pauseTimer, apiKey]);
+  }, [disconnect, localStream, pauseTimer, apiKey, backgroundCompositor]);
 
   // Keep ref in sync so the countdown effect can call the latest version
   useEffect(() => {
@@ -2247,6 +2281,12 @@ export function DeepfakeStudio() {
 
         {/* Controls sidebar */}
         <div className="w-full lg:w-80 space-y-4" style={{ contain: "layout paint" }}>
+          {/* Custom Background — Professional/Enterprise only, gated on the
+              key actually in use, not just the account. */}
+          {canUseCustomBackground && (
+            <StudioBackgroundPanel onActiveChange={setBackgroundConfig} />
+          )}
+
           {/* Reference Image */}
           <div className="glass neon-border rounded-xl p-4 space-y-3">
             <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">
