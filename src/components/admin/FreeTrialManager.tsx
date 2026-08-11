@@ -165,27 +165,33 @@ export default function FreeTrialManager({ emailForUser }: Props) {
   })();
 
   const handleBulkAdd = async () => {
-    const lines = bulkInput
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    const lines = Array.from(new Set(
+      bulkInput.split("\n").map((l) => l.trim()).filter((l) => l.length > 0)
+    ));
     if (lines.length === 0) {
       toast({ title: "No keys to add", description: "Paste at least one key.", variant: "destructive" });
       return;
     }
     setSubmitting(true);
     const rows = lines.map((api_key) => ({ api_key }));
-    const { error, count } = await supabase
+    // upsert + ignoreDuplicates so one already-in-the-pool key doesn't fail
+    // the entire pasted batch (a plain insert is all-or-nothing on the
+    // api_key unique constraint) — every genuinely new key still lands,
+    // duplicates are just silently skipped and reported.
+    const { data, error } = await supabase
       .from("free_trial_keys")
-      .insert(rows, { count: "exact" });
+      .upsert(rows, { onConflict: "api_key", ignoreDuplicates: true })
+      .select("id");
     if (error) {
-      toast({
-        title: "Some keys may have failed",
-        description: error.message.includes("unique") ? "One or more keys already exist in the pool." : error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Add failed", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: `Added ${count ?? lines.length} key(s) ✅` });
+      const addedCount = data?.length ?? 0;
+      const skipped = lines.length - addedCount;
+      toast({
+        title: skipped > 0
+          ? `Added ${addedCount} key(s), skipped ${skipped} already in the pool`
+          : `Added ${addedCount} key(s) ✅`,
+      });
       setBulkInput("");
     }
     fetchKeys();
@@ -272,8 +278,12 @@ export default function FreeTrialManager({ emailForUser }: Props) {
       <div>
         <h2 className="text-2xl font-heading font-bold text-foreground">Free Trial Keys</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Pool of pre-generated unique keys handed out as free trials. Each user gets 1.
-          Default trial duration is 2 minutes — override per-key below.
+          Pool of pre-generated unique keys. Default trial duration is 2 minutes — override per-key below.
+        </p>
+        <p className="text-xs text-amber-400 mt-1">
+          ⚠ This pool now backs the $10 trial purchase flow, not just free claims — the "leave your device
+          fingerprint, get one free trial" path hasn't actually been used since 2026-06-08 (superseded by the
+          $10 paid trial). Every claim here since then has been a paid purchase. Keep the pool stocked either way.
         </p>
       </div>
 
@@ -300,6 +310,10 @@ export default function FreeTrialManager({ emailForUser }: Props) {
           <p className="text-xs text-muted-foreground">
             Showing devices/networks where ≥2 users (fingerprint) or ≥3 users (IP) claimed a free trial.
             Click <span className="text-primary font-semibold">Allow next claim</span> to override the block for genuine cases (shared computer, café user).
+          </p>
+          <p className="text-xs text-amber-400">
+            ⚠ This only tracks the free-claim path, which hasn't been used since 2026-06-08 — expect this to
+            stay empty. It's not a sign of anything wrong with the (separate) $10 trial flow.
           </p>
           {abuseGroups.length === 0 && (
             <p className="text-sm text-muted-foreground">No collisions detected. 🎉</p>
