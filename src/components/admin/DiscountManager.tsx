@@ -57,24 +57,49 @@ const emptyForm: FormState = {
 export default function DiscountManager({ emailForUser }: { emailForUser: (id: string) => string }) {
   const [codes, setCodes] = useState<DiscountCode[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const { toast } = useToast();
 
+  // Redemptions are fetched per-code, on demand, rather than one shared
+  // list capped at 200 rows total — a single popular code could otherwise
+  // push another code's redemptions out of view entirely, or silently
+  // truncate its own history. discount_codes.times_redeemed (an atomic
+  // counter, not derived from this list) is always the accurate count.
+  const [redemptionsByCode, setRedemptionsByCode] = useState<Record<string, Redemption[]>>({});
+  const [loadingRedemptions, setLoadingRedemptions] = useState<Record<string, boolean>>({});
+  const [expandedCode, setExpandedCode] = useState<string | null>(null);
+
   const fetchAll = useCallback(async () => {
-    const [c, p, r] = await Promise.all([
+    const [c, p] = await Promise.all([
       supabase.from("discount_codes" as any).select("*").order("created_at", { ascending: false }),
       supabase.from("pricing_plans").select("id, name").order("sort_order"),
-      supabase.from("discount_redemptions" as any).select("*").order("redeemed_at", { ascending: false }).limit(200),
     ]);
     if (c.data) setCodes(c.data as unknown as DiscountCode[]);
     if (p.data) setPlans(p.data as Plan[]);
-    if (r.data) setRedemptions(r.data as unknown as Redemption[]);
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const toggleRedemptions = async (codeId: string) => {
+    if (expandedCode === codeId) { setExpandedCode(null); return; }
+    setExpandedCode(codeId);
+    if (redemptionsByCode[codeId]) return;
+    setLoadingRedemptions((s) => ({ ...s, [codeId]: true }));
+    const { data, error } = await supabase
+      .from("discount_redemptions" as any)
+      .select("*")
+      .eq("code_id", codeId)
+      .order("redeemed_at", { ascending: false })
+      .limit(500);
+    setLoadingRedemptions((s) => ({ ...s, [codeId]: false }));
+    if (error) {
+      toast({ title: "Error loading redemptions", description: error.message, variant: "destructive" });
+      return;
+    }
+    setRedemptionsByCode((s) => ({ ...s, [codeId]: (data ?? []) as unknown as Redemption[] }));
+  };
 
   const startCreate = () => { setForm(emptyForm); setCreating(true); setEditing(null); };
   const startEdit = (c: DiscountCode) => {
@@ -249,7 +274,8 @@ export default function DiscountManager({ emailForUser }: { emailForUser: (id: s
 
       <div className="space-y-2">
         {codes.map((c) => {
-          const codeRedemptions = redemptions.filter((r) => r.code_id === c.id);
+          const isExpanded = expandedCode === c.id;
+          const codeRedemptions = redemptionsByCode[c.id] ?? [];
           return (
             <div key={c.id} className="glass rounded-xl p-4 space-y-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -277,21 +303,27 @@ export default function DiscountManager({ emailForUser }: { emailForUser: (id: s
                 </Button>
               </div>
 
-              {codeRedemptions.length > 0 && (
-                <details className="text-xs">
-                  <summary className="cursor-pointer text-muted-foreground font-heading">
-                    Redemptions ({codeRedemptions.length})
-                  </summary>
-                  <div className="mt-2 space-y-1">
-                    {codeRedemptions.slice(0, 50).map((r) => (
-                      <div key={r.id} className="flex items-center gap-3 bg-muted/20 rounded-lg px-2 py-1">
-                        <span className="text-muted-foreground">{emailForUser(r.user_id)}</span>
-                        <span className="font-heading text-primary">−${Number(r.discount_amount_usd).toFixed(2)}</span>
-                        <span className="text-muted-foreground ml-auto">{new Date(r.redeemed_at).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </details>
+              {c.times_redeemed > 0 && (
+                <div className="text-xs">
+                  <button
+                    onClick={() => toggleRedemptions(c.id)}
+                    className="cursor-pointer text-muted-foreground font-heading hover:text-foreground"
+                  >
+                    {isExpanded ? "Hide" : "Show"} redemptions ({c.times_redeemed})
+                  </button>
+                  {isExpanded && (
+                    <div className="mt-2 space-y-1">
+                      {loadingRedemptions[c.id] && <p className="text-muted-foreground">Loading…</p>}
+                      {!loadingRedemptions[c.id] && codeRedemptions.map((r) => (
+                        <div key={r.id} className="flex items-center gap-3 bg-muted/20 rounded-lg px-2 py-1">
+                          <span className="text-muted-foreground">{emailForUser(r.user_id)}</span>
+                          <span className="font-heading text-primary">−${Number(r.discount_amount_usd).toFixed(2)}</span>
+                          <span className="text-muted-foreground ml-auto">{new Date(r.redeemed_at).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           );
