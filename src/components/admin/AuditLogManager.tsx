@@ -53,6 +53,7 @@ const ROLE_OPTIONS = [
   { value: "sec_admin", label: "Sec Admin" },
   { value: "moderator", label: "Moderator" },
   { value: "system", label: "System" },
+  { value: "user", label: "User" },
 ];
 
 export default function AuditLogManager() {
