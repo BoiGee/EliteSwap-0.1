@@ -461,7 +461,7 @@ export default function Admin() {
 
           {tab === "mailer" && <MailerManager profiles={profiles} />}
 
-          {tab === "support" && <SupportChatManager profiles={profiles} />}
+          {tab === "support" && <SupportChatManager profiles={profiles} userRoles={userRoles} />}
 
           {tab === "activity" && <ActivityManager profiles={profiles} />}
 

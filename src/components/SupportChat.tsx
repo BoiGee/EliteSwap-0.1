@@ -67,25 +67,44 @@ export default function SupportChat() {
   useEffect(() => {
     if (!user || !open) return;
 
-    const loadConversation = async () => {
-      const { data } = await supabase
+    const findOpenConversation = () =>
+      supabase
         .from("support_conversations")
         .select("id")
+        // "pending" is still an active thread (admin flagged it, not resolved) —
+        // only "closed" should start a fresh conversation on reopen.
+        .in("status", ["open", "pending"])
         .eq("user_id", user.id)
-        .eq("status", "open")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
+    const loadConversation = async () => {
+      const { data } = await findOpenConversation();
+
       if (data) {
         setConversationId(data.id);
-      } else {
-        const { data: newConv } = await supabase
-          .from("support_conversations")
-          .insert({ user_id: user.id })
-          .select("id")
-          .single();
-        if (newConv) setConversationId(newConv.id);
+        return;
+      }
+
+      const { data: newConv, error } = await supabase
+        .from("support_conversations")
+        .insert({ user_id: user.id })
+        .select("id")
+        .single();
+
+      if (newConv) {
+        setConversationId(newConv.id);
+        return;
+      }
+
+      // Lost a create race against another tab/device (a unique constraint
+      // guarantees only one "open" conversation per user) — fall back to
+      // whichever one now exists instead of leaving the widget stuck with
+      // no conversation at all.
+      if (error) {
+        const { data: existing } = await findOpenConversation();
+        if (existing) setConversationId(existing.id);
       }
     };
 

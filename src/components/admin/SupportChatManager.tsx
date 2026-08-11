@@ -97,6 +97,11 @@ interface Profile {
   display_name: string | null;
 }
 
+interface StaffRole {
+  user_id: string;
+  role: string;
+}
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 type StatusFilter = "all" | "open" | "pending" | "closed" | "unread";
 
@@ -150,7 +155,7 @@ function relativeTime(ts: string) {
   return new Date(ts).toLocaleDateString();
 }
 
-export default function SupportChatManager({ profiles }: { profiles: Profile[] }) {
+export default function SupportChatManager({ profiles, userRoles = [] }: { profiles: Profile[]; userRoles?: StaffRole[] }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -466,6 +471,13 @@ export default function SupportChatManager({ profiles }: { profiles: Profile[] }
   const activeConv = conversations.find((c) => c.id === selectedConv);
   const activeUserProfile = activeConv ? profileFor(activeConv.user_id) : null;
 
+  const staffMembers = useMemo(() => {
+    const ids = Array.from(
+      new Set(userRoles.filter((r) => r.role === "admin" || r.role === "moderator").map((r) => r.user_id)),
+    );
+    return ids.map((id) => ({ id, label: labelForUser(id) })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [userRoles, labelForUser]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -622,6 +634,20 @@ export default function SupportChatManager({ profiles }: { profiles: Profile[] }
                     <SelectItem value="normal">Normal</SelectItem>
                     <SelectItem value="high">High</SelectItem>
                     <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={activeConv.assigned_to ?? "unassigned"}
+                  onValueChange={(v) => updateConvField("assigned_to", v === "unassigned" ? null : v)}
+                >
+                  <SelectTrigger className="h-7 w-[130px] text-xs">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {staffMembers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button
