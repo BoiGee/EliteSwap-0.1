@@ -258,7 +258,7 @@ export default function Admin() {
     { id: "pricing", label: "Pricing", icon: "💎" },
     { id: "partners", label: "Partners", icon: "🤝" },
     { id: "reviews", label: "Reviews", icon: "⭐" },
-    { id: "free_trial", label: "Free Trial", icon: "🎁" },
+    { id: "free_trial", label: "Trial Key Pool", icon: "🎁" },
     { id: "discounts", label: "Discounts", icon: "🏷️" },
     { id: "mailer", label: "Mailer", icon: "✉️" },
     { id: "announcements", label: "Announcements", icon: "📢" },

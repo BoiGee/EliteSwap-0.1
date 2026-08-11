@@ -15,25 +15,6 @@ interface FreeTrialKey {
   trial_duration_ms: number | null;
 }
 
-interface AbuseAssignment {
-  id: string;
-  user_id: string;
-  device_fingerprint: string | null;
-  ip_hash: string | null;
-  override_allowed_at: string | null;
-  created_at: string;
-}
-
-interface AbuseGroup {
-  key: string; // fp or ip
-  type: "fingerprint" | "ip";
-  value: string;
-  userIds: string[];
-  count: number;
-  latest: string;
-  hasOverride: boolean;
-}
-
 interface Props {
   emailForUser: (userId: string) => string;
 }
@@ -71,9 +52,6 @@ export default function FreeTrialManager({ emailForUser }: Props) {
   const [bulkMinutes, setBulkMinutes] = useState("");
   const [bulkSeconds, setBulkSeconds] = useState("");
   const [applying, setApplying] = useState(false);
-  const [view, setView] = useState<"keys" | "abuse">("keys");
-  const [assignments, setAssignments] = useState<AbuseAssignment[]>([]);
-  const [overriding, setOverriding] = useState<string | null>(null);
 
   const fetchKeys = useCallback(async () => {
     setLoading(true);
@@ -89,80 +67,9 @@ export default function FreeTrialManager({ emailForUser }: Props) {
     setLoading(false);
   }, [toast]);
 
-  const fetchAssignments = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("free_trial_assignments")
-      .select("id,user_id,device_fingerprint,ip_hash,override_allowed_at,created_at")
-      .order("created_at", { ascending: false });
-    if (error) {
-      toast({ title: "Error loading assignments", description: error.message, variant: "destructive" });
-    } else if (data) {
-      setAssignments(data as AbuseAssignment[]);
-    }
-  }, [toast]);
-
   useEffect(() => {
     fetchKeys();
-    fetchAssignments();
-  }, [fetchKeys, fetchAssignments]);
-
-  const handleAdminOverride = async (fingerprint: string) => {
-    setOverriding(fingerprint);
-    const { data, error } = await supabase.rpc("admin_allow_trial_for_device", { p_fingerprint: fingerprint });
-    if (error) {
-      toast({ title: "Override failed", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: `Override applied to ${data ?? 0} record(s) ✅` });
-      fetchAssignments();
-    }
-    setOverriding(null);
-  };
-
-  // Compute collision groups
-  const abuseGroups: AbuseGroup[] = (() => {
-    const fpMap = new Map<string, AbuseAssignment[]>();
-    const ipMap = new Map<string, AbuseAssignment[]>();
-    for (const a of assignments) {
-      if (a.device_fingerprint) {
-        if (!fpMap.has(a.device_fingerprint)) fpMap.set(a.device_fingerprint, []);
-        fpMap.get(a.device_fingerprint)!.push(a);
-      }
-      if (a.ip_hash) {
-        if (!ipMap.has(a.ip_hash)) ipMap.set(a.ip_hash, []);
-        ipMap.get(a.ip_hash)!.push(a);
-      }
-    }
-    const groups: AbuseGroup[] = [];
-    for (const [fp, list] of fpMap) {
-      const userIds = Array.from(new Set(list.map((l) => l.user_id)));
-      if (userIds.length >= 2) {
-        groups.push({
-          key: `fp:${fp}`,
-          type: "fingerprint",
-          value: fp,
-          userIds,
-          count: list.length,
-          latest: list[0].created_at,
-          hasOverride: list.some((l) => l.override_allowed_at !== null),
-        });
-      }
-    }
-    for (const [ip, list] of ipMap) {
-      const userIds = Array.from(new Set(list.map((l) => l.user_id)));
-      if (userIds.length >= 3) {
-        groups.push({
-          key: `ip:${ip}`,
-          type: "ip",
-          value: ip,
-          userIds,
-          count: list.length,
-          latest: list[0].created_at,
-          hasOverride: list.some((l) => l.override_allowed_at !== null),
-        });
-      }
-    }
-    return groups.sort((a, b) => (a.latest < b.latest ? 1 : -1));
-  })();
+  }, [fetchKeys]);
 
   const handleBulkAdd = async () => {
     const lines = Array.from(new Set(
@@ -233,9 +140,8 @@ export default function FreeTrialManager({ emailForUser }: Props) {
   const total = keys.length;
   const claimed = keys.filter((k) => k.claimed_by_user_id !== null).length;
   const available = total - claimed;
-  // This pool backs both free trial claims AND $10 trial purchase confirmations
-  // (assign_trial_key_from_purchase draws from the same table) — running out
-  // means both flows start hard-failing, not just free trials.
+  // This pool backs $10 trial purchase confirmations (assign_trial_key_from_purchase
+  // draws from this same table) — running out means new $10 purchases can't be fulfilled.
   const LOW_STOCK_THRESHOLD = 10;
 
   const filtered = keys.filter((k) => {
@@ -271,101 +177,24 @@ export default function FreeTrialManager({ emailForUser }: Props) {
     return `${key.slice(0, 6)}…${key.slice(-4)}`;
   };
 
-  const maskHash = (h: string) => (h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h);
-
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-heading font-bold text-foreground">Free Trial Keys</h2>
+        <h2 className="text-2xl font-heading font-bold text-foreground">Trial Key Pool</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Pool of pre-generated unique keys. Default trial duration is 2 minutes — override per-key below.
-        </p>
-        <p className="text-xs text-amber-400 mt-1">
-          ⚠ This pool now backs the $10 trial purchase flow, not just free claims — the "leave your device
-          fingerprint, get one free trial" path hasn't actually been used since 2026-06-08 (superseded by the
-          $10 paid trial). Every claim here since then has been a paid purchase. Keep the pool stocked either way.
+          Pool of pre-generated unique keys backing the $10 trial purchase flow. Default duration is 2
+          minutes — override per-key below. (The old unpaid "free trial" claim path this pool originally
+          served was retired 2026-08-11 — trials are $10 now.)
         </p>
       </div>
-
-      {/* View switcher */}
-      <div className="flex items-center gap-2">
-        {([
-          { id: "keys", label: "🔑 Keys" },
-          { id: "abuse", label: `🛡️ Abuse${abuseGroups.length > 0 ? ` (${abuseGroups.length})` : ""}` },
-        ] as const).map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setView(v.id)}
-            className={`px-3 py-1.5 rounded-lg font-heading text-xs font-semibold transition-all ${
-              view === v.id ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
-
-      {view === "abuse" && (
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Showing devices/networks where ≥2 users (fingerprint) or ≥3 users (IP) claimed a free trial.
-            Click <span className="text-primary font-semibold">Allow next claim</span> to override the block for genuine cases (shared computer, café user).
-          </p>
-          <p className="text-xs text-amber-400">
-            ⚠ This only tracks the free-claim path, which hasn't been used since 2026-06-08 — expect this to
-            stay empty. It's not a sign of anything wrong with the (separate) $10 trial flow.
-          </p>
-          {abuseGroups.length === 0 && (
-            <p className="text-sm text-muted-foreground">No collisions detected. 🎉</p>
-          )}
-          {abuseGroups.map((g) => (
-            <div key={g.key} className="glass rounded-xl px-4 py-3 space-y-2">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs font-heading font-semibold px-2 py-0.5 rounded-full ${
-                    g.type === "fingerprint" ? "bg-destructive/20 text-destructive" : "bg-amber-500/20 text-amber-400"
-                  }`}>
-                    {g.type === "fingerprint" ? "DEVICE" : "NETWORK"}
-                  </span>
-                  <span className="font-mono text-xs text-foreground/70">{maskHash(g.value)}</span>
-                  <span className="text-xs text-muted-foreground">· {g.userIds.length} users · {g.count} claims</span>
-                  {g.hasOverride && (
-                    <span className="text-xs font-heading text-primary">✓ overridden</span>
-                  )}
-                </div>
-                {g.type === "fingerprint" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={overriding === g.value}
-                    onClick={() => handleAdminOverride(g.value)}
-                    className="font-heading text-xs"
-                  >
-                    {overriding === g.value ? "Applying…" : "Allow next claim"}
-                  </Button>
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Users: {g.userIds.map((uid) => emailForUser(uid)).join(", ")}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Latest claim: {new Date(g.latest).toLocaleString()}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {view === "keys" && (
-        <>
 
       {available < LOW_STOCK_THRESHOLD && (
         <div className={`glass border rounded-xl p-3 text-xs font-heading ${
           available === 0 ? "border-destructive/50 text-destructive" : "border-amber-500/50 text-amber-400"
         }`}>
           {available === 0
-            ? "⚠️ Pool exhausted — free trial claims AND $10 trial purchase confirmations will fail until more keys are added."
-            : `⚠️ Only ${available} unclaimed key${available === 1 ? "" : "s"} left — this pool backs $10 trial purchases too, not just free trials.`}
+            ? "⚠️ Pool exhausted — new $10 trial purchases can't be fulfilled until more keys are added."
+            : `⚠️ Only ${available} unclaimed key${available === 1 ? "" : "s"} left.`}
         </div>
       )}
 
@@ -548,8 +377,6 @@ export default function FreeTrialManager({ emailForUser }: Props) {
           );
         })}
       </div>
-        </>
-      )}
     </div>
   );
 }

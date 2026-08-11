@@ -10,7 +10,6 @@ import { getSafeErrorMessage } from "@/lib/errors";
 import ProfileSection from "@/components/dashboard/ProfileSection";
 import PricingSection, { type SelectedPlanInfo } from "@/components/dashboard/PricingSection";
 import TutorialSection from "@/components/dashboard/TutorialSection";
-import TrialBlockedModal from "@/components/dashboard/TrialBlockedModal";
 import PromoBanner from "@/components/PromoBanner";
 import { ReviewPromptModal } from "@/components/dashboard/ReviewPromptModal";
 import ReferralCodeInput from "@/components/dashboard/ReferralCodeInput";
@@ -157,7 +156,6 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast, user]);
 
-  const [trialBlockedReason, setTrialBlockedReason] = useState<"DEVICE_BLOCKED" | "IP_BLOCKED" | null>(null);
   const [trialsRemaining, setTrialsRemaining] = useState<number | null>(null);
 
   const fetchTrialsRemaining = async () => {
@@ -166,24 +164,6 @@ export default function Dashboard() {
     if (typeof data === "number") setTrialsRemaining(data);
   };
   useEffect(() => { fetchTrialsRemaining(); }, [user?.id]); // eslint-disable-line
-
-  const handleUpgradeFromBlock = () => {
-    setTrialBlockedReason(null);
-    // Scroll to pricing section
-    setTimeout(() => {
-      const el = document.getElementById("pricing-section");
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
-  };
-
-  const handleContactSupportFromBlock = () => {
-    setTrialBlockedReason(null);
-    // SupportChat is mounted globally — dispatch a custom event the chat can listen to,
-    // fallback: just close the modal so the floating chat button remains visible.
-    window.dispatchEvent(new CustomEvent("open-support-chat", {
-      detail: { prefill: "Hi — I tried to purchase a $10 trial but it was blocked. Can you help?" },
-    }));
-  };
 
   // Re-evaluate gating every second so Step 3 locks instantly when a trial expires
   useEffect(() => {
@@ -368,14 +348,6 @@ export default function Dashboard() {
           onSubmitHash={(hash, currency) => submitPayment(hash, currency)}
         />
       )}
-
-      <TrialBlockedModal
-        open={!!trialBlockedReason}
-        reason={trialBlockedReason ?? "DEVICE_BLOCKED"}
-        onClose={() => setTrialBlockedReason(null)}
-        onUpgrade={handleUpgradeFromBlock}
-        onContactSupport={handleContactSupportFromBlock}
-      />
 
       <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
         <h1 className="text-xl font-heading font-bold gradient-text">Elite Swap</h1>
