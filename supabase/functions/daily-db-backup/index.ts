@@ -38,6 +38,12 @@ const BUCKET = 'db-backups'
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 48 // 48 hours (security policy max)
 const STORAGE_TOTAL_BYTES_CAP = 500 * 1024 * 1024 // 500 MB safety cap
 const PER_TABLE_ROW_CAP = 2_000_000
+// Historical successful runs (schema + every table + auth + config +
+// storage, combined) finished in under 90s. If schema/tables/auth/config
+// alone already took longer than this, something is unusually slow —
+// storage copying (the most I/O-heavy remaining step) is skipped rather
+// than risk losing the whole run to whatever kills it past that point.
+const STORAGE_STEP_TIME_BUDGET_MS = 2 * 60 * 1000
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return ''
@@ -110,14 +116,60 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceKey)
-  const startedAt = new Date()
 
-  // Reap any prior run that crashed while `running` (>1h old)
-  const staleCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  await supabase.from('backup_runs')
+  // Reap any prior run that crashed while `running` (>20min old). Every
+  // successful run on record finished in under 2 minutes, so 20 minutes is
+  // already a generous multiple of that with room for the data to grow —
+  // no need for the original 1h grace period. Previously this only ever
+  // ran at the START of the NEXT invocation — since this function is
+  // normally only invoked once a day by cron, a crashed run could sit
+  // showing "running" in the admin tab for up to 24 hours before anything
+  // noticed. reap-watchdog (a separate cron job, every 15 min) calls this
+  // exact same endpoint with mode=reap_only so stale rows are caught
+  // within roughly 20-35 minutes instead of up to a day, without needing a
+  // duplicate implementation of this query anywhere.
+  const staleCutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString()
+  const { data: reaped } = await supabase.from('backup_runs')
     .update({ status: 'failed', error_message: 'timed_out_or_crashed', finished_at: new Date().toISOString() })
     .eq('status', 'running')
     .lt('started_at', staleCutoff)
+    .select('id')
+
+  let body: any = {}
+  try { body = await req.json() } catch { /* no body is fine */ }
+  if (body?.mode === 'reap_only') {
+    return new Response(JSON.stringify({ ok: true, reaped: reaped?.length ?? 0 }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // Signed URLs are capped at 48h (SIGNED_URL_TTL_SECONDS below, itself a
+  // storage security-policy max) but backups are kept in private storage
+  // indefinitely — "Download" on anything older than 2 days was a dead
+  // link with no way to recover short of the Supabase dashboard. Re-sign
+  // on demand instead of only ever signing once at creation time.
+  if (body?.mode === 'resign' && typeof body?.run_id === 'string') {
+    const { data: run, error: runLookupErr } = await supabase
+      .from('backup_runs').select('storage_path').eq('id', body.run_id).maybeSingle()
+    if (runLookupErr || !run?.storage_path) {
+      return new Response(JSON.stringify({ error: 'run_not_found_or_no_file' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    const { data: signed, error: signErr } = await supabase.storage
+      .from(BUCKET).createSignedUrl(run.storage_path, SIGNED_URL_TTL_SECONDS)
+    if (signErr || !signed?.signedUrl) {
+      return new Response(JSON.stringify({ error: signErr?.message ?? 'sign_failed' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    await supabase.from('backup_runs').update({ download_url: signed.signedUrl }).eq('id', body.run_id)
+    return new Response(JSON.stringify({ ok: true, download_url: signed.signedUrl }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  const startedAt = new Date()
 
   const { data: runRow, error: runErr } = await supabase
     .from('backup_runs')
@@ -132,6 +184,38 @@ Deno.serve(async (req) => {
   }
   const runId = runRow.id as string
 
+  // The actual backup (schema export, ~60+ table dumps, storage file
+  // copying) is a long, highly variable-duration chain of sequential
+  // network round-trips — normal runs finish in well under a minute, but
+  // any hiccup anywhere in that chain has a real chance of pushing total
+  // wall-clock time past this platform's synchronous-response ceiling,
+  // which is exactly what the "timed_out_or_crashed" entries in
+  // backup_runs' history show happening repeatedly (most recently:
+  // stuck for 13+ hours with nothing to reap it until the next daily
+  // tick). Running it via EdgeRuntime.waitUntil — the same mechanism
+  // admin-broadcast-email already uses for large sends — frees it from
+  // that synchronous ceiling entirely; the HTTP response returns
+  // immediately once the run is recorded, and backup_runs is the source
+  // of truth for whether it actually finished. Falls back to awaiting
+  // inline if waitUntil isn't available (e.g. local dev).
+  const work = runBackup(supabase, supabaseUrl, serviceKey, runId, triggeredBy, startedAt)
+  if (typeof (globalThis as any).EdgeRuntime?.waitUntil === 'function') {
+    (globalThis as any).EdgeRuntime.waitUntil(work)
+    return new Response(JSON.stringify({ ok: true, queued: true, run_id: runId }), {
+      status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+  return await work
+})
+
+async function runBackup(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceKey: string,
+  runId: string,
+  triggeredBy: string,
+  startedAt: Date,
+): Promise<Response> {
   const extrasOk: Record<string, boolean> = {
     ddl: false, auth_identities: false, auth_mfa: false, auth_sessions: false,
     cron: false, realtime: false, storage_buckets: false, pgmq: false,
@@ -189,7 +273,11 @@ Deno.serve(async (req) => {
     let totalRows = 0
     const manifestTables: Array<{ name: string; rows: number; truncated: boolean }> = []
     for (const table of tableNames) {
-      const pageSize = 1000
+      // 5000 rather than 1000: fewer sequential round-trips per table is a
+      // meaningful chunk of what makes this function's total runtime so
+      // variable — with 60+ tables, every extra page is another full
+      // network round-trip multiplied across the whole run.
+      const pageSize = 5000
       let from = 0
       let allRows: Record<string, unknown>[] = []
       let truncated = false
@@ -252,7 +340,26 @@ Deno.serve(async (req) => {
     let storageFileCount = 0
     let storageBytes = 0
     let storageCapped = false
+    let storageSkippedOverBudget = false
     const storageManifest: Array<{ bucket: string; path: string; size: number }> = []
+    const elapsedSoFarMs = Date.now() - startedAt.getTime()
+    if (elapsedSoFarMs > STORAGE_STEP_TIME_BUDGET_MS) {
+      // Schema + every table + auth + config already took longer than
+      // usual (normal full runs finish in well under 2 minutes total) —
+      // downloading storage files one at a time is the single most
+      // I/O-heavy remaining step and the most likely thing to push an
+      // already-slow run over whatever ceiling kills it. Skipping it here
+      // means a database-only backup still completes and uploads instead
+      // of the whole run being lost to a timeout with nothing to show for
+      // it; storage files are the one thing not otherwise unrecoverable
+      // (they still exist in their own bucket) if this happens.
+      console.warn(`Skipping storage copy: already ${elapsedSoFarMs}ms into the run`)
+      storageSkippedOverBudget = true
+      await zipWriter.add(
+        'storage/_SKIPPED.txt',
+        new TextReader(`Storage copy skipped — backup was already ${Math.round(elapsedSoFarMs / 1000)}s in, over the ${STORAGE_STEP_TIME_BUDGET_MS / 1000}s budget for starting this step. Database contents above are unaffected.`),
+      )
+    } else {
     try {
       const { data: buckets, error: bucketsErr } = await supabase.storage.listBuckets()
       if (bucketsErr) throw bucketsErr
@@ -325,6 +432,7 @@ Deno.serve(async (req) => {
       console.warn('storage backup failed:', msg)
       await zipWriter.add('storage/_error.txt', new TextReader(`Storage backup failed: ${msg}`))
     }
+    }
 
     // 7) MANIFEST.json
     const manifest = {
@@ -350,6 +458,7 @@ Deno.serve(async (req) => {
         file_count: storageFileCount,
         bytes: storageBytes,
         capped: storageCapped,
+        skipped_over_time_budget: storageSkippedOverBudget,
       },
       schema_ddl_bytes: schemaDdlBytes,
       extras_ok: extrasOk,
@@ -507,4 +616,4 @@ Deno.serve(async (req) => {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
-})
+}

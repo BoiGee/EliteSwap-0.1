@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -70,23 +70,35 @@ export default function BackupManager() {
   const [runs, setRuns] = useState<BackupRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [signing, setSigning] = useState<string | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     const { data, error } = await supabase
       .from("backup_runs")
       .select("*")
       .order("started_at", { ascending: false })
       .limit(60);
     if (error) {
-      toast({ title: "Failed to load backups", description: error.message, variant: "destructive" });
+      if (!opts?.silent) toast({ title: "Failed to load backups", description: error.message, variant: "destructive" });
     } else {
       setRuns((data ?? []) as BackupRun[]);
     }
-    setLoading(false);
-  };
+    if (!opts?.silent) setLoading(false);
+  }, [toast]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // The backup itself now runs in the background (it can take anywhere from
+  // under a minute to several, well past what's safe to hold a button's
+  // loading spinner on) — poll while a run is actually in flight so
+  // "running" flips to "success"/"failed" without the admin needing to
+  // remember to hit Refresh.
+  useEffect(() => {
+    if (!runs.some((r) => r.status === "running")) return;
+    const id = setInterval(() => load({ silent: true }), 10000);
+    return () => clearInterval(id);
+  }, [runs, load]);
 
   const runNow = async () => {
     setRunning(true);
@@ -96,8 +108,10 @@ export default function BackupManager() {
       });
       if (error) throw error;
       toast({
-        title: "Backup complete ✅",
-        description: `${(data as any)?.table_count ?? 0} tables, ${formatBytes((data as any)?.file_size_bytes ?? 0)}. Email sent.`,
+        title: (data as any)?.queued ? "Backup started 🚀" : "Backup complete ✅",
+        description: (data as any)?.queued
+          ? "Running in the background — this list updates automatically when it finishes."
+          : `${(data as any)?.table_count ?? 0} tables, ${formatBytes((data as any)?.file_size_bytes ?? 0)}. Email sent.`,
       });
       await load();
     } catch (e: any) {
@@ -111,6 +125,28 @@ export default function BackupManager() {
     }
   };
 
+  // Signed URLs expire after 48h (SIGNED_URL_TTL_SECONDS in the backup
+  // function — a storage security-policy max), but backups themselves are
+  // kept indefinitely. The stored download_url column goes stale long
+  // before the file does, so always mint a fresh one on click rather than
+  // trusting whatever was signed at creation time.
+  const download = async (run: BackupRun) => {
+    setSigning(run.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("daily-db-backup", {
+        body: { mode: "resign", run_id: run.id },
+      });
+      if (error || !(data as any)?.download_url) {
+        throw new Error((data as any)?.error ?? error?.message ?? "Could not sign a download link");
+      }
+      window.open((data as any).download_url as string, "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      toast({ title: "Download failed", description: e?.message ?? "Unknown error", variant: "destructive" });
+    } finally {
+      setSigning(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -120,8 +156,12 @@ export default function BackupManager() {
             Daily full-coverage backup at 02:00 UTC — schema + data + auth + config + storage — emailed to the first admin and kept permanently in private storage.
           </p>
         </div>
-        <Button onClick={runNow} disabled={running} className="font-heading">
-          {running ? "Running backup…" : "Run backup now"}
+        <Button
+          onClick={runNow}
+          disabled={running || runs.some((r) => r.status === "running")}
+          className="font-heading"
+        >
+          {running || runs.some((r) => r.status === "running") ? "Backup running…" : "Run backup now"}
         </Button>
       </div>
 
@@ -192,10 +232,14 @@ export default function BackupManager() {
                 <td className="px-3 py-2"><ExtrasCell extras={r.extras_ok} /></td>
                 <td className="px-3 py-2 text-xs text-right">{formatBytes(r.file_size_bytes)}</td>
                 <td className="px-3 py-2 text-xs">
-                  {r.download_url ? (
-                    <a href={r.download_url} target="_blank" rel="noreferrer" className="text-primary hover:underline font-heading">
-                      Download
-                    </a>
+                  {r.storage_path ? (
+                    <button
+                      onClick={() => download(r)}
+                      disabled={signing === r.id}
+                      className="text-primary hover:underline font-heading disabled:opacity-50 disabled:no-underline"
+                    >
+                      {signing === r.id ? "Signing…" : "Download"}
+                    </button>
                   ) : "—"}
                 </td>
               </tr>
