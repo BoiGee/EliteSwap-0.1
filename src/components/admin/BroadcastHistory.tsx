@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -78,16 +78,26 @@ export default function BroadcastHistory() {
     fetchRows();
   }, [fetchRows]);
 
+  const openRequestId = useRef<string | null>(null);
+
   const openDetail = async (id: string) => {
+    openRequestId.current = id;
     setOpenId(id);
+    setRecipients([]);
     setRecipientsLoading(true);
     const { data, error } = await supabase
       .from("broadcast_recipients")
       .select("id, email, display_name, suppressed, send_status, error_message")
       .eq("broadcast_id", id)
       .order("send_status");
-    if (!error) setRecipients((data ?? []) as RecipientRow[]);
-    setRecipientsLoading(false);
+    // Guard against a slower earlier request landing after a newer one —
+    // e.g. clicking two different rows in quick succession — which would
+    // otherwise overwrite the currently-open broadcast's list with a
+    // stale one for whichever row was clicked first.
+    if (openRequestId.current === id) {
+      if (!error) setRecipients((data ?? []) as RecipientRow[]);
+      setRecipientsLoading(false);
+    }
   };
 
   const cancelScheduled = async (id: string) => {

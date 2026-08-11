@@ -46,6 +46,20 @@ Deno.serve(async (req) => {
 
   const results: any[] = []
   for (const b of due ?? []) {
+    // Respect the same 15-minute cooldown immediate sends are subject to.
+    // admin-broadcast-email always passes overrideCooldown:true for
+    // fire_scheduled (it has no other way to know "was this checked
+    // already"), so without a check here two broadcasts scheduled a
+    // minute apart would both fire back-to-back with no gap at all —
+    // exactly what the cooldown exists to prevent. Deferring (not
+    // claiming) rather than failing means it's simply picked up again
+    // next tick once the cooldown clears.
+    const { data: cooldown } = await admin.rpc('broadcast_cooldown_remaining_seconds')
+    if (typeof cooldown === 'number' && cooldown > 0) {
+      results.push({ id: b.id, ok: false, deferred: true, cooldownRemainingSeconds: cooldown })
+      continue
+    }
+
     // Mark as sending immediately to claim it and prevent double-fire next tick.
     const { error: claimErr } = await admin
       .from('broadcasts')
