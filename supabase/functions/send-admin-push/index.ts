@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
   const { data: roles } = await admin
     .from("user_roles")
     .select("user_id, role")
-    .in("role", ["admin", "moderator"]);
+    .in("role", ["admin", "moderator", "sec_admin"]);
   const userIds = Array.from(new Set((roles ?? []).map((r: any) => r.user_id).filter(Boolean)));
   if (userIds.length === 0) {
     return new Response(JSON.stringify({ sent: 0, skipped: "no_admins" }), {
