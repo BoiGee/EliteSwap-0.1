@@ -145,6 +145,20 @@ export default function Admin() {
   // until something else happened to trigger a refetch. That includes the
   // sidebar's pending-payments badge, which exists specifically to draw
   // attention to a payment the admin hasn't seen yet.
+  //
+  // This previously relied solely on one long-lived realtime channel, which
+  // makes it a single point of failure: a network blip, laptop sleep, a
+  // corporate firewall killing an idle WebSocket, or any other silent
+  // disconnect leaves the channel dead with no visible error, and the
+  // Overview numbers freeze right where they were — which is exactly what
+  // was reported ("Total Users count got stuck again"). None of those
+  // failure modes are things we can reliably prevent client-side, so instead
+  // of chasing the specific transient cause, this now has two independent
+  // fallbacks that don't depend on the realtime channel staying healthy:
+  // a periodic poll, and a refetch whenever the tab becomes visible again
+  // (the single most common real-world trigger — an admin returning to a
+  // tab they left open). Between the three, the numbers can be stale for
+  // at most ~60s even if realtime never delivers another event.
   useEffect(() => {
     if (!isStaff) return;
     let debounce: ReturnType<typeof setTimeout> | null = null;
@@ -152,6 +166,8 @@ export default function Admin() {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(fetchAll, 500);
     };
+
+    let cleanedUp = false;
     const channel = supabase
       .channel("admin-overview-live")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, scheduleRefresh)
@@ -160,9 +176,30 @@ export default function Admin() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "payments" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "api_keys" }, scheduleRefresh)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "api_keys" }, scheduleRefresh)
-      .subscribe();
+      .subscribe((status) => {
+        if (cleanedUp) return;
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn(`[admin-overview-live] channel ${status.toLowerCase()} — falling back to a manual refetch`);
+          fetchAll();
+        }
+      });
+
+    // Fallback 1: periodic poll, independent of realtime health entirely.
+    const pollInterval = setInterval(fetchAll, 60000);
+
+    // Fallback 2: refetch the moment the admin comes back to this tab —
+    // catches "left it open for hours" immediately instead of waiting for
+    // the next poll tick.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchAll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
+      cleanedUp = true;
       if (debounce) clearTimeout(debounce);
+      clearInterval(pollInterval);
+      document.removeEventListener("visibilitychange", onVisible);
       supabase.removeChannel(channel);
     };
   }, [isStaff, fetchAll]);
