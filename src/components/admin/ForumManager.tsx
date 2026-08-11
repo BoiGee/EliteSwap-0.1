@@ -6,9 +6,18 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import Composer from "@/components/forum/Composer";
 import EditComposer from "@/components/forum/EditComposer";
 import ViewersDialog from "./ViewersDialog";
+import { useAuth } from "@/hooks/useAuth";
 import {
   useForumCategories,
   useCreateThread,
@@ -30,7 +39,7 @@ import {
 import { attachMediaToTarget, getSignedMediaUrl } from "@/lib/forum";
 import { toast } from "sonner";
 import { useAdmin } from "@/hooks/useAdmin";
-import { Check, X, Flag, Trash2, Megaphone, Pin, Lock, Pencil, ExternalLink, Eye, EyeOff, MessageSquare, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, X, Flag, Trash2, Megaphone, Pin, Lock, Pencil, ExternalLink, Eye, EyeOff, MessageSquare, Search, ChevronLeft, ChevronRight, ShieldAlert, ShieldOff, UserX } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 type Tab = "all" | "compose" | "announcements" | "media" | "reports" | "bans";
@@ -56,6 +65,27 @@ interface ReportRow {
   status: "open" | "actioned" | "dismissed";
   reporter_id: string;
   created_at: string;
+  _authorId?: string;
+  _authorLabel?: string;
+}
+
+interface SanctionRow {
+  id: string;
+  user_id: string;
+  type: "warn" | "mute" | "ban";
+  reason: string | null;
+  expires_at: string | null;
+  created_at: string;
+  _label: string;
+  _legacy?: boolean;
+}
+
+async function labelsForUserIds(userIds: string[]): Promise<Record<string, string>> {
+  if (!userIds.length) return {};
+  const { data } = await supabase.from("profiles").select("user_id,email,display_name").in("user_id", userIds);
+  const labels: Record<string, string> = {};
+  for (const p of (data ?? []) as any[]) labels[p.user_id] = p.display_name || p.email || "User";
+  return labels;
 }
 
 function MediaPreview({ id, kind }: { id: string; kind: "image" | "audio" }) {
@@ -70,11 +100,12 @@ function MediaPreview({ id, kind }: { id: string; kind: "image" | "audio" }) {
 
 export default function ForumManager() {
   const { isAdmin } = useAdmin();
+  const { user } = useAuth();
   const [tab, setTab] = useState<Tab>(isAdmin ? "all" : "reports");
 
   const [media, setMedia] = useState<PendingMedia[]>([]);
   const [reports, setReports] = useState<ReportRow[]>([]);
-  const [bans, setBans] = useState<any[]>([]);
+  const [sanctions, setSanctions] = useState<SanctionRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function loadMedia() {
@@ -86,26 +117,60 @@ export default function ForumManager() {
   async function loadReports() {
     setLoading(true);
     const { data } = await supabase.from("forum_reports").select("*").eq("status", "open").order("created_at");
-    setReports((data ?? []) as ReportRow[]);
+    const rows = (data ?? []) as ReportRow[];
+
+    // Resolve the reported content's author so the row can offer a
+    // "Sanction author" action without the admin having to go dig it up.
+    const threadIds = rows.filter((r) => r.target_kind === "thread").map((r) => r.target_id);
+    const replyIds = rows.filter((r) => r.target_kind === "reply").map((r) => r.target_id);
+    const [threadsRes, repliesRes] = await Promise.all([
+      threadIds.length ? supabase.from("forum_threads").select("id,author_id").in("id", threadIds) : Promise.resolve({ data: [] as any[] }),
+      replyIds.length ? supabase.from("forum_replies").select("id,author_id").in("id", replyIds) : Promise.resolve({ data: [] as any[] }),
+    ]);
+    const authorByTarget: Record<string, string> = {};
+    for (const t of (threadsRes.data ?? []) as any[]) authorByTarget[t.id] = t.author_id;
+    for (const r of (repliesRes.data ?? []) as any[]) authorByTarget[r.id] = r.author_id;
+    const labels = await labelsForUserIds(Array.from(new Set(Object.values(authorByTarget))));
+
+    setReports(rows.map((r) => {
+      const authorId = authorByTarget[r.target_id];
+      return { ...r, _authorId: authorId, _authorLabel: authorId ? labels[authorId] ?? authorId.slice(0, 8) : undefined };
+    }));
     setLoading(false);
   }
-  async function loadBans() {
+  async function loadSanctions() {
     setLoading(true);
-    const { data } = await supabase.from("forum_user_stats").select("*").eq("is_banned", true);
-    const userIds = (data ?? []).map((b: any) => b.user_id);
-    let emails: Record<string, string> = {};
-    if (userIds.length) {
-      const { data: profs } = await supabase.from("profiles").select("user_id,email,display_name").in("user_id", userIds);
-      for (const p of profs ?? []) emails[(p as any).user_id] = (p as any).display_name || (p as any).email || "User";
-    }
-    setBans((data ?? []).map((b: any) => ({ ...b, _label: emails[b.user_id] ?? b.user_id })));
+    const [sanctionsRes, legacyRes] = await Promise.all([
+      supabase.from("forum_user_sanctions").select("*").is("lifted_at", null).order("created_at", { ascending: false }),
+      supabase.from("forum_user_stats").select("*").eq("is_banned", true),
+    ]);
+    const active = ((sanctionsRes.data ?? []) as any[]).filter(
+      (s) => !s.expires_at || new Date(s.expires_at) > new Date(),
+    );
+    const legacy = (legacyRes.data ?? []) as any[];
+    const userIds = Array.from(new Set([...active.map((s) => s.user_id), ...legacy.map((b) => b.user_id)]));
+    const labels = await labelsForUserIds(userIds);
+
+    const rows: SanctionRow[] = [
+      ...active.map((s) => ({
+        id: s.id, user_id: s.user_id, type: s.type, reason: s.reason,
+        expires_at: s.expires_at, created_at: s.created_at,
+        _label: labels[s.user_id] ?? s.user_id,
+      })),
+      ...legacy.map((b) => ({
+        id: b.user_id, user_id: b.user_id, type: "ban" as const, reason: b.banned_reason,
+        expires_at: null, created_at: b.banned_at ?? b.updated_at,
+        _label: labels[b.user_id] ?? b.user_id, _legacy: true,
+      })),
+    ];
+    setSanctions(rows);
     setLoading(false);
   }
 
   useEffect(() => {
     if (tab === "media") loadMedia();
     if (tab === "reports") loadReports();
-    if (tab === "bans") loadBans();
+    if (tab === "bans") loadSanctions();
   }, [tab]);
 
   async function moderate(id: string, status: "approved" | "rejected") {
@@ -127,16 +192,36 @@ export default function ForumManager() {
     await supabase.from("forum_reports").update({
       status: action === "dismiss" ? "dismissed" : "actioned",
       handled_at: new Date().toISOString(),
+      handled_by: user?.id ?? null,
     }).eq("id", r.id);
     toast.success("Report handled");
     loadReports();
   }
 
-  async function unban(userId: string) {
-    const { error } = await supabase.from("forum_user_stats").update({
-      is_banned: false, banned_reason: null, banned_at: null,
-    }).eq("user_id", userId);
-    if (error) toast.error(error.message); else { toast.success("Unbanned"); loadBans(); }
+  async function applySanction(userId: string, type: "warn" | "mute" | "ban", reason: string, durationHours: number | null) {
+    const { error } = await supabase.rpc("mod_apply_sanction", {
+      p_user_id: userId,
+      p_type: type,
+      p_reason: reason.trim() || null,
+      p_duration_hours: durationHours,
+    });
+    if (error) { toast.error(error.message); return false; }
+    toast.success(`${type[0].toUpperCase()}${type.slice(1)} applied`);
+    return true;
+  }
+
+  async function liftSanction(s: SanctionRow) {
+    if (s._legacy) {
+      const { error } = await supabase.from("forum_user_stats").update({
+        is_banned: false, banned_reason: null, banned_at: null,
+      }).eq("user_id", s.user_id);
+      if (error) { toast.error(error.message); return; }
+    } else {
+      const { error } = await supabase.rpc("mod_lift_sanction", { p_sanction_id: s.id });
+      if (error) { toast.error(error.message); return; }
+    }
+    toast.success("Lifted");
+    loadSanctions();
   }
 
   return (
@@ -205,13 +290,29 @@ export default function ForumManager() {
                 </span>
               </div>
               {r.details && <p className="text-sm mt-2">{r.details}</p>}
-              <p className="text-xs text-muted-foreground mt-1">Target id: {r.target_id}</p>
-              <div className="flex gap-2 mt-3">
+              <p className="text-xs text-muted-foreground mt-1">
+                Target id: {r.target_id}
+                {r._authorLabel && <> · Author: {r._authorLabel}</>}
+              </p>
+              <div className="flex flex-wrap gap-2 mt-3">
                 <Button size="sm" variant="outline" onClick={() => resolveReport(r, "dismiss")}>Dismiss</Button>
                 <Button size="sm" variant="secondary" onClick={() => resolveReport(r, "hide")}>Hide content</Button>
                 <Button size="sm" variant="destructive" onClick={() => resolveReport(r, "delete")}>
                   <Trash2 className="w-4 h-4 mr-1" /> Delete
                 </Button>
+                {r._authorId && (
+                  <SanctionDialog
+                    userId={r._authorId}
+                    userLabel={r._authorLabel ?? r._authorId.slice(0, 8)}
+                    defaultReason={`Report: ${r.reason}`}
+                    onApplied={loadReports}
+                    trigger={
+                      <Button size="sm" variant="outline">
+                        <ShieldAlert className="w-4 h-4 mr-1" /> Sanction author
+                      </Button>
+                    }
+                  />
+                )}
               </div>
             </Card>
           ))}
@@ -219,20 +320,171 @@ export default function ForumManager() {
       )}
 
       {tab === "bans" && (
-        <div className="space-y-2">
-          {bans.length === 0 && !loading && <p className="text-sm text-muted-foreground">No bans.</p>}
-          {bans.map((b: any) => (
-            <Card key={b.user_id} className="p-3 flex items-center justify-between">
-              <div className="text-sm">
-                <p>{b._label}</p>
-                <p className="text-xs text-muted-foreground">{b.banned_reason}</p>
+        <div className="space-y-3">
+          <ApplySanctionByEmail onApplied={loadSanctions} />
+          {sanctions.length === 0 && !loading && <p className="text-sm text-muted-foreground">No active warnings, mutes, or bans.</p>}
+          {sanctions.map((s) => (
+            <Card key={s.id} className="p-3 flex items-center justify-between gap-3">
+              <div className="text-sm min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-heading font-semibold uppercase ${
+                    s.type === "ban" ? "bg-destructive/20 text-destructive"
+                      : s.type === "mute" ? "bg-amber-500/20 text-amber-500"
+                      : "bg-muted text-muted-foreground"
+                  }`}>{s.type}{s._legacy ? " (legacy)" : ""}</span>
+                  <p className="truncate">{s._label}</p>
+                </div>
+                {s.reason && <p className="text-xs text-muted-foreground mt-0.5">{s.reason}</p>}
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {s.expires_at ? `Expires ${formatDistanceToNow(new Date(s.expires_at), { addSuffix: true })}` : "No expiry"}
+                </p>
               </div>
-              <Button size="sm" variant="outline" onClick={() => unban(b.user_id)}>Unban</Button>
+              <Button size="sm" variant="outline" onClick={() => liftSanction(s)} className="flex-shrink-0">
+                <ShieldOff className="w-4 h-4 mr-1" /> Lift
+              </Button>
             </Card>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function SanctionDialog({
+  userId,
+  userLabel,
+  defaultReason = "",
+  onApplied,
+  trigger,
+}: {
+  userId: string;
+  userLabel: string;
+  defaultReason?: string;
+  onApplied: () => void;
+  trigger: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState<"warn" | "mute" | "ban">("warn");
+  const [reason, setReason] = useState(defaultReason);
+  const [durationHours, setDurationHours] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    setSubmitting(true);
+    const { error } = await supabase.rpc("mod_apply_sanction", {
+      p_user_id: userId,
+      p_type: type,
+      p_reason: reason.trim() || null,
+      p_duration_hours: durationHours.trim() ? Number(durationHours) : null,
+    });
+    setSubmitting(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`${type[0].toUpperCase()}${type.slice(1)} applied to ${userLabel}`);
+    setOpen(false);
+    setReason(defaultReason);
+    setDurationHours("");
+    onApplied();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Sanction {userLabel}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            {(["warn", "mute", "ban"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setType(t)}
+                className={`flex-1 px-2 py-1.5 rounded-md text-xs font-heading font-semibold capitalize border transition-colors ${
+                  type === t ? "bg-primary/20 text-primary border-primary" : "border-border text-muted-foreground hover:bg-muted/50"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {type === "warn"
+              ? "Logged on their record. Does not block posting."
+              : "Blocks posting threads/replies until lifted or expired."}
+          </p>
+          <div className="space-y-1">
+            <Label>Reason</Label>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional" />
+          </div>
+          <div className="space-y-1">
+            <Label>Duration (hours)</Label>
+            <Input
+              type="number"
+              min={1}
+              value={durationHours}
+              onChange={(e) => setDurationHours(e.target.value)}
+              placeholder="Blank = permanent"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={submit} disabled={submitting}>
+            <UserX className="w-4 h-4 mr-1" /> {submitting ? "Applying…" : "Apply"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ApplySanctionByEmail({ onApplied }: { onApplied: () => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Array<{ user_id: string; label: string }>>([]);
+  const [searching, setSearching] = useState(false);
+
+  async function search() {
+    if (!query.trim()) { setResults([]); return; }
+    setSearching(true);
+    const { data } = await supabase
+      .from("profiles")
+      .select("user_id,email,display_name")
+      .or(`email.ilike.%${query.trim()}%,display_name.ilike.%${query.trim()}%`)
+      .limit(5);
+    setResults((data ?? []).map((p: any) => ({ user_id: p.user_id, label: p.display_name || p.email || p.user_id })));
+    setSearching(false);
+  }
+
+  return (
+    <Card className="p-3 space-y-2">
+      <Label className="text-xs">Sanction a user</Label>
+      <form onSubmit={(e) => { e.preventDefault(); search(); }} className="flex items-center gap-1">
+        <div className="relative flex-1">
+          <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by email or name…"
+            className="pl-7 h-8 text-sm"
+          />
+        </div>
+        <Button type="submit" size="sm" variant="outline" disabled={searching}>Search</Button>
+      </form>
+      {results.length > 0 && (
+        <div className="space-y-1">
+          {results.map((r) => (
+            <div key={r.user_id} className="flex items-center justify-between text-sm px-2 py-1 rounded bg-muted/30">
+              <span className="truncate">{r.label}</span>
+              <SanctionDialog
+                userId={r.user_id}
+                userLabel={r.label}
+                onApplied={() => { setResults([]); setQuery(""); onApplied(); }}
+                trigger={<Button size="sm" variant="outline">Sanction…</Button>}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
