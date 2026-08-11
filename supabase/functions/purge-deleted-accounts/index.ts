@@ -57,10 +57,18 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
     "terms_acceptances",
     "user_roles",
     "broadcast_recipients",
-    "payments",
     "partners",
     "profiles",
   ];
+
+  // payments is deliberately NOT in the delete list — per-decision, payment/
+  // transaction records survive account deletion for accounting purposes.
+  // payments.user_id is now ON DELETE SET NULL (was CASCADE), so the row is
+  // automatically anonymized the moment auth.admin.deleteUser() runs below;
+  // no explicit action needed here. This also means partner_override_earnings
+  // tied to this payment (if it ever generated referral commission for
+  // someone else) is no longer collateral damage — its parent payment row
+  // no longer gets deleted out from under it.
 
   // Delete payment_verification_attempts via payment ids first
   const { data: pays } = await admin.from("payments").select("id").eq("user_id", userId);
