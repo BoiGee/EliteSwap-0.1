@@ -28,7 +28,10 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
   // Source partner gets nulled out by deleting partners row below; override rows for beneficiaries stay.
   // No mutation needed here besides ensuring payments delete cascades.
 
-  // Tables keyed by user_id — delete in dependency-safe order.
+  // Tables keyed by user_id — delete in dependency-safe order. Every
+  // .delete().eq('user_id', ...) here is naturally idempotent (deleting an
+  // already-empty set is a no-op), which is what makes it safe to retry
+  // this whole function again on a later cron tick after a partial failure.
   const tables = [
     "studio_sessions",
     "free_trial_assignments",
@@ -37,7 +40,16 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
     "payment_nudge_history",
     "api_keys",
     "partner_attributions",
-    "support_messages",
+    // support_messages has no user_id column (messages are keyed by
+    // conversation_id + sender_id, not the ticket owner directly) — deleting
+    // it here always errored. It doesn't need an explicit entry anyway:
+    // support_messages.conversation_id -> support_conversations(id) is
+    // ON DELETE CASCADE, so a user's own messages are removed automatically
+    // the moment their support_conversations row is deleted below. Left
+    // alone on purpose: messages this user sent as staff replying on a
+    // DIFFERENT customer's ticket (sender_id, no FK) — deleting those would
+    // rip content out of someone else's support history instead of this
+    // user's own data.
     "support_internal_notes",
     "support_conversations",
     "reviews",
@@ -48,42 +60,66 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
     "payments",
     "partners",
     "profiles",
-    "account_deletion_requests",
   ];
 
   // Delete payment_verification_attempts via payment ids first
   const { data: pays } = await admin.from("payments").select("id").eq("user_id", userId);
   const payIds = (pays ?? []).map((p: any) => p.id);
   if (payIds.length) {
-    await admin.from("payment_verification_attempts").delete().in("payment_id", payIds);
+    const { error } = await admin.from("payment_verification_attempts").delete().in("payment_id", payIds);
+    if (error) console.warn(`[purge] payment_verification_attempts: ${error.message}`);
   }
 
+  // Collect every failure instead of only logging it — previously a failed
+  // delete on any of these tables (e.g. an FK constraint added later, or a
+  // transient error) was swallowed by console.warn and the loop pressed on
+  // regardless, still marking the request "purged" and still deleting the
+  // auth login at the end. That leaves the row permanently unretriable
+  // (purged_at is set, so the cron's WHERE purged_at IS NULL never picks it
+  // up again) while some of the user's personal data silently survives —
+  // exactly wrong for a "right to erasure" feature. Now: if anything here
+  // fails, the auth user is NOT deleted and the request is NOT marked
+  // purged, so it's simply retried in full on the next run.
+  const tableErrors: { table: string; error: string }[] = [];
   for (const t of tables) {
     if (t === "payment_verification_attempts") continue;
     if (t === "support_internal_notes") {
-      await admin.from(t).delete().eq("author_id", userId);
-      continue;
-    }
-    if (t === "account_deletion_requests") {
-      // mark purged instead of deleting (for audit). Final delete optional after 30d.
-      await admin.from(t).update({ purged_at: new Date().toISOString() }).eq("user_id", userId);
+      const { error } = await admin.from(t).delete().eq("author_id", userId);
+      if (error) tableErrors.push({ table: t, error: error.message });
       continue;
     }
     const { error } = await admin.from(t).delete().eq("user_id", userId);
-    if (error) console.warn(`[purge] ${t}: ${error.message}`);
+    if (error) tableErrors.push({ table: t, error: error.message });
   }
 
   if (email) {
-    await admin.from("email_send_log").delete().eq("recipient_email", email);
-    await admin.from("email_unsubscribe_tokens").delete().eq("email", email);
+    const { error: e1 } = await admin.from("email_send_log").delete().eq("recipient_email", email);
+    if (e1) tableErrors.push({ table: "email_send_log", error: e1.message });
+    const { error: e2 } = await admin.from("email_unsubscribe_tokens").delete().eq("email", email);
+    if (e2) tableErrors.push({ table: "email_unsubscribe_tokens", error: e2.message });
   }
 
-  // Finally remove auth user
+  if (tableErrors.length) {
+    console.error(`[purge] ${userId}: incomplete, leaving request unmarked for retry`, tableErrors);
+    return { ok: false, error: "Incomplete data cleanup — will retry", tableErrors };
+  }
+
+  // Only now — once every personal-data table is confirmed clear — remove
+  // the auth login and mark the request purged. If deleteUser fails here,
+  // the request is still left unmarked (not purged) so it retries too,
+  // rather than leaving a "ghost" account with data gone but login intact.
   const { error: authErr } = await admin.auth.admin.deleteUser(userId);
   if (authErr) {
     console.error(`[purge] auth.deleteUser ${userId}: ${authErr.message}`);
     return { ok: false, error: authErr.message };
   }
+
+  // mark purged instead of deleting the request row (kept for audit; a
+  // separate 30-day housekeeping pass below hard-deletes old purged rows).
+  await admin.from("account_deletion_requests")
+    .update({ purged_at: new Date().toISOString() })
+    .eq("user_id", userId);
+
   return { ok: true };
 }
 
