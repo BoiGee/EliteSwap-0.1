@@ -278,24 +278,17 @@ export default function PartnerManager({ profiles }: Props) {
       setCreating(false);
       return;
     }
-    const { data: inserted, error } = await supabase
-      .from("partners" as any)
-      .insert({
-        user_id: selectedUserId,
-        code: code.trim().toUpperCase(),
-        display_name: displayName.trim() || null,
-        commission_pct: pctNum,
-      } as any)
-      .select()
-      .single();
+    const { error } = await supabase.rpc("admin_create_partner" as any, {
+      p_user_id: selectedUserId,
+      p_code: code.trim(),
+      p_display_name: displayName.trim() || null,
+      p_commission_pct: pctNum,
+    });
+    setCreating(false);
     if (error) {
-      setCreating(false);
       toast({ title: "Error", description: error.message, variant: "destructive" });
       return;
     }
-    // grant 'partner' role
-    await supabase.from("user_roles").insert({ user_id: selectedUserId, role: "partner" as any });
-    setCreating(false);
     toast({ title: "Partner created 🎉" });
     setSearchEmail("");
     setSelectedUserId("");
@@ -306,7 +299,11 @@ export default function PartnerManager({ profiles }: Props) {
   };
 
   const togglePartner = async (p: PartnerRow) => {
-    await supabase.from("partners" as any).update({ is_active: !p.is_active } as any).eq("id", p.id);
+    const { error } = await supabase.from("partners" as any).update({ is_active: !p.is_active } as any).eq("id", p.id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return;
+    }
     loadPartners();
   };
 
