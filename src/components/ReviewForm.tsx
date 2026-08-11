@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,29 @@ export function ReviewForm({ onSuccess, compact }: ReviewFormProps) {
     user?.user_metadata?.display_name || user?.email?.split("@")[0] || ""
   );
   const [submitting, setSubmitting] = useState(false);
+  const [existingReviewId, setExistingReviewId] = useState<string | null>(null);
+
+  // Reviews are one-per-user (enforced by a unique constraint on user_id) —
+  // load any existing review so re-visiting this form edits it instead of
+  // failing on a duplicate insert.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    supabase
+      .from("reviews")
+      .select("id, display_name, rating, remark")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        setExistingReviewId(data.id);
+        setDisplayName(data.display_name || displayName);
+        setRating(data.rating);
+        setRemark(data.remark);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   if (!user) {
     return (
@@ -51,25 +74,35 @@ export function ReviewForm({ onSuccess, compact }: ReviewFormProps) {
       return;
     }
     setSubmitting(true);
-    const { data: inserted, error } = await supabase.from("reviews").insert({
-      user_id: user.id,
-      display_name: parsed.data.display_name,
-      rating: parsed.data.rating,
-      remark: parsed.data.remark,
-    }).select("id").maybeSingle();
+    const isEdit = !!existingReviewId;
+    const { data: saved, error } = await supabase
+      .from("reviews")
+      .upsert(
+        {
+          user_id: user.id,
+          display_name: parsed.data.display_name,
+          rating: parsed.data.rating,
+          remark: parsed.data.remark,
+        },
+        { onConflict: "user_id" },
+      )
+      .select("id")
+      .maybeSingle();
     setSubmitting(false);
     if (error) {
       toast({ title: "Could not submit", description: error.message, variant: "destructive" });
       return;
     }
-    if (inserted?.id) {
+    if (!isEdit && saved?.id) {
       supabase.functions.invoke("notify-admin-event", {
-        body: { event: "review", reviewId: inserted.id },
+        body: { event: "review", reviewId: saved.id },
       }).catch(() => {});
     }
-    toast({ title: "Thanks for your review! ⭐", description: "It's now live on the homepage." });
-    setRating(0);
-    setRemark("");
+    toast({
+      title: isEdit ? "Review updated ⭐" : "Thanks for your review! ⭐",
+      description: "It's now live on the homepage.",
+    });
+    if (saved?.id) setExistingReviewId(saved.id);
     onSuccess?.();
   };
 
@@ -102,7 +135,7 @@ export function ReviewForm({ onSuccess, compact }: ReviewFormProps) {
         <p className="text-xs text-muted-foreground text-right">{remark.length}/500</p>
       </div>
       <Button type="submit" disabled={submitting} className="w-full neon-glow font-heading font-semibold">
-        {submitting ? "Submitting..." : "Post review ⭐"}
+        {submitting ? "Submitting..." : existingReviewId ? "Update review ⭐" : "Post review ⭐"}
       </Button>
     </form>
   );
