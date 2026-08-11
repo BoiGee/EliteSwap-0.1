@@ -70,18 +70,5 @@ export function useActivityTracker() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [user, trackActivity, updatePresence]);
 
-  // Track before unload
-  useEffect(() => {
-    if (!user) return;
-    const handleUnload = () => {
-      navigator.sendBeacon(
-        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_activity_logs`,
-        JSON.stringify({ user_id: user.id, action: "session_end", page: location.pathname })
-      );
-    };
-    window.addEventListener("beforeunload", handleUnload);
-    return () => window.removeEventListener("beforeunload", handleUnload);
-  }, [user, location.pathname]);
-
   return { trackActivity };
 }
