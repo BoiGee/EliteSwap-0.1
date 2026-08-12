@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -43,7 +44,11 @@ interface TrialRow {
   assigned_key_id: string | null;
   confirmed_at: string | null;
   created_at: string;
+  needs_admin_review: boolean;
 }
+
+const binanceDepositUrl = (ref: string) =>
+  `https://www.binance.com/en/my/wallet/history/deposit-crypto?search=${encodeURIComponent(ref)}`;
 
 export default function TrialPurchaseManager() {
   const { toast } = useToast();
@@ -66,7 +71,7 @@ export default function TrialPurchaseManager() {
     setLoading(true);
     const [tri, prof] = await Promise.all([
       supabase.from("trial_purchases" as any)
-        .select("id,user_id,payment_method,amount_usd,amount_local,currency,status,provider_reference,usdt_network,assigned_key_id,confirmed_at,created_at")
+        .select("id,user_id,payment_method,amount_usd,amount_local,currency,status,provider_reference,usdt_network,assigned_key_id,confirmed_at,created_at,needs_admin_review")
         .order("created_at", { ascending: false })
         .limit(5000),
       supabase.from("profiles").select("user_id,email,display_name").limit(10000),
@@ -146,6 +151,7 @@ export default function TrialPurchaseManager() {
       paystack_count: ps.length,
       assigned_count: confirmed.filter((t) => !!t.assigned_key_id).length,
       pending_count: filteredTrials.filter((t) => t.status === "pending").length,
+      needs_review_count: filteredTrials.filter((t) => t.needs_admin_review).length,
     };
   }, [filteredTrials]);
 
@@ -219,6 +225,7 @@ export default function TrialPurchaseManager() {
           { label: "Momo/Card revenue", value: `${fmtUsd(trialStats.paystack_usd)} (${trialStats.paystack_count})`, icon: "💳" },
           { label: "Keys auto-assigned", value: String(trialStats.assigned_count), icon: "🔑" },
           { label: "Pending trials", value: String(trialStats.pending_count), icon: "⏳" },
+          { label: "Needs manual review", value: String(trialStats.needs_review_count), icon: "🟡" },
         ].map((s) => (
           <div key={s.label} className="glass neon-border rounded-xl p-4 space-y-1">
             <div className="text-xl">{s.icon}</div>
@@ -323,13 +330,37 @@ export default function TrialPurchaseManager() {
                   <TableCell className="text-xs">{method}</TableCell>
                   <TableCell className="text-xs text-right">{fmtUsd(t.amount_usd)}</TableCell>
                   <TableCell className="text-xs">{t.amount_local ? `${t.amount_local} ${t.currency || ""}` : "—"}</TableCell>
-                  <TableCell className="text-xs font-mono truncate max-w-[160px]">{t.provider_reference || "—"}</TableCell>
+                  <TableCell className="text-xs font-mono truncate max-w-[160px]">
+                    {t.provider_reference || "—"}
+                    {t.needs_admin_review && t.provider_reference && (
+                      <a
+                        href={binanceDepositUrl(t.provider_reference)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-[10px] font-heading font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+                      >
+                        Binance Deposit History ↗
+                      </a>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] ${t.assigned_key_id ? "bg-emerald-500/15 text-emerald-400" : "bg-muted/30 text-muted-foreground"}`}>
                       {t.assigned_key_id ? "Assigned" : "—"}
                     </span>
                   </TableCell>
-                  <TableCell className="text-xs">{t.status}</TableCell>
+                  <TableCell className="text-xs">
+                    <div className="flex flex-col gap-1 items-start">
+                      <span>{t.status}</span>
+                      {t.needs_admin_review && (
+                        <Badge
+                          variant="outline"
+                          className="font-heading font-semibold text-[10px] bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
+                        >
+                          Binance off-chain
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-xs">
                     <div className="flex flex-wrap gap-1">
                       {(t.status !== "confirmed" || !t.assigned_key_id) && (

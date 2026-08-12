@@ -1,6 +1,7 @@
 // Verify a trial purchase and assign a key on success.
 // Body: { purchase_id?: string, reference?: string, tx_hash?: string }
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { isOffchainRef } from "../_shared/offchain-ref.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -204,6 +205,42 @@ Deno.serve(async (req) => {
           .update({ provider_reference: txHash })
           .eq("id", purchase.id)
           .is("provider_reference", null);
+      }
+
+      // Off-chain (Binance internal transfer) short-circuit — mirrors the
+      // main crypto-payment verifier. Merchant USDT addresses are Binance
+      // deposit addresses; a Binance-to-Binance internal transfer never hits
+      // a public chain, so no explorer will ever find this "hash". Detect it
+      // by shape before wasting an explorer call, flag the purchase for
+      // admin review (so the 24h reconcile sweep won't silently fail it),
+      // and notify admin once. Admin verifies in Binance -> Deposit History
+      // and confirms/rejects via the existing trial-purchase admin UI.
+      if (isOffchainRef(purchase.usdt_network || purchase.currency || "", txHash)) {
+        if (!purchase.needs_admin_review) {
+          await admin
+            .from("trial_purchases")
+            .update({ needs_admin_review: true })
+            .eq("id", purchase.id);
+          try {
+            await admin.functions.invoke("send-admin-push", {
+              body: {
+                event: "trial_binance_offchain_review",
+                title: "Trial payment needs manual review",
+                body: `$${Number(purchase.amount_usd) || 10} • suspected Binance off-chain transfer • ${purchase.usdt_network || "USDT"}`,
+                url: "/admin",
+                tag: `trial-offchain-${purchase.id}`,
+              },
+            });
+          } catch (e) {
+            console.warn("[verify-trial-payment] offchain notify failed", e);
+          }
+        }
+        return json({
+          status: "pending",
+          reason: "offchain_suspected_binance",
+          hash_saved: true,
+          needs_admin_review: true,
+        });
       }
 
       let verdict: { ok: boolean; reason: string; usdt?: number; confirmations?: number };

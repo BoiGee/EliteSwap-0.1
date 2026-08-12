@@ -58,11 +58,17 @@ Deno.serve(async (req) => {
   }
 
   // Also expire ancient pending ones (>24h) — both Paystack and USDT.
+  // Excludes rows flagged needs_admin_review: those are suspected Binance
+  // off-chain/internal transfers (see verify-trial-payment) that require an
+  // admin's manual confirm/reject, and must never be silently auto-failed by
+  // this sweep — that would bypass the same "admin must confirm" policy the
+  // main crypto-payment flow enforces for the identical scenario.
   const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data: expired } = await admin
     .from("trial_purchases")
     .update({ status: "failed" })
     .eq("status", "pending")
+    .eq("needs_admin_review", false)
     .in("payment_method", ["paystack", "usdt"])
     .lt("created_at", expiredAt)
     .select("id");

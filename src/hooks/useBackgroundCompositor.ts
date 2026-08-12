@@ -101,9 +101,28 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     gl.enableVertexAttribArray(posLoc);
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
+    // Each texture must be created while ITS OWN unit is active. createTexture()
+    // binds whatever it creates to the currently-active unit — without these
+    // activeTexture() calls, all three would land on unit 0 (the default),
+    // and units 1/2 would have nothing bound at all until the background
+    // image loads / the first segmentation result arrives. Sampling an
+    // unbound WebGL texture unit returns (0,0,0,0), which zeroed out the
+    // mask's alpha exactly like the black-placeholder bug this was meant to
+    // fix — confirmed by testing: setting a white placeholder alone did not
+    // change the observed output, because it was never actually bound to
+    // unit 2 in the first place.
+    gl.activeTexture(gl.TEXTURE0);
     const videoTex = createTexture(gl);
+    gl.activeTexture(gl.TEXTURE1);
     const bgTex = createTexture(gl);
-    const maskTex = createTexture(gl);
+    // White placeholder: the mask's red channel is read directly as alpha
+    // (fully-foreground = 1). Before the first real segmentation result
+    // arrives — or if the worker never becomes ready at all (slow/failed
+    // model load, unsupported browser) — this must default to showing the
+    // person/swap, not to a black placeholder that reads as alpha=0 and
+    // hides them behind the background image indefinitely.
+    gl.activeTexture(gl.TEXTURE2);
+    const maskTex = createTexture(gl, [255, 255, 255, 255]);
     texturesRef.current = { video: videoTex, background: bgTex, mask: maskTex };
 
     uniformsRef.current = {
@@ -149,6 +168,17 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     const worker = new Worker(new URL("../workers/backgroundSegmentation.worker.ts", import.meta.url), {
       type: "module",
     });
+    // Without this, a worker that fails to start (model/WASM fetch failure,
+    // unsupported browser) never posts "ready" and never posts an "error"
+    // message either — it just silently never segments again, leaving the
+    // white placeholder mask in place. That's the safe fallback now (see
+    // the mask texture above), but still worth surfacing so it's visible in
+    // the console instead of looking like AI Background quietly did nothing.
+    worker.onerror = (e) => {
+      console.warn("[backgroundCompositor] segmentation worker failed to start", e.message);
+      workerReadyRef.current = false;
+      segmentBusyRef.current = false;
+    };
     worker.onmessage = (e: MessageEvent<BackgroundSegmentationResponse>) => {
       const msg = e.data;
       if (msg.kind === "ready") {

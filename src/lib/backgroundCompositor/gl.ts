@@ -80,7 +80,7 @@ export function createProgram(gl: WebGLRenderingContext): WebGLProgram {
   return program;
 }
 
-export function createTexture(gl: WebGLRenderingContext): WebGLTexture {
+export function createTexture(gl: WebGLRenderingContext, placeholder: [number, number, number, number] = [0, 0, 0, 255]): WebGLTexture {
   const tex = gl.createTexture();
   if (!tex) throw new Error("Failed to create texture");
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -88,9 +88,12 @@ export function createTexture(gl: WebGLRenderingContext): WebGLTexture {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  // 1x1 transparent-ish placeholder so the first few frames before real data
-  // arrives don't sample garbage.
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+  // 1x1 placeholder so the first few frames before real data arrives don't
+  // sample garbage. Callers pick the color deliberately — see the mask
+  // texture in useBackgroundCompositor, which needs white (not this default
+  // black) so an unready mask reads as "fully foreground" instead of
+  // silently hiding the person behind the background image.
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(placeholder));
   return tex;
 }
 
