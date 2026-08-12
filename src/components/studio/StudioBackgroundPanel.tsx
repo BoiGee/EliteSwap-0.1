@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Image as ImageIcon, Trash2, Upload, Sparkles, Palette } from "lucide-react";
+import { Image as ImageIcon, Trash2, Upload } from "lucide-react";
 import type { BackgroundConfig, BackgroundMode } from "@/hooks/useBackgroundCompositor";
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
@@ -53,9 +53,17 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       );
       setThumbUrls(urls);
       const active = list.find((r) => r.is_active);
+      // Chroma-key only, always — "AI Background" (MediaPipe segmentation)
+      // cannot run on this GitHub Pages deployment at all: it needs
+      // SharedArrayBuffer, which needs COOP/COEP response headers, which
+      // GitHub Pages has no way to serve. Confirmed directly (segmenter
+      // creation only succeeds with those headers present; every real
+      // session is missing them). Forcing chromakey here client-side means
+      // even a pre-existing row still carrying the old 'segmentation'
+      // default gets the working mode, without waiting on a data migration.
       onActiveChange(
         active && urls[active.id]
-          ? { imageUrl: urls[active.id], mode: active.mode, chromaKeyColor: active.chroma_key_color ?? undefined }
+          ? { imageUrl: urls[active.id], mode: "chromakey", chromaKeyColor: active.chroma_key_color ?? "#00b140" }
           : null,
       );
     }
@@ -85,11 +93,17 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       setUploading(false);
       return;
     }
+    // Explicit chromakey — the table's column default is still the old
+    // 'segmentation' value pending a migration; setting it here means new
+    // uploads get the working mode immediately regardless of that migration's
+    // timing.
     const { error: insErr } = await supabase.from("studio_backgrounds" as any).insert({
       user_id: user.id,
       storage_path: path,
       file_name: file.name,
       file_size: file.size,
+      mode: "chromakey",
+      chroma_key_color: "#00b140",
     } as any);
     setUploading(false);
     if (insErr) {
@@ -114,12 +128,12 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
     await load();
   };
 
-  const setMode = async (id: string, mode: BackgroundMode, chromaKeyColor?: string) => {
+  const setChromaColor = async (id: string, chromaKeyColor: string) => {
     const { error } = await supabase
       .from("studio_backgrounds" as any)
-      .update({ mode, chroma_key_color: chromaKeyColor ?? null } as any)
+      .update({ mode: "chromakey", chroma_key_color: chromaKeyColor } as any)
       .eq("id", id);
-    if (error) { toast({ title: "Couldn't update mode", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: "Couldn't update color", description: error.message, variant: "destructive" }); return; }
     await load();
   };
 
@@ -140,7 +154,7 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-heading font-semibold">PRO</span>
       </div>
       <p className="text-xs text-muted-foreground">
-        Upload an image to replace what's behind you in the output — AI-segmented, or chroma-key if you have a physical green screen.
+        Upload an image to replace what's behind you in the output. Requires a physical green screen (chroma-key) — point your green/solid-colored screen at the camera and pick a matching color below.
       </p>
 
       <input type="file" ref={fileRef} onChange={handleUpload} accept="image/jpeg,image/png,image/webp" className="hidden" />
@@ -193,36 +207,15 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
 
       {activeRow && (
         <div className="pt-2 border-t border-border space-y-2">
-          <p className="text-[11px] text-muted-foreground font-heading">Compositing mode</p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant={activeRow.mode === "segmentation" ? "default" : "outline"}
-              className="flex-1 gap-1.5 text-xs"
-              onClick={() => setMode(activeRow.id, "segmentation")}
-            >
-              <Sparkles className="w-3.5 h-3.5" /> AI Background
-            </Button>
-            <Button
-              size="sm"
-              variant={activeRow.mode === "chromakey" ? "default" : "outline"}
-              className="flex-1 gap-1.5 text-xs"
-              onClick={() => setMode(activeRow.id, "chromakey", activeRow.chroma_key_color ?? "#00b140")}
-            >
-              <Palette className="w-3.5 h-3.5" /> Green Screen
-            </Button>
+          <div className="flex items-center gap-2">
+            <label className="text-[11px] text-muted-foreground font-heading">Green screen color</label>
+            <input
+              type="color"
+              value={activeRow.chroma_key_color ?? "#00b140"}
+              onChange={(e) => setChromaColor(activeRow.id, e.target.value)}
+              className="h-6 w-10 rounded border border-border bg-transparent cursor-pointer"
+            />
           </div>
-          {activeRow.mode === "chromakey" && (
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-muted-foreground font-heading">Screen color</label>
-              <input
-                type="color"
-                value={activeRow.chroma_key_color ?? "#00b140"}
-                onChange={(e) => setMode(activeRow.id, "chromakey", e.target.value)}
-                className="h-6 w-10 rounded border border-border bg-transparent cursor-pointer"
-              />
-            </div>
-          )}
         </div>
       )}
     </div>
