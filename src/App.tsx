@@ -79,15 +79,30 @@ function ActivityTrackerWrapper({ children }: { children: React.ReactNode }) {
 // assumes admins land on /admin. Runs early (right after roles resolve) and
 // updates the live DOM node, which is what iOS reads at install time — not
 // a cached snapshot from initial page load.
+//
+// iOS Safari caches the web app manifest per URL at the WebKit level,
+// independent of HTTP Cache-Control — swapping the href alone can still
+// show a stale Add to Home Screen preview if that exact path was ever
+// fetched before under a different role. `?r=admin`/`?r=user` makes the two
+// hrefs genuinely different resources so there's nothing to reuse, and the
+// <link> element itself is replaced (not just its href mutated) in case
+// WebKit also keys off node identity.
 function ManifestLinkSwitcher() {
   const { isStaff, loading } = useAdmin();
   useEffect(() => {
     if (loading) return;
-    const link = document.querySelector('link[rel="manifest"]');
-    if (!link) return;
     const file = isStaff ? "manifest-admin.webmanifest" : "manifest.webmanifest";
-    const target = `${import.meta.env.BASE_URL}${file}`;
-    if (link.getAttribute("href") !== target) link.setAttribute("href", target);
+    const role = isStaff ? "admin" : "user";
+    const target = `${import.meta.env.BASE_URL}${file}?r=${role}`;
+
+    const existing = document.querySelectorAll('link[rel="manifest"]');
+    if (existing.length === 1 && existing[0].getAttribute("href") === target) return;
+    existing.forEach((el) => el.remove());
+
+    const link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = target;
+    document.head.appendChild(link);
   }, [isStaff, loading]);
   return null;
 }
