@@ -1,0 +1,31 @@
+-- CRITICAL bug, introduced by this session's own earlier fix
+-- (20260812140000_trial_keys_auto_generate.sql) and found while
+-- investigating ploly1987@gmail.com having 232 trial API keys against a
+-- cap of 2.
+--
+-- Root cause: assign_trial_key_from_purchase() now INSERTs a fresh,
+-- already-claimed row into free_trial_keys on every call (replacing the
+-- old finite-pool draw). But trg_free_trial_keys_fulfill_backlog fires
+-- AFTER INSERT on free_trial_keys and re-scans EVERY confirmed+unassigned
+-- trial_purchases row, calling assign_trial_key_from_purchase() again for
+-- each — including the very purchase currently mid-assignment, since its
+-- trial_purchases.assigned_key_id UPDATE happens AFTER the free_trial_keys
+-- insert that triggers this. Each recursive call inserts another
+-- free_trial_keys row, which fires the trigger again, recursing until
+-- Postgres's stack depth limit is hit. Confirmed live: 232 api_keys rows
+-- created from a single confirmed trial_purchases row for
+-- debraburdett6@gmail.com, ploly1987@gmail.com, and enisame11@gmail.com
+-- (232 recursion levels before the stack limit), plus 12 more users with
+-- 3-4 duplicate keys (recursion interrupted earlier by a
+-- free_trial_assignments unique-constraint conflict on retry). This is
+-- itself a studio-time-theft vector — hundreds of valid, active 4-minute
+-- trial keys handed to single accounts against a 2-trial cap.
+--
+-- The old trigger's entire purpose — "when the pool refills, clear the
+-- backlog of purchases that couldn't be assigned because the pool was
+-- empty" — no longer applies: assign_trial_key_from_purchase() can never
+-- fail with "No trial keys available" anymore, so a confirmed purchase can
+-- never legitimately sit unassigned waiting for restock. The trigger is
+-- now pure recursion hazard with no remaining purpose. Dropping it.
+DROP TRIGGER IF EXISTS trg_free_trial_keys_fulfill_backlog ON public.free_trial_keys;
+DROP FUNCTION IF EXISTS public.tg_free_trial_keys_fulfill_backlog();
