@@ -68,6 +68,30 @@ function ActivityTrackerWrapper({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// The PWA manifest's start_url was hardcoded to /dashboard, so an admin who
+// installs the app to their iPhone home screen (required for Web Push to
+// work at all on iOS — Safari doesn't support Notification/Push in a regular
+// tab) always relaunches into the user dashboard instead of /admin, with no
+// admin controls in sight. Swaps which manifest is linked based on role
+// before the admin ever taps Share → Add to Home Screen, so their install
+// gets its own start_url — a separate installed icon from a regular user's,
+// same as the existing per-notification deep-linking in sw.js already
+// assumes admins land on /admin. Runs early (right after roles resolve) and
+// updates the live DOM node, which is what iOS reads at install time — not
+// a cached snapshot from initial page load.
+function ManifestLinkSwitcher() {
+  const { isStaff, loading } = useAdmin();
+  useEffect(() => {
+    if (loading) return;
+    const link = document.querySelector('link[rel="manifest"]');
+    if (!link) return;
+    const file = isStaff ? "manifest-admin.webmanifest" : "manifest.webmanifest";
+    const target = `${import.meta.env.BASE_URL}${file}`;
+    if (link.getAttribute("href") !== target) link.setAttribute("href", target);
+  }, [isStaff, loading]);
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -82,6 +106,7 @@ const App = () => (
         <AuthProvider>
           <TranslationProvider>
           <ActivityTrackerWrapper>
+            <ManifestLinkSwitcher />
             <AuthRateLimitBanner />
             <SystemAnnouncementBanner />
             <Suspense fallback={<LazyFallback />}>
