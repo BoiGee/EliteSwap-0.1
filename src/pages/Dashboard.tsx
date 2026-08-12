@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useAdmin } from "@/hooks/useAdmin";
 import { supabase } from "@/integrations/supabase/client";
 import { CryptoPayment } from "@/components/CryptoPayment";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ interface Payment {
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
+  const { isStaff } = useAdmin();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -353,6 +355,21 @@ export default function Dashboard() {
         <h1 className="text-xl font-heading font-bold gradient-text">Elite Swap</h1>
         <div className="flex items-center gap-2 sm:gap-3">
           <span className="hidden sm:inline text-xs text-muted-foreground font-heading">{user?.email}</span>
+          {isStaff && (
+            // Dashboard never checked admin status before, so staff who
+            // landed here (any installed-app-on-iOS quirk that opens to
+            // /dashboard, a bookmark, a stale session) had no way back to
+            // /admin — standalone PWAs hide the address bar, so there was
+            // no escape hatch at all short of manually retyping the URL.
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/admin")}
+              className="font-heading text-xs neon-border"
+            >
+              Admin
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
