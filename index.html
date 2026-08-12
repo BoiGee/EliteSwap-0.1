@@ -8,12 +8,34 @@
     <meta name="author" content="EliteSwap" />
     <meta name="keywords" content="EliteSwap, Elite Swap, AI face swap, realtime face swap, OBS face swap, AI character swap, deepfake OBS, webcam face swap" />
 
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="/manifest.webmanifest" id="app-manifest-link" />
     <meta name="theme-color" content="#0b0b0f" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="EliteSwap" />
+    <meta name="apple-mobile-web-app-title" content="EliteSwap" id="app-web-app-title" />
     <link rel="apple-touch-icon" href="/favicon.ico" />
+    <script>
+      // iOS Safari's "Add to Home Screen" reads the manifest during initial
+      // HTML parsing — a React effect that swaps the <link> after the app
+      // has mounted and an async role check has resolved runs far too late
+      // to affect it (confirmed on-device: the share-sheet preview still
+      // showed the default target even with a brand-new, never-before-seen
+      // manifest URL, ruling out a caching explanation on its own). This
+      // runs synchronously, before the browser parses anything past it, off
+      // a flag the app writes to localStorage once it knows the signed-in
+      // user's role — so on every load *after* the first, the correct
+      // manifest is already linked before Safari ever looks at it.
+      (function () {
+        try {
+          if (localStorage.getItem("elite-pwa-role") === "admin") {
+            var link = document.getElementById("app-manifest-link");
+            if (link) link.setAttribute("href", "/manifest-admin.webmanifest?r=admin");
+            var title = document.getElementById("app-web-app-title");
+            if (title) title.setAttribute("content", "EliteSwap Admin");
+          }
+        } catch (e) {}
+      })();
+    </script>
 
 
 

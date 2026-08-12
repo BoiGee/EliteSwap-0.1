@@ -72,37 +72,49 @@ function ActivityTrackerWrapper({ children }: { children: React.ReactNode }) {
 // installs the app to their iPhone home screen (required for Web Push to
 // work at all on iOS — Safari doesn't support Notification/Push in a regular
 // tab) always relaunches into the user dashboard instead of /admin, with no
-// admin controls in sight. Swaps which manifest is linked based on role
-// before the admin ever taps Share → Add to Home Screen, so their install
-// gets its own start_url — a separate installed icon from a regular user's,
-// same as the existing per-notification deep-linking in sw.js already
-// assumes admins land on /admin. Runs early (right after roles resolve) and
-// updates the live DOM node, which is what iOS reads at install time — not
-// a cached snapshot from initial page load.
+// admin controls in sight.
 //
-// iOS Safari caches the web app manifest per URL at the WebKit level,
-// independent of HTTP Cache-Control — swapping the href alone can still
-// show a stale Add to Home Screen preview if that exact path was ever
-// fetched before under a different role. `?r=admin`/`?r=user` makes the two
-// hrefs genuinely different resources so there's nothing to reuse, and the
-// <link> element itself is replaced (not just its href mutated) in case
-// WebKit also keys off node identity.
+// This used to swap the <link rel="manifest"> via a React effect after
+// mount. Confirmed on-device that doesn't work: iOS Safari's Add to Home
+// Screen preview still showed the default target even with a brand-new,
+// never-before-seen manifest URL (ruling out simple caching) while the
+// address bar correctly showed /admin — meaning Safari reads the manifest
+// during initial HTML parsing, before a post-mount async role check could
+// ever finish. The actual swap now happens synchronously in index.html
+// (see the inline script there), driven by a localStorage flag. This
+// component's only remaining job is writing that flag once the role is
+// known, so it's already set by the *next* load — and, for the current
+// session before that flag exists, applying the same swap as a fallback in
+// case the user tries to install before ever having reloaded post-login.
 function ManifestLinkSwitcher() {
   const { isStaff, loading } = useAdmin();
   useEffect(() => {
     if (loading) return;
-    const file = isStaff ? "manifest-admin.webmanifest" : "manifest.webmanifest";
-    const role = isStaff ? "admin" : "user";
-    const target = `${import.meta.env.BASE_URL}${file}?r=${role}`;
+    try { localStorage.setItem("elite-pwa-role", isStaff ? "admin" : "user"); } catch { /* noop */ }
 
+    // Also correct the DOM within the current session (e.g. a shared device
+    // where a previous admin session's localStorage flag caused the inline
+    // script to link the admin manifest for someone who then turns out not
+    // to be staff this time — the fallback needs to be able to revert, not
+    // just apply). Non-staff targets the plain default with no query string
+    // so this doesn't churn the DOM on every load for the common case —
+    // that's already what index.html ships with.
+    const target = isStaff
+      ? `${import.meta.env.BASE_URL}manifest-admin.webmanifest?r=admin`
+      : `${import.meta.env.BASE_URL}manifest.webmanifest`;
     const existing = document.querySelectorAll('link[rel="manifest"]');
-    if (existing.length === 1 && existing[0].getAttribute("href") === target) return;
-    existing.forEach((el) => el.remove());
-
-    const link = document.createElement("link");
-    link.rel = "manifest";
-    link.href = target;
-    document.head.appendChild(link);
+    if (!(existing.length === 1 && existing[0].getAttribute("href") === target)) {
+      existing.forEach((el) => el.remove());
+      const link = document.createElement("link");
+      link.rel = "manifest";
+      link.href = target;
+      document.head.appendChild(link);
+    }
+    const title = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    const wantTitle = isStaff ? "EliteSwap Admin" : "EliteSwap";
+    if (title && title.getAttribute("content") !== wantTitle) {
+      title.setAttribute("content", wantTitle);
+    }
   }, [isStaff, loading]);
   return null;
 }
