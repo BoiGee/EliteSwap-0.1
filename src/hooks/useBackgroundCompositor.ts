@@ -62,6 +62,14 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
   const lastSegmentAtRef = useRef(0);
   const segmentBusyRef = useRef(false);
   const emaInferenceRef = useRef<number | null>(null);
+  // True only once a REAL segmentation result has ever been applied. Until
+  // then (initial model warmup, or the worker never becoming ready at all —
+  // slow/failed WASM+model fetch, unsupported browser), segmentation mode
+  // forces the shader into passthrough (uMode 2, alpha always 1) instead of
+  // sampling the mask texture at all. This is deliberately redundant with
+  // the mask texture's white placeholder above — two independent mechanisms
+  // that both have to fail for the person/swap to ever be hidden.
+  const hasReceivedMaskRef = useRef(false);
   const nextRequestIdRef = useRef(1);
   const configRef = useRef<BackgroundConfig | null>(config);
   const qualityTierRef = useRef<QualityTier>(qualityTier);
@@ -192,6 +200,7 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
       }
       if (msg.kind === "mask") {
         segmentBusyRef.current = false;
+        hasReceivedMaskRef.current = true;
         const prevEma = emaInferenceRef.current;
         emaInferenceRef.current = prevEma == null ? msg.inferenceMs : prevEma * 0.7 + msg.inferenceMs * 0.3;
         if (mountedRef.current) {
@@ -258,7 +267,8 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     gl.bindTexture(gl.TEXTURE_2D, textures.video);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
 
-    gl.uniform1i(uniformsRef.current.uMode, cfg.mode === "chromakey" ? 1 : 0);
+    const segmentationMode = cfg.mode !== "chromakey" && !hasReceivedMaskRef.current ? 2 : cfg.mode === "chromakey" ? 1 : 0;
+    gl.uniform1i(uniformsRef.current.uMode, segmentationMode);
     if (cfg.mode === "chromakey") {
       const [r, g, b] = hexToRgb01(cfg.chromaKeyColor || "#00b140");
       gl.uniform3f(uniformsRef.current.uKeyColor, r, g, b);
@@ -290,6 +300,7 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     workerReadyRef.current = false;
     segmentBusyRef.current = false;
     emaInferenceRef.current = null;
+    hasReceivedMaskRef.current = false;
   }, []);
 
   // Activate/deactivate compositing when config changes.

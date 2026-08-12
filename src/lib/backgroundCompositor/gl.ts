@@ -16,7 +16,10 @@ void main() {
 `;
 
 // uMode: 0 = segmentation (alpha from uMask), 1 = chroma-key (alpha computed
-// from color distance to uKeyColor).
+// from color distance to uKeyColor), 2 = forced passthrough (alpha always 1
+// — used whenever segmentation hasn't produced a real mask yet, so the
+// person/swap is guaranteed visible without depending on mask texture
+// contents or binding at all; see hasReceivedMaskRef in useBackgroundCompositor).
 export const FRAGMENT_SHADER_SRC = `
 precision mediump float;
 varying vec2 vUv;
@@ -41,7 +44,9 @@ void main() {
   vec4 fg = texture2D(uVideo, vUv);
   vec4 bg = texture2D(uBackground, vUv);
   float alpha;
-  if (uMode == 1) {
+  if (uMode == 2) {
+    alpha = 1.0;
+  } else if (uMode == 1) {
     alpha = chromaAlpha(fg.rgb);
   } else {
     alpha = texture2D(uMask, vUv).r;
