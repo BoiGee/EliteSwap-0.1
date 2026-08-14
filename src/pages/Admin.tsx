@@ -48,7 +48,7 @@ interface Profile {
 
 interface Payment {
   id: string;
-  user_id: string;
+  user_id: string | null;
   currency: string;
   amount_usd: number | null;
   tx_hash: string | null;
@@ -335,7 +335,8 @@ export default function Admin() {
     setTab("analytics");
   }
 
-  const emailForUser = (userId: string) => profiles.find((p) => p.user_id === userId)?.email ?? userId.slice(0, 8);
+  const emailForUser = (userId: string | null) =>
+    (userId && profiles.find((p) => p.user_id === userId)?.email) ?? (userId ? userId.slice(0, 8) : "deleted account");
 
   return (
     <div className="min-h-screen flex flex-col">

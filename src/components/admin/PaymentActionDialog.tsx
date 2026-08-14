@@ -72,7 +72,7 @@ const REJECT_PRESETS: { id: string; label: string; note: string }[] = [
 
 interface Payment {
   id: string;
-  user_id: string;
+  user_id: string | null;
   currency: string;
   amount_usd: number | null;
   tx_hash: string | null;
@@ -270,7 +270,7 @@ export default function PaymentActionDialog({
 
         <div className="space-y-3 text-sm">
           <div className="glass rounded-lg p-3 space-y-1.5 text-xs">
-            <Row label="User" value={profile?.email ?? payment.user_id.slice(0, 8)} />
+            <Row label="User" value={profile?.email ?? (payment.user_id ? payment.user_id.slice(0, 8) : "deleted account")} />
             <Row label="Amount" value={payment.amount_usd != null ? `$${payment.amount_usd.toFixed(2)} USD` : "—"} />
             <Row label="Method" value={method} />
             <Row label="Reference" value={reference} mono />

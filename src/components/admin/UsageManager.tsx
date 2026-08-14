@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 
 interface UsageRow {
-  user_id: string;
+  user_id: string | null;
   email: string | null;
   display_name: string | null;
   total_sessions: number;
@@ -240,10 +240,10 @@ export default function UsageManager() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((r) => (
-              <TableRow key={r.user_id}>
+            {filtered.map((r, i) => (
+              <TableRow key={r.user_id ?? `deleted-${i}`}>
                 <TableCell className="text-xs">
-                  <div className="font-heading">{r.email ?? r.user_id.slice(0, 8)}</div>
+                  <div className="font-heading">{r.email ?? (r.user_id ? r.user_id.slice(0, 8) : "deleted account")}</div>
                   {r.display_name && (
                     <div className="text-muted-foreground">{r.display_name}</div>
                   )}

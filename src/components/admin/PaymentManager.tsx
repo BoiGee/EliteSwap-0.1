@@ -8,7 +8,7 @@ import PaymentActionDialog from "./PaymentActionDialog";
 
 interface Payment {
   id: string;
-  user_id: string;
+  user_id: string | null;
   currency: string;
   amount_usd: number | null;
   tx_hash: string | null;
@@ -43,13 +43,13 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
     setDialogOpen(true);
   };
 
-  const profileFor = (uid: string) => profiles.find((p) => p.user_id === uid) ?? null;
+  const profileFor = (uid: string | null) => (uid ? profiles.find((p) => p.user_id === uid) : null) ?? null;
 
-  const emailForUser = (userId: string) =>
-    profiles.find((p) => p.user_id === userId)?.email ?? userId.slice(0, 8);
+  const emailForUser = (userId: string | null) =>
+    (userId && profiles.find((p) => p.user_id === userId)?.email) ?? (userId ? userId.slice(0, 8) : "deleted account");
 
-  const displayNameForUser = (userId: string) =>
-    profiles.find((p) => p.user_id === userId)?.display_name ?? "—";
+  const displayNameForUser = (userId: string | null) =>
+    (userId && profiles.find((p) => p.user_id === userId)?.display_name) ?? "—";
 
   const filtered = filter === "all" ? payments : payments.filter((p) => p.status === filter);
 
@@ -196,7 +196,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                         </div>
                         <div>
                           <span className="text-muted-foreground font-heading block">User ID</span>
-                          <span className="font-mono text-foreground break-all">{p.user_id}</span>
+                          <span className="font-mono text-foreground break-all">{p.user_id ?? "— (account deleted)"}</span>
                         </div>
                         <div>
                           <span className="text-muted-foreground font-heading block">Display Name</span>

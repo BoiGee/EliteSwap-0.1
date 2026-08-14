@@ -81,7 +81,7 @@ interface PartnerRollup {
 
 interface PaymentRow {
   id: string;
-  user_id: string;
+  user_id: string | null;
   plan_id: string | null;
   amount_usd: number | null;
   currency: string | null;
@@ -479,7 +479,7 @@ export default function FinanceManager() {
                 {filteredPayments.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell className="text-xs">{new Date(p.created_at).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-xs truncate max-w-[180px]">{profiles[p.user_id] || p.user_id.slice(0, 8)}</TableCell>
+                    <TableCell className="text-xs truncate max-w-[180px]">{(p.user_id && profiles[p.user_id]) || (p.user_id ? p.user_id.slice(0, 8) : "deleted account")}</TableCell>
                     <TableCell className="text-xs">{p.plan_id ? plans[p.plan_id] || "—" : "—"}</TableCell>
                     <TableCell className="text-xs text-right">{fmtUsd(p.amount_usd)}</TableCell>
                     <TableCell className="text-xs">{p.currency || "—"}</TableCell>
