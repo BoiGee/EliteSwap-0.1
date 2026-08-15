@@ -18,6 +18,7 @@ import {
   Plus,
   Trash2,
   Flag,
+  MessageSquarePlus,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -171,6 +172,9 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [notesOpen, setNotesOpen] = useState(false);
   const [cannedMgrOpen, setCannedMgrOpen] = useState(false);
+  const [newMsgOpen, setNewMsgOpen] = useState(false);
+  const [newMsgSearch, setNewMsgSearch] = useState("");
+  const [startingConv, setStartingConv] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -226,6 +230,50 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Start (or reuse) a conversation with a chosen user, then select it.
+  const startConversationWith = useCallback(async (targetUserId: string) => {
+    setStartingConv(true);
+    try {
+      const findThread = () =>
+        supabase
+          .from("support_conversations")
+          .select("id")
+          .in("status", ["open", "pending"])
+          .eq("user_id", targetUserId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+      const { data: existing } = await findThread();
+      if (existing) {
+        setSelectedConv(existing.id);
+      } else {
+        const { data: created, error } = await supabase
+          .from("support_conversations")
+          .insert({ user_id: targetUserId })
+          .select("id")
+          .single();
+
+        if (created) {
+          await loadConversations();
+          setSelectedConv(created.id);
+        } else if (error) {
+          // Lost a race against the "one open conversation per user"
+          // constraint — another insert landed first, so pick that up
+          // instead of surfacing a spurious failure.
+          const { data: fallback } = await findThread();
+          if (fallback) setSelectedConv(fallback.id);
+          else toast({ title: "Couldn't start conversation", description: error.message, variant: "destructive" });
+        }
+      }
+      setNewMsgOpen(false);
+      setNewMsgSearch("");
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } finally {
+      setStartingConv(false);
+    }
+  }, [loadConversations, toast]);
 
   // Realtime: conversation table updates (status changes, new convs)
   useEffect(() => {
@@ -343,9 +391,13 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
       file_size: fileData?.size || null,
     });
     if (error) toast({ title: "Failed to send", variant: "destructive" });
-    // Auto-bump status to open when admin replies to a pending conv
+    // Auto-bump status to open when admin replies to a pending or closed
+    // conv — closed matters too now that admins can message a user with a
+    // past resolved thread: the user's widget only surfaces open/pending
+    // conversations, so a reply left on a closed one would otherwise be
+    // invisible to them.
     const conv = conversations.find((c) => c.id === selectedConv);
-    if (conv && conv.status === "pending") {
+    if (conv && (conv.status === "pending" || conv.status === "closed")) {
       await supabase.from("support_conversations").update({ status: "open" }).eq("id", selectedConv);
     }
     setSending(false);
@@ -478,6 +530,14 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
     return ids.map((id) => ({ id, label: labelForUser(id) })).sort((a, b) => a.label.localeCompare(b.label));
   }, [userRoles, labelForUser]);
 
+  const newMsgCandidates = useMemo(() => {
+    const q = newMsgSearch.trim().toLowerCase();
+    const list = q
+      ? profiles.filter((p) => `${p.email ?? ""} ${p.display_name ?? ""}`.toLowerCase().includes(q))
+      : profiles;
+    return list.slice(0, 50);
+  }, [profiles, newMsgSearch]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -487,18 +547,67 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
             {counts.open} open · {counts.pending} pending · {counts.unread} unread
           </p>
         </div>
-        <Dialog open={cannedMgrOpen} onOpenChange={setCannedMgrOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline" className="gap-2">
-              <Zap className="w-3.5 h-3.5" /> Canned replies
-            </Button>
-          </DialogTrigger>
-          <CannedManager
-            cannedResponses={cannedResponses}
-            onChanged={loadCanned}
-            userId={user?.id}
-          />
-        </Dialog>
+        <div className="flex items-center gap-2">
+          <Dialog open={newMsgOpen} onOpenChange={(v) => { setNewMsgOpen(v); if (!v) setNewMsgSearch(""); }}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="gap-2">
+                <MessageSquarePlus className="w-3.5 h-3.5" /> New message
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Message a user</DialogTitle>
+              </DialogHeader>
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  value={newMsgSearch}
+                  onChange={(e) => setNewMsgSearch(e.target.value)}
+                  placeholder="Search by name or email..."
+                  className="h-8 pl-7 text-xs"
+                />
+              </div>
+              <div className="max-h-72 overflow-y-auto -mx-1 px-1">
+                {newMsgCandidates.map((p) => (
+                  <button
+                    key={p.user_id}
+                    disabled={startingConv}
+                    onClick={() => startConversationWith(p.user_id)}
+                    className="w-full flex items-center gap-2.5 text-left px-2 py-2 rounded-lg hover:bg-muted/50 transition disabled:opacity-50"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <User className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-heading font-semibold truncate">
+                        {p.display_name || p.email || p.user_id.slice(0, 8)}
+                      </div>
+                      {p.display_name && p.email && (
+                        <div className="text-[10px] text-muted-foreground truncate">{p.email}</div>
+                      )}
+                    </div>
+                  </button>
+                ))}
+                {newMsgCandidates.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-6">No users match.</p>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={cannedMgrOpen} onOpenChange={setCannedMgrOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-2">
+                <Zap className="w-3.5 h-3.5" /> Canned replies
+              </Button>
+            </DialogTrigger>
+            <CannedManager
+              cannedResponses={cannedResponses}
+              onChanged={loadCanned}
+              userId={user?.id}
+            />
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex gap-4 h-[calc(100vh-260px)] min-h-[520px]">

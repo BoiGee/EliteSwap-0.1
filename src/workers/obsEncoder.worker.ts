@@ -87,6 +87,15 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
 // ---------- JPEG path (legacy / universal) ----------
 let jpegEmaMs = 10;
 const jpegAlpha = 0.2;
+// Black-frame guard state: a black frame (camera covered, permission
+// dropped) is a persistent condition, not a per-frame flicker, so checking
+// it a few times a second is plenty responsive. Every getImageData() call
+// forces a synchronous GPU->CPU readback stall — doing 9 of them on every
+// single frame was a real, avoidable cost exactly on the low-end-hardware
+// path (JPEG fallback) that can least afford it.
+let lastBlackFrameCheckAt = 0;
+let lastBlackFrameBright = 1;
+const BLACK_FRAME_CHECK_INTERVAL_MS = 750;
 const pickJpegQuality = (ms: number) => (ms < 12 ? 0.5 : ms < 25 ? 0.45 : 0.4);
 const pickJpegMaxWidth = (ms: number) => (ms < 15 ? 854 : ms < 30 ? 720 : 640);
 
@@ -114,22 +123,27 @@ const encodeJpeg = async (msg: EncodeMsg): Promise<EncodeReply> => {
       throw new Error("no bitmap or frame");
     }
 
-    // Black-frame guard (same as before).
-    let bright = 0;
-    try {
-      const xs = [width >> 2, width >> 1, (width * 3) >> 2];
-      const ys = [height >> 2, height >> 1, (height * 3) >> 2];
-      outer: for (const x of xs) {
-        for (const y of ys) {
-          const px = ctx.getImageData(x, y, 1, 1).data;
-          if (px[0] + px[1] + px[2] > 12) {
-            bright = 1;
-            break outer;
+    // Black-frame guard, throttled — see BLACK_FRAME_CHECK_INTERVAL_MS above.
+    let bright = lastBlackFrameBright;
+    if (t0 - lastBlackFrameCheckAt >= BLACK_FRAME_CHECK_INTERVAL_MS) {
+      bright = 0;
+      try {
+        const xs = [width >> 2, width >> 1, (width * 3) >> 2];
+        const ys = [height >> 2, height >> 1, (height * 3) >> 2];
+        outer: for (const x of xs) {
+          for (const y of ys) {
+            const px = ctx.getImageData(x, y, 1, 1).data;
+            if (px[0] + px[1] + px[2] > 12) {
+              bright = 1;
+              break outer;
+            }
           }
         }
+      } catch {
+        bright = 1;
       }
-    } catch {
-      bright = 1;
+      lastBlackFrameCheckAt = t0;
+      lastBlackFrameBright = bright;
     }
     if (!bright) throw new Error("black frame");
 

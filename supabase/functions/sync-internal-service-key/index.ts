@@ -27,21 +27,30 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  // No bearer is tolerated: this endpoint is write-only self-healing — it
-  // copies the live service credential into the vault and returns nothing
-  // sensitive, so cron/platform can repair auth even when the stored key is
-  // already broken.
+
+  const timingSafeEqual = (a: string, b: string) => {
+    if (a.length !== b.length || a.length === 0) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+  };
 
   const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
-  // The anon key is accepted too: this endpoint is write-only self-healing —
-  // it copies the live service credential into the vault and returns nothing
-  // sensitive, so allowing the platform/cron to repair itself is safe.
-  if (bearer && bearer !== SERVICE && bearer !== ANON) {
+  // The service-role key or the (public) anon key are pre-authorized: this
+  // endpoint is write-only self-healing — it copies the live service
+  // credential into the vault and returns nothing sensitive, so allowing the
+  // platform/cron to repair itself even when the stored key is already
+  // broken is safe. An empty/missing bearer is NOT pre-authorized — it must
+  // fall through to the admin-JWT check below like any other caller.
+  const isPreAuthorized = timingSafeEqual(bearer, SERVICE) || timingSafeEqual(bearer, ANON);
+  if (!isPreAuthorized) {
     const userClient = createClient(SUPABASE_URL, ANON, {
       global: { headers: { Authorization: `Bearer ${bearer}` } },
     });
-    const { data: claims, error: cErr } = await userClient.auth.getClaims(bearer);
+    const { data: claims, error: cErr } = bearer
+      ? await userClient.auth.getClaims(bearer)
+      : { data: null, error: new Error("missing bearer") };
     const uid = claims?.claims?.sub as string | undefined;
     if (cErr || !uid) return json({ error: "Unauthorized" }, 401);
     const { data: isAdmin } = await admin.rpc("has_role", { _user_id: uid, _role: "admin" });

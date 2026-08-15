@@ -287,11 +287,7 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     rafRef.current = requestAnimationFrame(loop);
   }, [draw]);
 
-  const teardownActive = useCallback(() => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
+  const teardownWorker = useCallback(() => {
     if (workerRef.current) {
       try { workerRef.current.postMessage({ kind: "close" } satisfies BackgroundSegmentationMessage); } catch { /* noop */ }
       workerRef.current.terminate();
@@ -302,6 +298,14 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     emaInferenceRef.current = null;
     hasReceivedMaskRef.current = false;
   }, []);
+
+  const teardownActive = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    teardownWorker();
+  }, [teardownWorker]);
 
   // Activate/deactivate compositing when config changes.
   useEffect(() => {
@@ -317,7 +321,15 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
 
     const { canvas } = ensureCanvasAndGl();
     loadBackgroundImage(config.imageUrl);
-    if (config.mode === "segmentation") ensureWorker();
+    if (config.mode === "segmentation") {
+      ensureWorker();
+    } else {
+      // Switching away from AI Background mid-session (e.g. to Green
+      // Screen) — release the MediaPipe WASM worker and loaded model
+      // instead of leaving them resident in memory for the rest of the
+      // session.
+      teardownWorker();
+    }
 
     if (!rafRef.current) rafRef.current = requestAnimationFrame(loop);
 

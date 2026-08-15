@@ -20,4 +20,13 @@ describe("dev admin override", () => {
     clearDevAdminOverride(window.localStorage);
     expect(isDevAdminOverrideEnabled("", window.localStorage, true)).toBe(false);
   });
+
+  it("ignores the query string override outside dev mode", () => {
+    expect(isDevAdminOverrideEnabled("?devAdmin=1", window.localStorage, false)).toBe(false);
+  });
+
+  it("ignores local storage override outside dev mode", () => {
+    setDevAdminOverride(true, window.localStorage);
+    expect(isDevAdminOverrideEnabled("", window.localStorage, false)).toBe(false);
+  });
 });

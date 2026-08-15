@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -8,30 +8,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import PricingManager from "@/components/admin/PricingManager";
-import UserManager from "@/components/admin/UserManager";
-import PaymentManager from "@/components/admin/PaymentManager";
-import SupportChatManager from "@/components/admin/SupportChatManager";
-import ActivityManager from "@/components/admin/ActivityManager";
-import ReviewManager from "@/components/admin/ReviewManager";
-import FreeTrialManager from "@/components/admin/FreeTrialManager";
-import DiscountManager from "@/components/admin/DiscountManager";
-import MailerManager from "@/components/admin/MailerManager";
-import PaymentFunnelManager from "@/components/admin/PaymentFunnelManager";
-import PartnerManager from "@/components/admin/PartnerManager";
-import FinanceManager from "@/components/admin/FinanceManager";
-import LiveConnectionsManager from "@/components/admin/LiveConnectionsManager";
-import UsageManager from "@/components/admin/UsageManager";
-import PaidUsersManager from "@/components/admin/PaidUsersManager";
-import DecartPoolManager from "@/components/admin/DecartPoolManager";
-import KeyActivityManager from "@/components/admin/KeyActivityManager";
-import AnnouncementManager from "@/components/admin/AnnouncementManager";
-import AuditLogManager from "@/components/admin/AuditLogManager";
-import AccountDeletionQueue from "@/components/admin/AccountDeletionQueue";
-import BackupManager from "@/components/admin/BackupManager";
-import ForumManager from "@/components/admin/ForumManager";
-import TimeLedgerManager from "@/components/admin/TimeLedgerManager";
-import TrialPurchaseManager from "@/components/admin/TrialPurchaseManager";
+// Lazy-loaded: only the active tab's manager (and its dependencies, e.g.
+// FinanceManager's recharts import) is ever downloaded, instead of every
+// admin tab loading up front regardless of which one staff actually open.
+const PricingManager = lazy(() => import("@/components/admin/PricingManager"));
+const UserManager = lazy(() => import("@/components/admin/UserManager"));
+const PaymentManager = lazy(() => import("@/components/admin/PaymentManager"));
+const SupportChatManager = lazy(() => import("@/components/admin/SupportChatManager"));
+const ActivityManager = lazy(() => import("@/components/admin/ActivityManager"));
+const ReviewManager = lazy(() => import("@/components/admin/ReviewManager"));
+const FreeTrialManager = lazy(() => import("@/components/admin/FreeTrialManager"));
+const DiscountManager = lazy(() => import("@/components/admin/DiscountManager"));
+const MailerManager = lazy(() => import("@/components/admin/MailerManager"));
+const PaymentFunnelManager = lazy(() => import("@/components/admin/PaymentFunnelManager"));
+const PartnerManager = lazy(() => import("@/components/admin/PartnerManager"));
+const FinanceManager = lazy(() => import("@/components/admin/FinanceManager"));
+const LiveConnectionsManager = lazy(() => import("@/components/admin/LiveConnectionsManager"));
+const UsageManager = lazy(() => import("@/components/admin/UsageManager"));
+const PaidUsersManager = lazy(() => import("@/components/admin/PaidUsersManager"));
+const DecartPoolManager = lazy(() => import("@/components/admin/DecartPoolManager"));
+const KeyActivityManager = lazy(() => import("@/components/admin/KeyActivityManager"));
+const AnnouncementManager = lazy(() => import("@/components/admin/AnnouncementManager"));
+const AuditLogManager = lazy(() => import("@/components/admin/AuditLogManager"));
+const AccountDeletionQueue = lazy(() => import("@/components/admin/AccountDeletionQueue"));
+const BackupManager = lazy(() => import("@/components/admin/BackupManager"));
+const ForumManager = lazy(() => import("@/components/admin/ForumManager"));
+const TimeLedgerManager = lazy(() => import("@/components/admin/TimeLedgerManager"));
+const TrialPurchaseManager = lazy(() => import("@/components/admin/TrialPurchaseManager"));
 import { useSupportChatNotifications } from "@/hooks/useSupportChatNotifications";
 import { isDevAdminOverrideEnabled } from "@/lib/devAdmin";
 import NotificationBell from "@/components/NotificationBell";
@@ -384,6 +387,7 @@ export default function Admin() {
         </nav>
 
         <div className="flex-1 p-6 overflow-auto">
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
           {tab === "analytics" && (
             <div className="space-y-6">
               <h2 className="text-2xl font-heading font-bold text-foreground">Dashboard Overview</h2>
@@ -516,6 +520,7 @@ export default function Admin() {
           {tab === "paid_users" && <PaidUsersManager profiles={profiles} payments={payments} />}
 
           {tab === "audit" && <AuditLogManager />}
+        </Suspense>
         </div>
       </div>
 

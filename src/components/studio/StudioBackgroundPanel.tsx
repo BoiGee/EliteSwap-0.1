@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Image as ImageIcon, Trash2, Upload } from "lucide-react";
 import type { BackgroundConfig, BackgroundMode } from "@/hooks/useBackgroundCompositor";
+import { ensureStudioCrossOriginIsolation } from "@/lib/crossOriginIsolation";
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
 const BUCKET = "studio-backgrounds";
@@ -31,6 +32,7 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
   const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadMode, setUploadMode] = useState<BackgroundMode>("segmentation");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -53,17 +55,21 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       );
       setThumbUrls(urls);
       const active = list.find((r) => r.is_active);
-      // Chroma-key only, always — "AI Background" (MediaPipe segmentation)
-      // cannot run on this GitHub Pages deployment at all: it needs
-      // SharedArrayBuffer, which needs COOP/COEP response headers, which
-      // GitHub Pages has no way to serve. Confirmed directly (segmenter
-      // creation only succeeds with those headers present; every real
-      // session is missing them). Forcing chromakey here client-side means
-      // even a pre-existing row still carrying the old 'segmentation'
-      // default gets the working mode, without waiting on a data migration.
+      // Only pay the cross-origin-isolation setup (service worker + a
+      // one-time reload) for accounts actually using AI mode — every other
+      // /studio visit, including chroma-key users, stays exactly as fast as
+      // before. useBackgroundCompositor falls back to a safe passthrough if
+      // segmentation never becomes ready on a given device/browser anyway,
+      // so this is never worse than the old chromakey-only behavior even
+      // where isolation doesn't take.
+      if (active?.mode === "segmentation") ensureStudioCrossOriginIsolation();
+      // Each row's own stored mode — segmentation (AI, no physical screen
+      // needed) now works via crossOriginIsolation.ts's service-worker-based
+      // COOP/COEP injection (GitHub Pages itself still can't send those
+      // headers).
       onActiveChange(
         active && urls[active.id]
-          ? { imageUrl: urls[active.id], mode: "chromakey", chromaKeyColor: active.chroma_key_color ?? "#00b140" }
+          ? { imageUrl: urls[active.id], mode: active.mode, chromaKeyColor: active.chroma_key_color ?? "#00b140" }
           : null,
       );
     }
@@ -93,17 +99,13 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       setUploading(false);
       return;
     }
-    // Explicit chromakey — the table's column default is still the old
-    // 'segmentation' value pending a migration; setting it here means new
-    // uploads get the working mode immediately regardless of that migration's
-    // timing.
     const { error: insErr } = await supabase.from("studio_backgrounds" as any).insert({
       user_id: user.id,
       storage_path: path,
       file_name: file.name,
       file_size: file.size,
-      mode: "chromakey",
-      chroma_key_color: "#00b140",
+      mode: uploadMode,
+      chroma_key_color: uploadMode === "chromakey" ? "#00b140" : null,
     } as any);
     setUploading(false);
     if (insErr) {
@@ -137,6 +139,15 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
     await load();
   };
 
+  const setRowMode = async (id: string, mode: BackgroundMode) => {
+    const { error } = await supabase
+      .from("studio_backgrounds" as any)
+      .update({ mode, chroma_key_color: mode === "chromakey" ? "#00b140" : null } as any)
+      .eq("id", id);
+    if (error) { toast({ title: "Couldn't update mode", description: error.message, variant: "destructive" }); return; }
+    await load();
+  };
+
   const remove = async (row: BackgroundRow) => {
     await supabase.storage.from(BUCKET).remove([row.storage_path]);
     await supabase.from("studio_backgrounds" as any).delete().eq("id", row.id);
@@ -154,8 +165,25 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-heading font-semibold">PRO</span>
       </div>
       <p className="text-xs text-muted-foreground">
-        Upload an image to replace what's behind you in the output. Requires a physical green screen (chroma-key) — point your green/solid-colored screen at the camera and pick a matching color below.
+        Upload an image to replace what's behind you in the output. AI Background detects you automatically; Green Screen needs a physical solid-colored backdrop pointed at the camera.
       </p>
+
+      <div className="flex rounded-lg border border-border overflow-hidden text-xs font-heading">
+        <button
+          type="button"
+          onClick={() => setUploadMode("segmentation")}
+          className={`flex-1 py-1.5 transition-colors ${uploadMode === "segmentation" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          AI Background
+        </button>
+        <button
+          type="button"
+          onClick={() => setUploadMode("chromakey")}
+          className={`flex-1 py-1.5 transition-colors ${uploadMode === "chromakey" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          Green Screen
+        </button>
+      </div>
 
       <input type="file" ref={fileRef} onChange={handleUpload} accept="image/jpeg,image/png,image/webp" className="hidden" />
       <Button
@@ -208,14 +236,35 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       {activeRow && (
         <div className="pt-2 border-t border-border space-y-2">
           <div className="flex items-center gap-2">
-            <label className="text-[11px] text-muted-foreground font-heading">Green screen color</label>
-            <input
-              type="color"
-              value={activeRow.chroma_key_color ?? "#00b140"}
-              onChange={(e) => setChromaColor(activeRow.id, e.target.value)}
-              className="h-6 w-10 rounded border border-border bg-transparent cursor-pointer"
-            />
+            <label className="text-[11px] text-muted-foreground font-heading">Mode</label>
+            <div className="flex rounded-md border border-border overflow-hidden text-[11px] font-heading">
+              <button
+                type="button"
+                onClick={() => setRowMode(activeRow.id, "segmentation")}
+                className={`px-2 py-1 transition-colors ${activeRow.mode === "segmentation" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+              >
+                AI
+              </button>
+              <button
+                type="button"
+                onClick={() => setRowMode(activeRow.id, "chromakey")}
+                className={`px-2 py-1 transition-colors ${activeRow.mode === "chromakey" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+              >
+                Green screen
+              </button>
+            </div>
           </div>
+          {activeRow.mode === "chromakey" && (
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-muted-foreground font-heading">Green screen color</label>
+              <input
+                type="color"
+                value={activeRow.chroma_key_color ?? "#00b140"}
+                onChange={(e) => setChromaColor(activeRow.id, e.target.value)}
+                className="h-6 w-10 rounded border border-border bg-transparent cursor-pointer"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

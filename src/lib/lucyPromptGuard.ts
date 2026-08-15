@@ -19,6 +19,11 @@ export function sanitizePromptForLucy(prompt?: string): string {
 
 export function buildPromptWithIdentityGuard(prompt?: string): string {
   const safePrompt = sanitizePromptForLucy(prompt);
-  if (safePrompt.includes("preserve reference face identity")) return safePrompt;
-  return `${safePrompt}${IDENTITY_LOCK_SUFFIX}${NEGATIVE_PROMPT_SUFFIX}`;
+  // Each suffix is checked and appended independently — a prompt that
+  // already mentions "avoid extra limbs" but not the identity phrase (or
+  // vice versa) used to get the whole block re-appended as one unit,
+  // duplicating whichever half was already present.
+  const hasIdentityGuard = safePrompt.includes("preserve reference face identity");
+  const hasNegativeGuard = safePrompt.includes("avoid extra limbs");
+  return `${safePrompt}${hasIdentityGuard ? "" : IDENTITY_LOCK_SUFFIX}${hasNegativeGuard ? "" : NEGATIVE_PROMPT_SUFFIX}`;
 }

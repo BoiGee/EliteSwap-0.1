@@ -27,6 +27,18 @@ jobs:
 
       - run: npm ci
 
+      - run: npm test
+
+      # Informational only, not a gate: the repo currently has ~500
+      # pre-existing @typescript-eslint/no-explicit-any / no-empty findings
+      # (mostly in supabase/functions/*, never enforced before now). Wiring
+      # this in as a hard blocker today would brick every deploy until all
+      # of that backlog is cleared. Once that cleanup happens, drop
+      # continue-on-error so this becomes a real gate like the test step
+      # above.
+      - run: npm run lint
+        continue-on-error: true
+
       - run: npm run build
         env:
           # Baked into the client bundle at build time — Vite only reads

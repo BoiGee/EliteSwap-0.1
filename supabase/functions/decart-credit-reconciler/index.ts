@@ -19,7 +19,28 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const TEARDOWN_TAIL_MS_PER_SESSION = 2000;
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  // Require an exact match against the literal service-role key, same gate
+  // used by the other scheduled reconcilers. verify_jwt is off at the
+  // gateway, so without this anyone could invoke this on demand and inflate
+  // decart_reconciliation with extra windows.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const bearer = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  let ok = bearer.length === SERVICE_ROLE.length && SERVICE_ROLE.length > 0;
+  if (ok) {
+    let diff = 0;
+    for (let i = 0; i < SERVICE_ROLE.length; i++) diff |= bearer.charCodeAt(i) ^ SERVICE_ROLE.charCodeAt(i);
+    ok = diff === 0;
+  }
+  if (!ok) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false },
   });

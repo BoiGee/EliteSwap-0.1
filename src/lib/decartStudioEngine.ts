@@ -1,4 +1,5 @@
 import { createDecartClient, models } from "@decartai/sdk";
+import { buildPromptWithIdentityGuard } from "@/lib/lucyPromptGuard";
 
 // A hung fetch to Decart otherwise blocks submit() forever: the preview
 // loop's tick() never resolves, so it can never fall through to a retry
@@ -86,16 +87,21 @@ export class DecartStudioEngine {
 
   public async submit(request: DecartStudioRequest): Promise<DecartStudioResponse> {
     const mode = this.normalizeMode(request.mode || this.mode);
+    // Enforced here too, not just at the call sites that currently guard
+    // before calling submit() — this is idempotent (a already-guarded
+    // prompt passes through unchanged), so it's a safety net for any future
+    // caller that forgets to pre-guard, not a behavior change today.
+    const prompt = buildPromptWithIdentityGuard(request.prompt);
 
     if (!this.apiKey.trim()) {
       if (!this.enableFallback) {
-        return this.buildFallbackResponse(mode, request.prompt, "API key missing and fallback disabled", false);
+        return this.buildFallbackResponse(mode, prompt, "API key missing and fallback disabled", false);
       }
-      return this.buildFallbackResponse(mode, request.prompt, "Missing API key; running preview-only");
+      return this.buildFallbackResponse(mode, prompt, "Missing API key; running preview-only");
     }
 
     if (!request.imageUrl) {
-      return this.buildFallbackResponse(mode, request.prompt, "No source frame available");
+      return this.buildFallbackResponse(mode, prompt, "No source frame available");
     }
 
     try {
@@ -104,7 +110,7 @@ export class DecartStudioEngine {
       const outputBlob = await withTimeout(
         client.process({
           model: models.image("lucy-image-2"),
-          prompt: request.prompt,
+          prompt,
           data: sourceBlob,
         }),
         SUBMIT_TIMEOUT_MS,
@@ -116,13 +122,13 @@ export class DecartStudioEngine {
         success: true,
         outputUrl,
         requestId: null,
-        data: { mode, prompt: request.prompt },
+        data: { mode, prompt },
         metadata: { mode, source: "decart-image-edit" },
         error: null,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown studio error";
-      return this.buildFallbackResponse(mode, request.prompt, message);
+      return this.buildFallbackResponse(mode, prompt, message);
     }
   }
 

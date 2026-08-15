@@ -57,7 +57,7 @@
 5. **Lite Mode**: Auto-detects low-end devices; `?hi=1` URL param forces full quality
 
 **Key Files**:
-- [src/components/DeepfakeStudio.tsx](src/components/DeepfakeStudio.tsx) (master component, ~400 lines)
+- [src/components/DeepfakeStudio.tsx](src/components/DeepfakeStudio.tsx) (master component, 2,500+ lines — a split candidate, not a quick read)
 - [src/hooks/useDecartRealtime.ts](src/hooks/useDecartRealtime.ts) (API integration)
 - [src/workers/obsEncoder.worker.ts](src/workers/obsEncoder.worker.ts) (video encoding fallback logic)
 
@@ -105,7 +105,6 @@ npm run preview          # Preview production bundle locally
 - **HMR**: Hot Module Replacement enabled, overlay disabled for cleaner dev experience
 - **Path Aliases**: `@/` resolves to `src/` directory
 - **Dependency Deduping**: React, react-dom, @tanstack/react-query deduplicated in Vite config
-- **Component Tagger**: `lovable-tagger` plugin active in development mode (tracks component usage)
 
 ### Production Considerations
 - **Build Output**: Minified bundles in `dist/` directory

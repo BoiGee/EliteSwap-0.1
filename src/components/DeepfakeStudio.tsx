@@ -106,6 +106,10 @@ export function DeepfakeStudio() {
   // Stable ref so the OBS effect doesn't tear down on apiKey changes.
   const apiKeyRef = useRef("");
   useEffect(() => { apiKeyRef.current = apiKey; }, [apiKey]);
+  // Mirror of localStream so the unmount safety net below can see the
+  // latest stream without re-running (and tearing down) on every change.
+  const localStreamRef = useRef<MediaStream | null>(null);
+  useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
   // Per-session lock token so we never release a key another tab has taken.
   const sessionIdRef = useRef<string | null>(null);
   // Mirror of sessionIdRef as React state so a single top-level effect can
@@ -1891,6 +1895,23 @@ export function DeepfakeStudio() {
     return () => {
       window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  // True unmount safety net. pagehide (above) only fires on an actual
+  // document unload (tab close, reload, real navigation) — it does NOT fire
+  // when the user leaves /studio via an in-app route change, since the
+  // document never unloads. Without this, navigating away mid-session while
+  // still connected left the camera light on and the mic capturing
+  // indefinitely, because the getUserMedia stream is owned by this
+  // component and nothing else releases it on route-away. Reuses
+  // handleDisconnect via its ref so the same "SDK first, then tracks"
+  // teardown ordering applies here too.
+  useEffect(() => {
+    return () => {
+      if (localStreamRef.current) {
+        void handleDisconnectRef.current?.();
+      }
     };
   }, []);
 

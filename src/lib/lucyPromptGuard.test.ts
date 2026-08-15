@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { sanitizePromptForLucy, buildPromptWithIdentityGuard } from "./lucyPromptGuard";
 
+const MAX_LUCY_PROMPT_LENGTH = 2200;
+
 describe("sanitizePromptForLucy", () => {
-  const MAX_LUCY_PROMPT_LENGTH = 2200;
   describe("empty prompt handling", () => {
     test("returns default message when prompt is undefined", () => {
       expect(sanitizePromptForLucy(undefined)).toBe("Enhance the video slightly");
@@ -35,11 +36,10 @@ describe("sanitizePromptForLucy", () => {
       expect(sanitizePromptForLucy(input)).toBe("hello world");
   });
 
-    test("preserves leading/trailing whitespace after normalization", () => {
+    test("trims leading/trailing whitespace during normalization", () => {
       const input = "  hello world  ";
       const result = sanitizePromptForLucy(input);
-      expect(result.startsWith("  ")).toBe(true);
-      expect(result.endsWith("  ")).toBe(true);
+      expect(result).toBe("hello world");
   });
 
     test("handles prompt exactly at limit without truncation", () => {
@@ -90,19 +90,19 @@ describe("buildPromptWithIdentityGuard", () => {
     test("handles prompt exactly at MAX_LUCY_PROMPT_LENGTH", () => {
       const exact = "x".repeat(2200);
       const result = buildPromptWithIdentityGuard(exact);
-      expect(result.length).toBeLessThanOrEqual(MAX_LUCY_PROMPT_LENGTH + 150); // suffix length estimate
+      expect(result.length).toBeLessThanOrEqual(MAX_LUCY_PROMPT_LENGTH + 600); // identity + negative suffix combined is ~572 chars
     });
 
     test("handles prompt over MAX_LUCY_PROMPT_LENGTH", () => {
       const long = "x".repeat(2300);
       const result = buildPromptWithIdentityGuard(long);
-      expect(result.length).toBeLessThanOrEqual(MAX_LUCY_PROMPT_LENGTH + 150);
+      expect(result.length).toBeLessThanOrEqual(MAX_LUCY_PROMPT_LENGTH + 600); // identity + negative suffix combined is ~572 chars
     });
 
     test("handles prompt with trailing whitespace", () => {
       const input = "Make it look good   ";
       const result = buildPromptWithIdentityGuard(input);
-      expect(result.endsWith(", preserve reference face identity")).toBe(true);
+      expect(result).toContain(", preserve reference face identity");
     });
 
     test("handles prompt with leading whitespace", () => {

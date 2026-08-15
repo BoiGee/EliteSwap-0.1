@@ -5,9 +5,9 @@ export function isDevAdminOverrideEnabled(
   storage: Storage = window.localStorage,
   isDev = import.meta.env.DEV,
 ) {
+  if (!isDev) return false;
   const params = new URLSearchParams(search);
   if (params.get("devAdmin") === "1") return true;
-  if (!isDev) return false;
   return storage.getItem(DEV_ADMIN_STORAGE_KEY) === "1";
 }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildPromptWithIdentityGuard, sanitizePromptForLucy } from "@/lib/lucyPromptGuard";
 
+const MAX_LUCY_PROMPT_LENGTH = 2200;
+
 describe("StudioTermsGate", () => {
   it("falls back to a safe default when the prompt is empty", () => {
     expect(sanitizePromptForLucy("   ")).toBe("Enhance the video slightly");
