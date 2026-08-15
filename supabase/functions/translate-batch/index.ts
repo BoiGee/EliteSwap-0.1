@@ -22,12 +22,30 @@ async function sha256(s: string) {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// The app's own caller (TranslationProvider.tsx) never flushes more than 80
+// strings per batch. These caps are generous headroom above that, not a
+// tight fit — their job is to stop a single request from forwarding an
+// arbitrarily large payload to the paid AI Gateway call below, not to
+// constrain normal usage.
+const MAX_TEXTS_PER_REQUEST = 150;
+const MAX_TEXT_LENGTH = 2000;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
     const { texts, targetLang, sourceLang = "en" } = await req.json();
     if (!Array.isArray(texts) || !targetLang) {
       return new Response(JSON.stringify({ error: "texts[] and targetLang required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (texts.length > MAX_TEXTS_PER_REQUEST) {
+      return new Response(JSON.stringify({ error: `texts[] exceeds max of ${MAX_TEXTS_PER_REQUEST}` }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (texts.some((t: unknown) => typeof t !== "string" || t.length > MAX_TEXT_LENGTH)) {
+      return new Response(JSON.stringify({ error: `each text must be a string of at most ${MAX_TEXT_LENGTH} characters` }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

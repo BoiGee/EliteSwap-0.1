@@ -185,6 +185,7 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
     }
 
     cacheRef.current = loadCache(lang);
+    let cancelled = false;
 
     const translatePending = async () => {
       if (pendingRef.current.size === 0) return;
@@ -196,6 +197,13 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
           body: { texts: batch, targetLang: lang, sourceLang: "en" },
         });
         if (error) throw error;
+        // If the language changed while this request was in flight, cacheRef
+        // now points at a different language's cache object — writing into
+        // it here would mix this stale batch's translations into the wrong
+        // language, both in memory and in what gets persisted to
+        // localStorage. Drop the result instead; the new language's own
+        // effect run will re-request whatever it still needs.
+        if (cancelled) return;
         const translations: string[] = data?.translations || [];
         batch.forEach((src, i) => {
           const dst = translations[i] || src;
@@ -206,8 +214,10 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
       } catch (e) {
         console.warn("translate-batch failed", e);
       } finally {
-        setIsTranslating(false);
-        if (pendingRef.current.size > 0) scheduleFlush();
+        if (!cancelled) {
+          setIsTranslating(false);
+          if (pendingRef.current.size > 0) scheduleFlush();
+        }
       }
     };
 
@@ -288,6 +298,7 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
     });
 
     return () => {
+      cancelled = true;
       observer.disconnect();
       if (scheduleTimer.current) window.clearTimeout(scheduleTimer.current);
     };
