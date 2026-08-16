@@ -360,7 +360,8 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
           filter: `conversation_id=eq.${selectedConv}`,
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new as Message]);
+          const m = payload.new as Message;
+          setMessages((prev) => (prev.some((existing) => existing.id === m.id) ? prev : [...prev, m]));
           scrollToBottom();
           if (selectedConv) markConversationRead(selectedConv);
         },
@@ -380,17 +381,27 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
     if (!content && !fileData) return;
 
     setSending(true);
-    const { error } = await supabase.from("support_messages").insert({
-      conversation_id: selectedConv,
-      sender_id: user.id,
-      content: content || null,
-      is_admin: true,
-      file_url: fileData?.url || null,
-      file_name: fileData?.name || null,
-      file_type: fileData?.type || null,
-      file_size: fileData?.size || null,
-    });
-    if (error) toast({ title: "Failed to send", variant: "destructive" });
+    const { data, error } = await supabase
+      .from("support_messages")
+      .insert({
+        conversation_id: selectedConv,
+        sender_id: user.id,
+        content: content || null,
+        is_admin: true,
+        file_url: fileData?.url || null,
+        file_name: fileData?.name || null,
+        file_type: fileData?.type || null,
+        file_size: fileData?.size || null,
+      })
+      .select()
+      .single();
+    if (error) {
+      toast({ title: "Failed to send", variant: "destructive" });
+    } else if (data) {
+      const sent = data as Message;
+      setMessages((prev) => (prev.some((existing) => existing.id === sent.id) ? prev : [...prev, sent]));
+      scrollToBottom();
+    }
     // Auto-bump status to open when admin replies to a pending or closed
     // conv — closed matters too now that admins can message a user with a
     // past resolved thread: the user's widget only surfaces open/pending
