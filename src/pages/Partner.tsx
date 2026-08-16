@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { usePartner } from "@/hooks/usePartner";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import JoinPartnerScreen from "@/components/partner/JoinPartnerScreen";
 import { Users, CheckCircle2, DollarSign, Landmark, Receipt, Globe, Gem } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 
 interface Referral {
   user_id: string;
@@ -71,7 +71,6 @@ const fmtUsd = (n: number | null | undefined) =>
   `$${(Number(n ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function Partner() {
-  const { user, signOut } = useAuth();
   const { isAdmin } = useAdmin();
   const { partner, stats, loading, refresh } = usePartner();
   const navigate = useNavigate();
@@ -166,28 +165,21 @@ export default function Partner() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
+      <AppHeader
+        active="partner"
+        isStaff={isAdmin}
+        isPartner
+        leftExtra={
           <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading font-semibold">
             PARTNER
           </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground font-heading hidden sm:inline">{user?.email}</span>
+        }
+        rightExtra={
           <Button variant="outline" size="sm" onClick={() => refresh().then(loadDetails)} className="font-heading text-xs">
             Refresh
           </Button>
-          {isAdmin && (
-            <Button variant="outline" size="sm" onClick={() => navigate("/admin")} className="font-heading text-xs">
-              Admin
-            </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={async () => { await signOut(); navigate("/"); }} className="font-heading text-xs">
-            Sign Out
-          </Button>
-        </div>
-      </header>
+        }
+      />
 
       <main className="flex-1 p-4 md:p-6 space-y-6 max-w-6xl w-full mx-auto">
         <div className="space-y-2">

@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { StarRating } from "@/components/StarRating";
 import { ReviewForm } from "@/components/ReviewForm";
-import logo from "@/assets/logo.jpg";
+import AppHeader from "@/components/AppHeader";
 
 interface Review {
   id: string;
@@ -17,7 +16,6 @@ interface Review {
 }
 
 export default function Reviews() {
-  const navigate = useNavigate();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [avg, setAvg] = useState<number | null>(null);
@@ -81,21 +79,13 @@ export default function Reviews() {
           })}</script>
         )}
       </Helmet>
-      <div className="absolute inset-0 scanline pointer-events-none opacity-30" />
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
 
-
-      <header className="relative z-20 flex items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate("/")}>
-          <img src={logo} alt="Elite Swap" className="w-10 h-10 rounded-lg" />
-          <span className="text-xl font-heading font-bold gradient-text">Elite Swap</span>
-        </div>
-        <Button variant="ghost" onClick={() => navigate("/")} className="font-heading text-sm">← Home</Button>
-      </header>
+      <AppHeader />
 
       <main className="relative z-10 flex-1 max-w-5xl w-full mx-auto px-4 py-8 space-y-8">
         <div className="text-center space-y-3">
-          <h1 className="text-4xl md:text-5xl font-heading font-bold gradient-text">All Reviews</h1>
+          <h1 className="text-4xl md:text-5xl font-heading font-bold text-foreground">All Reviews</h1>
           {avg !== null && (
             <div className="flex items-center justify-center gap-2">
               <StarRating value={Math.round(avg)} size={20} readOnly />
@@ -150,7 +140,7 @@ export default function Reviews() {
             ) : (
               <div className="space-y-3">
                 {reviews.map((r) => (
-                  <div key={r.id} className="glass neon-border rounded-xl p-5 space-y-2">
+                  <div key={r.id} className="glass border border-border rounded-xl p-5 space-y-2">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="flex items-center gap-3">
                         <StarRating value={r.rating} size={16} readOnly />

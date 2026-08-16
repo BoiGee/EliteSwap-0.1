@@ -26,10 +26,9 @@ import DeleteAccountSection from "@/components/account/DeleteAccountSection";
 import CommunityTile from "@/components/dashboard/CommunityTile";
 import PartnersLoungeTile from "@/components/dashboard/PartnersLoungeTile";
 
-import NotificationBell from "@/components/NotificationBell";
-import LanguageSwitcher from "@/components/LanguageSwitcher";
-import { Star, Wallet, DollarSign, Users } from "lucide-react";
+import { Wallet, DollarSign, Users, Star } from "lucide-react";
 import AdminAnnouncementBanner from "@/components/AdminAnnouncementBanner";
+import AppHeader from "@/components/AppHeader";
 import CommunityFab from "@/components/dashboard/CommunityFab";
 import TrialPurchaseCard from "@/components/dashboard/TrialPurchaseCard";
 
@@ -54,7 +53,7 @@ interface Payment {
 }
 
 export default function Dashboard() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { isStaff } = useAdmin();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -336,11 +335,6 @@ export default function Dashboard() {
     toast({ title: "Unique key copied!" });
   };
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/");
-  };
-
   return (
     <div className="min-h-screen flex flex-col">
       <SystemAnnouncementModal />
@@ -352,59 +346,30 @@ export default function Dashboard() {
         />
       )}
 
-      <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
-        <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <span className="hidden sm:inline text-xs text-muted-foreground font-heading">{user?.email}</span>
-          {isStaff && (
-            // Dashboard never checked admin status before, so staff who
-            // landed here (any installed-app-on-iOS quirk that opens to
-            // /dashboard, a bookmark, a stale session) had no way back to
-            // /admin — standalone PWAs hide the address bar, so there was
-            // no escape hatch at all short of manually retyping the URL.
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/admin")}
-              className="font-heading text-xs"
-            >
-              Admin
-            </Button>
-          )}
+      <AppHeader
+        active="dashboard"
+        isStaff={isStaff}
+        isPartner={!!partner}
+        showNotifications
+        rightExtra={
           <Button
             variant="ghost"
-            size="sm"
-            onClick={() => navigate("/forum")}
-            className="font-heading text-xs hidden sm:inline-flex"
-          >
-            Community
-          </Button>
-          <LanguageSwitcher compact />
-          <NotificationBell />
-          
-          
-          <Button
-            variant="outline"
-            size="sm"
+            size="icon"
             onClick={() => setReviewModalOpen(true)}
-            className="font-heading text-xs gap-1.5"
+            className="h-9 w-9"
             title={hasReview ? "Update your review" : "Rate & review Elite Swap"}
           >
-            <Star className="w-3.5 h-3.5" strokeWidth={1.75} />
-            {hasReview ? "Update review" : "Rate & review"}
+            <Star className="w-4 h-4" strokeWidth={1.75} />
           </Button>
-          <Button variant="outline" size="sm" onClick={handleSignOut} className="font-heading text-xs">
-            Sign Out
-          </Button>
-        </div>
-      </header>
+        }
+      />
       <AdminAnnouncementBanner />
       <CommunityFab />
 
       <ReviewPromptModal
         open={reviewModalOpen}
         startWithForm
-        title={hasReview ? "Update your review ⭐" : "Leave a quick review ⭐"}
+        title={hasReview ? "Update your review" : "Leave a quick review"}
         onClose={() => setReviewModalOpen(false)}
         onDismissForever={() => {
           setHasReview(true);
@@ -414,6 +379,34 @@ export default function Dashboard() {
       />
 
       <div className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full space-y-6">
+        {/* Returning users with a ready key land straight on the one thing
+            they came here to do, instead of scrolling past the full
+            onboarding flow (Steps 1-3 below) every single visit. New users
+            and anyone without a usable key never see this — they still get
+            the step-by-step flow first, which is the right order for them. */}
+        {usableApiKeys.length > 0 && (
+          <div className="rounded-2xl border border-primary/40 bg-primary/[0.06] p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-heading uppercase tracking-wider text-primary">Welcome back</p>
+                <h2 className="text-xl font-heading font-bold text-foreground">Your studio is ready</h2>
+                <ApiKeyTimer
+                  remainingMs={usableApiKeys[0].remaining_ms}
+                  activeSessionStartedAt={usableApiKeys[0].active_session_started_at}
+                  expiresAt={usableApiKeys[0].expires_at}
+                  isActive={usableApiKeys[0].is_active}
+                />
+              </div>
+              <Button
+                onClick={() => navigate("/studio")}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-base py-6 px-8 shrink-0"
+              >
+                Launch Elite Swap Studio
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Profile */}
         <ProfileSection />
 

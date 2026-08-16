@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useFiatRates } from "@/hooks/useFiatRates";
 import { CurrencySelector, formatFiat } from "@/components/CurrencySelector";
 import { useDisplayLocale } from "@/i18n/useDisplayLocale";
+import AppHeader from "@/components/AppHeader";
 
 
 interface PricingPlan {
@@ -47,7 +48,7 @@ export default function Pricing() {
 
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-4 relative overflow-hidden">
+    <div className="min-h-screen flex flex-col items-center relative overflow-hidden">
       <Helmet>
         <title>EliteSwap Pricing — Plans for Realtime AI Face Swap</title>
         <meta name="description" content="Compare EliteSwap plans and pick the realtime AI face & character swap subscription that fits your streaming setup." />
@@ -56,13 +57,13 @@ export default function Pricing() {
         <meta property="og:description" content="Plans for EliteSwap realtime AI face & character swap." />
         <meta property="og:url" content="https://eliteswap.online/pricing" />
       </Helmet>
+      <AppHeader active="pricing" />
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
 
-      <main className="w-full max-w-5xl relative z-10 py-16 space-y-12">
+      <main className="w-full max-w-5xl relative z-10 py-16 px-4 space-y-12">
 
         {/* Header */}
         <div className="text-center space-y-4">
-          <button onClick={() => navigate("/")} className="text-3xl font-heading font-bold text-primary mb-2">Elite Swap</button>
           <h1 className="text-4xl md:text-5xl font-heading font-bold text-foreground">Choose Your Plan</h1>
           <p className="text-muted-foreground max-w-md mx-auto">
             Unlock realtime AI character swap with the plan that fits your needs.
@@ -140,11 +141,6 @@ export default function Pricing() {
           </div>
         )}
 
-        <div className="text-center">
-          <Button variant="ghost" onClick={() => navigate("/")} className="font-heading text-muted-foreground">
-            ← Back to Home
-          </Button>
-        </div>
       </main>
     </div>
 
