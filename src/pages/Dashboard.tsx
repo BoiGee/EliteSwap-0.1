@@ -28,6 +28,7 @@ import PartnersLoungeTile from "@/components/dashboard/PartnersLoungeTile";
 
 import NotificationBell from "@/components/NotificationBell";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { Star, Wallet, DollarSign, Users } from "lucide-react";
 import AdminAnnouncementBanner from "@/components/AdminAnnouncementBanner";
 import CommunityFab from "@/components/dashboard/CommunityFab";
 import TrialPurchaseCard from "@/components/dashboard/TrialPurchaseCard";
@@ -151,7 +152,7 @@ export default function Dashboard() {
             description: `Your account is already linked to ${res.existing_code}. Only one referral per account.`,
           });
         } else if (res?.ok) {
-          toast({ title: `Referral code applied: ${res.partner_code} 🎉` });
+          toast({ title: `Referral code applied: ${res.partner_code}` });
         }
       }).catch(() => {});
     }
@@ -205,9 +206,9 @@ export default function Dashboard() {
         (payload) => {
           fetchPayments();
           if (payload.eventType === 'UPDATE' && (payload.new as Payment).status === 'confirmed') {
-            toast({ title: "Payment confirmed! 🎉", description: "You can now generate your unique key." });
+            toast({ title: "Payment confirmed!", description: "You can now generate your unique key." });
           } else if (payload.eventType === 'UPDATE' && (payload.new as Payment).status === 'rejected') {
-            toast({ title: "Payment rejected ❌", description: "Please contact support or submit a new payment.", variant: "destructive" });
+            toast({ title: "Payment rejected", description: "Please contact support or submit a new payment.", variant: "destructive" });
           }
         }
       )
@@ -332,7 +333,7 @@ export default function Dashboard() {
     navigator.clipboard.writeText(key);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
-    toast({ title: "Unique key copied! 📋" });
+    toast({ title: "Unique key copied!" });
   };
 
   const handleSignOut = async () => {
@@ -352,7 +353,7 @@ export default function Dashboard() {
       )}
 
       <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
-        <h1 className="text-xl font-heading font-bold gradient-text">Elite Swap</h1>
+        <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
         <div className="flex items-center gap-2 sm:gap-3">
           <span className="hidden sm:inline text-xs text-muted-foreground font-heading">{user?.email}</span>
           {isStaff && (
@@ -365,7 +366,7 @@ export default function Dashboard() {
               variant="outline"
               size="sm"
               onClick={() => navigate("/admin")}
-              className="font-heading text-xs neon-border"
+              className="font-heading text-xs"
             >
               Admin
             </Button>
@@ -386,10 +387,11 @@ export default function Dashboard() {
             variant="outline"
             size="sm"
             onClick={() => setReviewModalOpen(true)}
-            className="font-heading text-xs neon-border"
+            className="font-heading text-xs gap-1.5"
             title={hasReview ? "Update your review" : "Rate & review Elite Swap"}
           >
-            {hasReview ? "Update review ⭐" : "Rate & review ⭐"}
+            <Star className="w-3.5 h-3.5" strokeWidth={1.75} />
+            {hasReview ? "Update review" : "Rate & review"}
           </Button>
           <Button variant="outline" size="sm" onClick={handleSignOut} className="font-heading text-xs">
             Sign Out
@@ -467,7 +469,7 @@ export default function Dashboard() {
         </div>
 
         {/* Step 1: Payment */}
-        <div className="glass neon-border rounded-2xl p-6 space-y-4">
+        <div className="glass border border-border rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-3">
             <span className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-sm">1</span>
             <h2 className="text-lg font-heading font-semibold text-foreground">Make Payment</h2>
@@ -488,9 +490,10 @@ export default function Dashboard() {
                   }
                   setShowPayment(true);
                 }}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading neon-glow"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading gap-1.5"
               >
-                💰 View Wallet Addresses
+                <Wallet className="w-4 h-4" strokeWidth={1.75} />
+                View Wallet Addresses
               </Button>
 
               <div className="border-t border-border pt-4 space-y-3">
@@ -578,7 +581,7 @@ export default function Dashboard() {
         </div>
 
         {/* Step 2: Unique Keys */}
-        <div className={`glass neon-border rounded-2xl p-6 space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
+        <div className={`glass border border-border rounded-2xl p-6 space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
           <div className="flex items-center gap-3">
             <span className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-sm">2</span>
             <h2 className="text-lg font-heading font-semibold text-foreground">Your Unique Keys</h2>
@@ -635,7 +638,7 @@ export default function Dashboard() {
         </div>
 
         {/* Step 3: Launch Studio */}
-        <div className={`glass neon-border rounded-2xl p-6 space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
+        <div className={`glass border border-border rounded-2xl p-6 space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
           <div className="flex items-center gap-3">
             <span className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-sm">3</span>
             <h2 className="text-lg font-heading font-semibold text-foreground">Launch Studio</h2>
@@ -656,7 +659,7 @@ export default function Dashboard() {
               if (hasConfirmedPayment) {
                 setRepurchaseMode(true);
                 toast({
-                  title: "Time to top up ⏱️",
+                  title: "Time to top up",
                   description: "Pick a plan below to refresh your unique key — your account stays the same.",
                 });
                 setTimeout(() => {
@@ -665,15 +668,15 @@ export default function Dashboard() {
               }
             }}
             disabled={!canUseStudio}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-base py-6 neon-glow"
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-base py-6"
           >
-            {usableApiKeys.length > 0 ? "Launch Elite Swap Studio 🚀" : "Repurchase to Launch Studio 🔄"}
+            {usableApiKeys.length > 0 ? "Launch Elite Swap Studio" : "Repurchase to Launch Studio"}
           </Button>
         </div>
 
         {/* Partner program promo for paid non-partners */}
         {hasConfirmedPayment && !partnerLoading && !partner && !partnerPromoDismissed && (
-          <div className="glass neon-border rounded-2xl p-6 space-y-4">
+          <div className="glass border border-border rounded-2xl p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-start gap-4 justify-between">
               <div className="space-y-3 flex-1">
                 <div className="space-y-1">
@@ -681,19 +684,19 @@ export default function Dashboard() {
                     Partner Program
                   </p>
                   <h2 className="text-lg font-heading font-semibold text-foreground">
-                    Earn 20% on every referral — and 5% on theirs 🌳
+                    Earn 20% on every referral — and 5% on theirs
                   </h2>
                 </div>
                 <ul className="space-y-2 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
-                    <span aria-hidden>💸</span>
+                    <DollarSign className="w-4 h-4 mt-0.5 text-primary shrink-0" strokeWidth={1.75} />
                     <span>
                       <span className="text-foreground font-medium">20% commission</span> on every
                       purchase your referrals make.
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span aria-hidden>🌳</span>
+                    <Users className="w-4 h-4 mt-0.5 text-primary shrink-0" strokeWidth={1.75} />
                     <span>
                       <span className="text-foreground font-medium">5% override</span> when your
                       referrals become partners themselves.
@@ -708,7 +711,7 @@ export default function Dashboard() {
                 <Button
                   size="sm"
                   onClick={() => navigate("/partner")}
-                  className="font-heading neon-glow"
+                  className="font-heading"
                 >
                   Become a Partner
                 </Button>
@@ -727,10 +730,10 @@ export default function Dashboard() {
 
         {/* Secondary review nudge for long-standing paid users */}
         {showReviewBanner && (
-          <div className="glass neon-border rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between">
+          <div className="glass border border-border rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between">
             <div className="space-y-1">
               <p className="text-sm font-heading font-semibold text-foreground">
-                Loving Elite Swap? ⭐ Share a quick review
+                Loving Elite Swap? Share a quick review
               </p>
               <p className="text-xs text-muted-foreground">
                 Your rating goes live on the homepage and helps other creators find us.
@@ -740,7 +743,7 @@ export default function Dashboard() {
               <Button
                 size="sm"
                 onClick={() => navigate("/reviews#leave")}
-                className="font-heading neon-glow"
+                className="font-heading"
               >
                 Leave a review
               </Button>

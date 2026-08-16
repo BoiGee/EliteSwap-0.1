@@ -2,7 +2,7 @@
 import * as React from 'npm:react@18.3.1'
 import { Heading, Text, Section, Link } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
-import { BrandFrame, BrandCta, BrandNote } from './_brand-frame.tsx'
+import { BrandFrame, BrandCta, BrandNote, BRAND } from './_brand-frame.tsx'
 
 interface Props {
   displayName?: string
@@ -79,4 +79,4 @@ const detailBox = { background: '#fafafa', border: '1px solid #eee', borderRadiu
 const detailRow = { fontSize: '14px', color: '#1a1a1a', margin: '4px 0' }
 const detailLabel = { color: '#55575d', display: 'inline-block', minWidth: '88px' }
 const mono = { fontFamily: 'monospace', fontSize: '13px' }
-const link = { color: '#A64DFF', textDecoration: 'underline' }
+const link = { color: BRAND.primaryDeep, textDecoration: 'underline' }

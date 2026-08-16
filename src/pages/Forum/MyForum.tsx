@@ -50,7 +50,7 @@ export default function MyForum() {
           </div>
         </div>
 
-        <div className="glass neon-border rounded-2xl divide-y divide-border">
+        <div className="glass border border-border rounded-2xl divide-y divide-border">
           {items.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No notifications yet. Join a thread to start getting updates.

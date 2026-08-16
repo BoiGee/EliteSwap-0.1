@@ -107,7 +107,7 @@ export default function Auth() {
           }).catch(() => {});
         }
         toast({
-          title: "Check your email 📧",
+          title: "Check your email",
           description: "We sent you a confirmation link. Click it, then sign in here.",
         });
         setIsSignUp(false);
@@ -126,7 +126,7 @@ export default function Auth() {
             }
           }).catch(() => {});
         }
-        toast({ title: "Welcome back! 👋" });
+        toast({ title: "Welcome back!" });
         navigate(await resolveDestination());
       }
     } catch (err: unknown) {
@@ -157,16 +157,16 @@ export default function Auth() {
       </Helmet>
       <main className="w-full max-w-md space-y-8 text-center">
         <div className="space-y-3">
-          <h1 className="text-5xl font-heading font-bold gradient-text cursor-pointer" onClick={() => navigate("/")}>Elite Swap — Sign in</h1>
+          <h1 className="text-3xl font-heading font-bold text-primary cursor-pointer" onClick={() => navigate("/")}>Elite Swap</h1>
 
           <p className="text-muted-foreground font-body">
             {isTrialFlow
-              ? "Sign up or log in to purchase your $10 / 4-minute trial 💳"
+              ? "Sign up or log in to purchase your $10 / 4-minute trial"
               : isSignUp ? "Create your account" : "Sign in to your account"}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="glass neon-border rounded-2xl p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="glass border border-border rounded-2xl p-6 space-y-4">
           <div className="space-y-2 text-left">
             <label className="text-sm font-heading text-foreground/70">Email</label>
             <Input
@@ -207,7 +207,7 @@ export default function Auth() {
                   </DialogTrigger>
                   <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                      <DialogTitle className="font-heading gradient-text">Terms & Policies</DialogTitle>
+                      <DialogTitle className="font-heading">Terms &amp; Policies</DialogTitle>
                     </DialogHeader>
                     <ScrollArea className="h-[60vh] pr-4">
                       <TermsContent />
@@ -221,7 +221,7 @@ export default function Auth() {
           <Button
             type="submit"
             disabled={loading || (isSignUp && !agreedToTerms)}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold neon-glow"
+            className="w-full font-heading font-semibold"
           >
             {loading ? "Processing..." : isSignUp ? "Create Account" : "Sign In"}
           </Button>
@@ -239,7 +239,7 @@ export default function Auth() {
                 if (error) {
                   toast({ title: "Error", description: error.message, variant: "destructive" });
                 } else {
-                  toast({ title: "Check your email 📧", description: "We sent you a password reset link." });
+                  toast({ title: "Check your email", description: "We sent you a password reset link." });
                 }
               }}
               className="block w-full text-xs text-primary hover:underline font-heading mt-1"

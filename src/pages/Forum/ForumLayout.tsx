@@ -14,7 +14,7 @@ export default function ForumLayout({ children }: { children: ReactNode }) {
       <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
           <img src={logo} alt="" className="w-8 h-8 rounded-lg" />
-          <span className="font-heading font-bold gradient-text">Elite Swap</span>
+          <span className="font-heading font-bold text-primary">Elite Swap</span>
         </Link>
         <nav className="flex items-center gap-2">
           <LanguageSwitcher compact />

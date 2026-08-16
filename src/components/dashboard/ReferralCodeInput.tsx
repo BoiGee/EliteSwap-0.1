@@ -75,7 +75,7 @@ export default function ReferralCodeInput() {
   };
 
   return (
-    <div className="glass neon-border rounded-xl p-4 space-y-2">
+    <div className="glass border border-border rounded-xl p-4 space-y-2">
       <div className="text-sm font-heading font-semibold text-foreground">Got a referral code?</div>
       <p className="text-xs text-muted-foreground">
         Enter the code from the person who referred you. You can only set this once — make sure it's correct.

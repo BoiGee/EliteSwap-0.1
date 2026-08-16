@@ -4,16 +4,20 @@ import {
   Body, Container, Head, Heading, Html, Preview, Section, Text, Hr, Button, Link, Img,
 } from 'npm:@react-email/components@0.0.22'
 
+// Matches the web app's "refined dark studio" palette (src/index.css
+// --primary: 255 85% 65%) — a single signature indigo-violet instead of
+// the old cyan/magenta/purple trio, so emails no longer clash with the
+// redesigned app. Email clients need literal hex, not CSS custom
+// properties, so these are a one-time conversion of the same tokens.
 export const BRAND = {
   name: 'EliteSwap',
   tagline: 'Realtime AI Face & Character Swap',
   url: 'https://eliteswap.online',
   supportEmail: 'support@eliteswap.online',
   logoUrl: 'https://eliteswap.online/email-logo.png',
-  cyan: '#00FFFF',
-  purple: '#A64DFF',
-  magenta: '#FF4DCB',
-  dark: '#0A0E14',
+  primary: '#8B5CF6',
+  primaryDeep: '#6D3FE0',
+  dark: '#15121F',
   textDark: '#1a1a1a',
   textMuted: '#55575d',
   textFooter: '#999999',
@@ -87,14 +91,17 @@ export const BrandNote = ({ title, children }: NoteProps) => (
 const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, Helvetica, sans-serif', margin: 0, padding: 0 }
 const outer = { maxWidth: '600px', margin: '0 auto', padding: '0' }
 const headerBar = {
-  background: 'linear-gradient(135deg, #00FFFF 0%, #A64DFF 50%, #FF4DCB 100%)',
+  // Monochromatic depth (two shades of the same violet), not the old
+  // three-hue cyan/purple/magenta rainbow — matches the "one confident
+  // accent" rule the app redesign uses instead of gradient-as-decoration.
+  background: `linear-gradient(135deg, ${BRAND.primaryDeep} 0%, ${BRAND.primary} 100%)`,
   padding: '28px 24px',
   textAlign: 'center' as const,
   borderRadius: '0 0 4px 4px',
 }
 const logoImg = { display: 'block', margin: '0 auto 10px', borderRadius: '12px' }
 const wordmark = {
-  color: '#0A0E14',
+  color: BRAND.dark,
   fontSize: '32px',
   fontWeight: 800 as const,
   margin: '0 0 4px',
@@ -102,7 +109,7 @@ const wordmark = {
   fontFamily: 'Arial, Helvetica, sans-serif',
 }
 const tagline = {
-  color: '#0A0E14',
+  color: BRAND.dark,
   fontSize: '13px',
   margin: 0,
   opacity: 0.85,
@@ -110,8 +117,8 @@ const tagline = {
 }
 const contentContainer = { padding: '32px 28px 8px' }
 const ctaButton = {
-  background: 'linear-gradient(135deg, #00FFFF 0%, #A64DFF 100%)',
-  color: '#0A0E14',
+  background: BRAND.primary,
+  color: BRAND.dark,
   fontSize: '15px',
   fontWeight: 700 as const,
   textDecoration: 'none',
@@ -120,15 +127,15 @@ const ctaButton = {
   display: 'inline-block',
 }
 const noteBox = {
-  background: '#f7f5ff',
-  border: '1px solid #e6deff',
-  borderLeft: '4px solid #A64DFF',
+  background: '#f6f3fe',
+  border: '1px solid #e3d9fc',
+  borderLeft: `4px solid ${BRAND.primary}`,
   borderRadius: '6px',
   padding: '14px 16px',
   margin: '16px 0 24px',
 }
 const noteTitle = {
-  color: '#A64DFF',
+  color: BRAND.primaryDeep,
   fontSize: '12px',
   fontWeight: 700 as const,
   textTransform: 'uppercase' as const,
@@ -139,5 +146,5 @@ const noteBody = { color: '#1a1a1a', fontSize: '14px', lineHeight: '1.6', margin
 const hr = { borderColor: '#eaeaea', margin: '24px 28px 0' }
 const footerSection = { padding: '16px 28px 28px', textAlign: 'center' as const }
 const footerCompany = { fontSize: '12px', color: '#55575d', margin: '0 0 8px' }
-const footerLink = { color: '#A64DFF', textDecoration: 'none' }
+const footerLink = { color: BRAND.primaryDeep, textDecoration: 'none' }
 const footerLegal = { fontSize: '11px', color: '#999999', margin: 0, lineHeight: '1.5' }

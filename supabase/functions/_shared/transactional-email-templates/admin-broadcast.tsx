@@ -2,7 +2,7 @@
 import * as React from 'npm:react@18.3.1'
 import { Heading, Text, Section, Link } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
-import { BrandFrame, BrandCta } from './_brand-frame.tsx'
+import { BrandFrame, BrandCta, BRAND } from './_brand-frame.tsx'
 
 // Block types match the markdown parser in admin-broadcast-email/index.ts
 type InlineRun = { text: string; bold?: boolean; italic?: boolean; href?: string }
@@ -87,4 +87,4 @@ const h2 = { fontSize: '18px', fontWeight: 700 as const, color: '#1a1a1a', margi
 const text = { fontSize: '15px', color: '#1a1a1a', lineHeight: '1.6', margin: '0 0 14px' }
 const listItem = { fontSize: '14px', color: '#1a1a1a', lineHeight: '1.6', margin: '4px 0', paddingLeft: '4px' }
 const textMuted = { fontSize: '13px', color: '#55575d', lineHeight: '1.6', margin: '20px 0 0' }
-const inlineLink = { color: '#A64DFF', textDecoration: 'underline' }
+const inlineLink = { color: BRAND.primaryDeep, textDecoration: 'underline' }

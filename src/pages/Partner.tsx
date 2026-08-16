@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import JoinPartnerScreen from "@/components/partner/JoinPartnerScreen";
+import { Users, CheckCircle2, DollarSign, Landmark, Receipt, Globe, Gem } from "lucide-react";
 
 interface Referral {
   user_id: string;
@@ -133,7 +134,7 @@ export default function Partner() {
   if (!partner) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="glass neon-border rounded-2xl p-8 text-center space-y-4 max-w-sm">
+        <div className="glass border border-border rounded-2xl p-8 text-center space-y-4 max-w-sm">
           <h1 className="text-xl font-heading font-bold text-foreground">No partner profile</h1>
           <p className="text-sm text-muted-foreground">You're an admin but you don't have a partner record yet.</p>
           <Button onClick={() => navigate("/admin")} className="font-heading">Open Admin → Partners</Button>
@@ -148,7 +149,7 @@ export default function Partner() {
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      toast({ title: "Link copied! 🔗" });
+      toast({ title: "Link copied!" });
       setTimeout(() => setCopied(false), 1500);
     } catch {
       toast({ title: "Could not copy", variant: "destructive" });
@@ -156,18 +157,18 @@ export default function Partner() {
   };
 
   const statCards = [
-    { label: "Referred users", value: stats?.referred_users ?? 0, icon: "👥" },
-    { label: "Confirmed sales", value: stats?.confirmed_payments ?? 0, icon: "✅" },
-    { label: "Gross earnings", value: fmtUsd(stats?.gross_earnings_usd), icon: "💰" },
-    { label: "Paid out", value: fmtUsd(stats?.paid_out_usd), icon: "🏦" },
-    { label: "Balance owed", value: fmtUsd(stats?.balance_owed_usd), icon: "🧾" },
+    { label: "Referred users", value: stats?.referred_users ?? 0, icon: Users },
+    { label: "Confirmed sales", value: stats?.confirmed_payments ?? 0, icon: CheckCircle2 },
+    { label: "Gross earnings", value: fmtUsd(stats?.gross_earnings_usd), icon: DollarSign },
+    { label: "Paid out", value: fmtUsd(stats?.paid_out_usd), icon: Landmark },
+    { label: "Balance owed", value: fmtUsd(stats?.balance_owed_usd), icon: Receipt },
   ];
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-heading font-bold gradient-text">Elite Swap</h1>
+          <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
           <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading font-semibold">
             PARTNER
           </span>
@@ -198,7 +199,7 @@ export default function Partner() {
           </p>
         </div>
 
-        <div className="glass neon-border rounded-xl p-4 space-y-3">
+        <div className="glass border border-border rounded-xl p-4 space-y-3">
           <div className="text-sm font-heading font-semibold text-foreground">Your referral link</div>
           <div className="flex flex-col sm:flex-row gap-2">
             <code className="flex-1 bg-muted/30 rounded-lg px-3 py-2 text-xs font-mono text-foreground/80 break-all">
@@ -215,15 +216,15 @@ export default function Partner() {
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {statCards.map((s) => (
-            <div key={s.label} className="glass neon-border rounded-xl p-4 text-center space-y-1">
-              <div className="text-xl">{s.icon}</div>
+            <div key={s.label} className="glass border border-border rounded-xl p-4 text-center space-y-1">
+              <s.icon className="w-5 h-5 mx-auto text-primary" strokeWidth={1.75} />
               <div className="text-xl md:text-2xl font-heading font-bold text-foreground">{s.value}</div>
               <div className="text-[11px] text-muted-foreground font-heading">{s.label}</div>
             </div>
           ))}
         </div>
 
-        <div className="glass neon-border rounded-xl p-4 space-y-3">
+        <div className="glass border border-border rounded-xl p-4 space-y-3">
           <h3 className="font-heading font-semibold text-foreground">Your referrals</h3>
           {referrals.length === 0 ? (
             <p className="text-sm text-muted-foreground">No referrals yet — share your link to get started.</p>
@@ -267,7 +268,7 @@ export default function Partner() {
           )}
         </div>
 
-        <div className="glass neon-border rounded-xl p-4 space-y-3">
+        <div className="glass border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-heading font-semibold text-foreground">Commission breakdown</h3>
             <span className="text-[11px] text-muted-foreground font-heading">
@@ -318,7 +319,7 @@ export default function Partner() {
           )}
         </div>
 
-        <div className="glass neon-border rounded-xl p-4 space-y-3">
+        <div className="glass border border-border rounded-xl p-4 space-y-3">
           <h3 className="font-heading font-semibold text-foreground">Payout history</h3>
           {payouts.length === 0 ? (
             <p className="text-sm text-muted-foreground">No payouts recorded yet.</p>
@@ -357,21 +358,21 @@ export default function Partner() {
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {[
-                { label: "Downline partners", value: downlinePartnerCount, icon: "👥" },
-                { label: "Downline payments", value: overrideStats?.downline_count ?? 0, icon: "🌐" },
-                { label: "Total earned", value: fmtUsd(overrideStats?.override_earnings_usd), icon: "💎" },
-                { label: "Paid out", value: fmtUsd(overrideStats?.override_paid_out_usd), icon: "🏦" },
-                { label: "Balance owed", value: fmtUsd(overrideStats?.override_balance_usd), icon: "🧾" },
+                { label: "Downline partners", value: downlinePartnerCount, icon: Users },
+                { label: "Downline payments", value: overrideStats?.downline_count ?? 0, icon: Globe },
+                { label: "Total earned", value: fmtUsd(overrideStats?.override_earnings_usd), icon: Gem },
+                { label: "Paid out", value: fmtUsd(overrideStats?.override_paid_out_usd), icon: Landmark },
+                { label: "Balance owed", value: fmtUsd(overrideStats?.override_balance_usd), icon: Receipt },
               ].map((s) => (
-                <div key={s.label} className="glass neon-border rounded-xl p-4 text-center space-y-1">
-                  <div className="text-xl">{s.icon}</div>
+                <div key={s.label} className="glass border border-border rounded-xl p-4 text-center space-y-1">
+                  <s.icon className="w-5 h-5 mx-auto text-primary" strokeWidth={1.75} />
                   <div className="text-xl md:text-2xl font-heading font-bold text-foreground">{s.value}</div>
                   <div className="text-[11px] text-muted-foreground font-heading">{s.label}</div>
                 </div>
               ))}
             </div>
 
-            <div className="glass neon-border rounded-xl p-4 space-y-3">
+            <div className="glass border border-border rounded-xl p-4 space-y-3">
               <h3 className="font-heading font-semibold text-foreground">Downline bonus breakdown</h3>
               {overrideBreakdown.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No downline bonuses yet.</p>
@@ -417,7 +418,7 @@ export default function Partner() {
               )}
             </div>
 
-            <div className="glass neon-border rounded-xl p-4 space-y-3">
+            <div className="glass border border-border rounded-xl p-4 space-y-3">
               <h3 className="font-heading font-semibold text-foreground">Downline payout history</h3>
               {overridePayouts.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No downline payouts recorded yet.</p>

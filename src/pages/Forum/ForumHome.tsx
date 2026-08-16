@@ -21,7 +21,7 @@ export default function ForumHome() {
       </Helmet>
 
       <section className="mb-6">
-        <h1 className="text-3xl md:text-4xl font-heading font-bold gradient-text">Community Forum</h1>
+        <h1 className="text-3xl md:text-4xl font-heading font-bold text-foreground">Community Forum</h1>
         <p className="text-muted-foreground mt-1">Share tips, workarounds, and help each other out.</p>
         <Link
           to="/forum/guidelines"

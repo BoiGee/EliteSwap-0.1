@@ -9,7 +9,7 @@ export default function Guidelines() {
         <meta name="description" content="Rules for keeping the Elite Swap community safe and helpful." />
       </Helmet>
       <article className="prose prose-invert max-w-none">
-        <h1 className="text-3xl font-heading font-bold gradient-text">Community Guidelines</h1>
+        <h1 className="text-3xl font-heading font-bold text-foreground">Community Guidelines</h1>
         <p className="text-muted-foreground">
           This forum exists so Elite Swap users can help each other. Keep it safe and supportive.
         </p>

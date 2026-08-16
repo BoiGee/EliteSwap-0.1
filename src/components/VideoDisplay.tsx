@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, Sparkles, Camera } from "lucide-react";
 
 export type Orientation = "landscape" | "portrait";
 
@@ -70,8 +70,8 @@ export function VideoDisplay({
               className={`w-full h-full object-cover ${mirrored ? "scale-x-[-1]" : ""}`}
             />
           ) : (
-            <div className="flex items-center justify-center h-full">
-              <span className="text-2xl">📷</span>
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              <Camera className="w-6 h-6" strokeWidth={1.5} />
             </div>
           )}
         </div>
@@ -83,7 +83,7 @@ export function VideoDisplay({
   }
 
   return (
-    <div className={`relative rounded-xl overflow-hidden ${isOutput ? "neon-border" : "border border-border"} ${isExpanded ? "h-full" : ""}`}>
+    <div className={`relative rounded-xl overflow-hidden ${isOutput ? "border-2 border-primary/50" : "border border-border"} ${isExpanded ? "h-full" : ""}`}>
       <div className={`${isExpanded ? "h-full" : aspectClass} bg-muted/20 relative`}>
         {stream && !paused ? (
           <video
@@ -109,7 +109,9 @@ export function VideoDisplay({
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <div className="text-4xl mb-2">{isOutput ? "✨" : "📷"}</div>
+              <div className="flex justify-center mb-2 text-muted-foreground">
+                {isOutput ? <Sparkles className="w-8 h-8" strokeWidth={1.5} /> : <Camera className="w-8 h-8" strokeWidth={1.5} />}
+              </div>
               <p className="text-muted-foreground text-sm">
                 {paused
                   ? "Preview paused"
@@ -142,7 +144,7 @@ export function VideoDisplay({
         `}>
           <div className="flex items-center gap-2">
             {stream && (
-              <span className={`w-2 h-2 rounded-full ${isOutput ? "bg-primary animate-pulse-neon" : "bg-neon-green"}`} />
+              <span className={`w-2 h-2 rounded-full ${isOutput ? "bg-primary animate-pulse-neon" : "bg-success"}`} />
             )}
             {label}
           </div>

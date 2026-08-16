@@ -56,14 +56,13 @@ export default function Pricing() {
         <meta property="og:description" content="Plans for EliteSwap realtime AI face & character swap." />
         <meta property="og:url" content="https://eliteswap.online/pricing" />
       </Helmet>
-      <div className="absolute inset-0 scanline pointer-events-none opacity-30" />
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
 
       <main className="w-full max-w-5xl relative z-10 py-16 space-y-12">
 
         {/* Header */}
         <div className="text-center space-y-4">
-          <button onClick={() => navigate("/")} className="text-3xl font-heading font-bold gradient-text mb-2">Elite Swap</button>
+          <button onClick={() => navigate("/")} className="text-3xl font-heading font-bold text-primary mb-2">Elite Swap</button>
           <h1 className="text-4xl md:text-5xl font-heading font-bold text-foreground">Choose Your Plan</h1>
           <p className="text-muted-foreground max-w-md mx-auto">
             Unlock realtime AI character swap with the plan that fits your needs.
@@ -94,8 +93,8 @@ export default function Pricing() {
               return (
                 <div
                   key={plan.id}
-                  className={`glass rounded-2xl p-6 flex flex-col space-y-5 transition-transform hover:scale-[1.02] ${
-                    isHighlighted ? "neon-border ring-1 ring-primary/30" : "border border-border"
+                  className={`glass rounded-2xl p-6 flex flex-col space-y-5 transition-transform hover:scale-[1.02] border ${
+                    isHighlighted ? "border-primary/50" : "border-border"
                   }`}
                 >
                   {isHighlighted && (
@@ -129,7 +128,7 @@ export default function Pricing() {
                     onClick={() => navigate("/auth")}
                     className={`w-full font-heading font-semibold py-5 ${
                       isHighlighted
-                        ? "bg-primary text-primary-foreground hover:bg-primary/90 neon-glow"
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
                         : "bg-muted/50 text-foreground hover:bg-muted"
                     }`}
                   >

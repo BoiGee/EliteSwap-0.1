@@ -8,7 +8,7 @@ interface TutorialSectionProps {
 
 export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment }: TutorialSectionProps) {
   return (
-    <div className="glass neon-border rounded-2xl p-2">
+    <div className="glass border border-border rounded-2xl p-2">
       <Accordion type="single" collapsible defaultValue={isFirstTimer || trialExhaustedNoPayment ? "tutorial" : undefined}>
         <AccordionItem value="tutorial" className="border-0">
           <AccordionTrigger className="px-4 py-3 hover:no-underline">
@@ -20,8 +20,8 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
           <AccordionContent className="px-4 pb-4">
             <Tabs defaultValue={trialExhaustedNoPayment ? "paid" : "trial"} className="w-full">
               <TabsList className="grid w-full grid-cols-2 bg-muted/30">
-                <TabsTrigger value="trial" className="font-heading">💳 $10 Trial</TabsTrigger>
-                <TabsTrigger value="paid" className="font-heading">💎 Paid Plan</TabsTrigger>
+                <TabsTrigger value="trial" className="font-heading">$10 Trial</TabsTrigger>
+                <TabsTrigger value="paid" className="font-heading">Paid Plan</TabsTrigger>
               </TabsList>
 
               {/* $10 TRIAL TAB */}
@@ -150,7 +150,7 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
               <div className="mt-6 border-t border-border pt-6">
                 <div className="bg-gradient-to-br from-primary/15 via-primary/5 to-transparent border border-primary/30 rounded-xl p-5 space-y-4">
                   <div className="space-y-1">
-                    <h3 className="text-lg font-heading font-bold gradient-text">Your trial sessions are used up — here's what you unlock by upgrading</h3>
+                    <h3 className="text-lg font-heading font-bold text-primary">Your trial sessions are used up — here's what you unlock by upgrading</h3>
                     <p className="text-sm text-muted-foreground">No pressure, but here's what paid users get that trial users don't.</p>
                   </div>
 

@@ -9,7 +9,7 @@ import { useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
-import { Monitor, Smartphone, Copy, Download, GripVertical, Zap } from "lucide-react";
+import { Monitor, Smartphone, Copy, Download, GripVertical, Zap, TimerOff, ImagePlus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { ReviewPromptModal } from "./dashboard/ReviewPromptModal";
 import { StudioDiagnostics, type DiagnosticsState } from "./StudioDiagnostics";
@@ -1945,7 +1945,7 @@ export function DeepfakeStudio() {
       console.warn("[studio] studio request fallback", result.error);
     }
 
-    toast({ title: "Character updated! ✨", description: referenceImage ? "Face swap applied — your motion drives the reference image." : "Transformation is being applied..." });
+    toast({ title: "Character updated!", description: referenceImage ? "Face swap applied — your motion drives the reference image." : "Transformation is being applied..." });
   }, [applyStudioRequest, referenceImage, toast, buildPrompt, studioMode]);
 
   const handleCustomPrompt = useCallback(async () => {
@@ -1964,7 +1964,7 @@ export function DeepfakeStudio() {
       console.warn("[studio] prompt request fallback", result.error);
     }
 
-    toast({ title: "Prompt applied! 🎨" });
+    toast({ title: "Prompt applied!" });
   }, [applyStudioRequest, customPrompt, referenceImage, toast, buildPrompt, studioMode]);
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1988,7 +1988,7 @@ export function DeepfakeStudio() {
           file = await enhanceImage(picked, score);
           if (score.tier === "marginal") {
             toast({
-              title: "Photo optimized ✨",
+              title: "Photo optimized",
               description: "We enhanced your reference for a cleaner swap.",
             });
           }
@@ -2016,9 +2016,9 @@ export function DeepfakeStudio() {
         mode: studioMode,
       });
       appliedReferenceRef.current = file;
-      toast({ title: "Face swap active! 🎭", description: "Your webcam motion now drives the reference face in realtime." });
+      toast({ title: "Face swap active!", description: "Your webcam motion now drives the reference face in realtime." });
     } else {
-      toast({ title: "Reference ready 📸", description: "It will apply automatically as soon as you connect." });
+      toast({ title: "Reference ready", description: "It will apply automatically as soon as you connect." });
     }
   }, [toast, connectionState, setImage, buildPrompt]);
 
@@ -2057,7 +2057,7 @@ export function DeepfakeStudio() {
           enhance: true,
           mode: studioMode,
         });
-        toast({ title: "Face swap active! 🎭", description: "Your webcam motion now drives the reference face in realtime." });
+        toast({ title: "Face swap active!", description: "Your webcam motion now drives the reference face in realtime." });
       } catch (err) {
         console.warn("[studio] auto-apply reference failed", err);
         appliedReferenceRef.current = null;
@@ -2087,7 +2087,7 @@ export function DeepfakeStudio() {
   const copyObsUrl = () => {
     navigator.clipboard.writeText(obsUrl);
     ensureObsEnabled();
-    toast({ title: "OBS URL copied! 📋", description: "Paste this as a Browser Source in OBS Studio. Broadcast is now ON." });
+    toast({ title: "OBS URL copied!", description: "Paste this as a Browser Source in OBS Studio. Broadcast is now ON." });
   };
 
   if (!isStarted) {
@@ -2095,13 +2095,13 @@ export function DeepfakeStudio() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-8 text-center">
           <div className="space-y-3">
-            <h1 className="text-5xl font-heading font-bold gradient-text">Elite Swap</h1>
+            <h1 className="text-5xl font-heading font-bold text-primary">Elite Swap</h1>
             <p className="text-muted-foreground font-body">
               Enter the studio first — you'll connect to Elite Swap when you're ready.
             </p>
           </div>
 
-          <div className="glass neon-border rounded-2xl p-6 space-y-4">
+          <div className="glass border border-border rounded-2xl p-6 space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-heading text-foreground/70 block text-left">
                 Studio Access Key {apiKey ? <span className="text-primary">✓ ready</span> : <span className="text-destructive">required</span>}
@@ -2118,7 +2118,7 @@ export function DeepfakeStudio() {
             </div>
             <Button
               onClick={handleEnterStudio}
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold neon-glow"
+              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold"
             >
               Enter Studio →
             </Button>
@@ -2160,8 +2160,8 @@ export function DeepfakeStudio() {
       />
       {showTrialEnded && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="glass neon-border rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
-            <div className="text-4xl">⏰</div>
+          <div className="glass border border-border rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
+            <TimerOff className="w-9 h-9 mx-auto text-primary" strokeWidth={1.5} />
             <h2 className="text-xl font-heading font-bold text-foreground">Free trial ended</h2>
             <p className="text-sm text-muted-foreground">
               Hope you liked it! Upgrade to keep using Elite Swap with no time limit and no watermark.
@@ -2169,9 +2169,9 @@ export function DeepfakeStudio() {
             <div className="flex flex-col gap-2">
               <Button
                 onClick={() => { window.location.href = "/dashboard"; }}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading neon-glow"
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading"
               >
-                Upgrade Now 💎
+                Upgrade Now
               </Button>
               <Button
                 onClick={() => setShowTrialEnded(false)}
@@ -2188,19 +2188,19 @@ export function DeepfakeStudio() {
       {/* Header */}
       <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-heading font-bold gradient-text">Elite Swap</h1>
+          <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className={`w-2 h-2 rounded-full ${
-              connectionState === "generating" ? "bg-neon-green animate-pulse-neon" :
+              connectionState === "generating" ? "bg-success animate-pulse-neon" :
               isConnected ? "bg-primary" :
-              connectionState === "connecting" || connectionState === "reconnecting" ? "bg-amber-400 animate-pulse-neon" :
+              connectionState === "connecting" || connectionState === "reconnecting" ? "bg-warning animate-pulse-neon" :
               "bg-destructive"
             }`} />
             <span className="font-heading uppercase tracking-wider">{connectionState}</span>
           </div>
           {referenceImage && (
             <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading">
-              🎭 Face Swap Active
+              Face Swap Active
             </span>
           )}
           <StudioCountdown anchor={timerAnchor} onExpire={handleExpire} />
@@ -2240,18 +2240,18 @@ export function DeepfakeStudio() {
           <Button
             onClick={() => setShowPayment(true)}
             size="sm"
-            className="bg-gradient-to-r from-amber-500 to-yellow-500 text-primary-foreground hover:from-amber-600 hover:to-yellow-600 font-heading text-xs"
+            className="bg-warning text-warning-foreground hover:bg-warning/90 font-heading text-xs"
           >
-            💰 Pay
+            Pay
           </Button>
           {!isConnected && connectionState !== "connecting" && connectionState !== "reconnecting" ? (
             <Button
               onClick={handleConnect}
               disabled={isLaunching}
               size="sm"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading text-xs neon-glow"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading text-xs"
             >
-              {isLaunching ? "Connecting…" : "Connect 🚀"}
+              {isLaunching ? "Connecting…" : "Connect"}
             </Button>
           ) : (
             <Button
@@ -2309,7 +2309,7 @@ export function DeepfakeStudio() {
           )}
 
           {/* Reference Image */}
-          <div className="glass neon-border rounded-xl p-4 space-y-3">
+          <div className="glass border border-border rounded-xl p-4 space-y-3">
             <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">
               Reference Face
             </h2>
@@ -2347,7 +2347,7 @@ export function DeepfakeStudio() {
                 className="w-full aspect-video rounded-lg border-2 border-dashed border-border hover:border-primary/40 transition-colors flex flex-col items-center justify-center gap-2 text-muted-foreground"
               >
 
-                <span className="text-3xl">🎭</span>
+                <ImagePlus className="w-7 h-7" strokeWidth={1.5} />
                 <span className="text-xs font-heading">Upload a face to swap into</span>
                 <span className="text-xs text-muted-foreground/50">Your motion will drive this face</span>
               </button>
@@ -2355,7 +2355,7 @@ export function DeepfakeStudio() {
           </div>
 
           {/* Character Presets */}
-          <div className="glass neon-border rounded-xl p-4 space-y-3">
+          <div className="glass border border-border rounded-xl p-4 space-y-3">
             <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">
               Style Presets
             </h2>
@@ -2383,7 +2383,7 @@ export function DeepfakeStudio() {
           </div>
 
           {/* Custom Prompt */}
-          <div className="glass neon-border rounded-xl p-4 space-y-3">
+          <div className="glass border border-border rounded-xl p-4 space-y-3">
             <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">
               Custom Prompt
             </h2>
@@ -2425,7 +2425,7 @@ export function DeepfakeStudio() {
           </div>
 
           {/* OBS Integration */}
-          <div className="glass neon-border rounded-xl p-4 space-y-3">
+          <div className="glass border border-border rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">
                 OBS Studio Integration
@@ -2434,11 +2434,11 @@ export function DeepfakeStudio() {
                 {obsEnabled && (
                   <span
                     className={`flex items-center gap-1 text-[10px] font-heading uppercase tracking-wider ${
-                      obsViewerCount > 0 ? "text-neon-green" : "text-muted-foreground"
+                      obsViewerCount > 0 ? "text-success" : "text-muted-foreground"
                     }`}
                     title={obsViewerCount > 0 ? "OBS is connected and receiving frames" : "Waiting for OBS to connect"}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${obsViewerCount > 0 ? "bg-neon-green animate-pulse-neon" : "bg-muted-foreground"}`} />
+                    <span className={`w-1.5 h-1.5 rounded-full ${obsViewerCount > 0 ? "bg-success animate-pulse-neon" : "bg-muted-foreground"}`} />
                     {obsViewerCount > 0 ? `Live (${obsViewerCount})` : "Idle"}
                   </span>
                 )}
@@ -2465,12 +2465,12 @@ export function DeepfakeStudio() {
             {obsEnabled && obsViewerCount > 0 && (obsCodec || obsTransport) && (
               <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground flex-wrap">
                 {obsTransport && (
-                  <span className={`px-1.5 py-0.5 rounded ${obsTransport === "p2p" ? "bg-neon-cyan/15 text-neon-cyan" : "bg-muted text-muted-foreground"}`}>
+                  <span className={`px-1.5 py-0.5 rounded ${obsTransport === "p2p" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
                     {obsTransport === "p2p" ? "P2P · DataChannel" : "Broker · Realtime"}
                   </span>
                 )}
                 {obsCodec && (
-                  <span className={`px-1.5 py-0.5 rounded ${obsCodec === "h264" ? "bg-neon-green/15 text-neon-green" : "bg-muted text-muted-foreground"}`}>
+                  <span className={`px-1.5 py-0.5 rounded ${obsCodec === "h264" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
                     {obsCodec === "h264" ? "H.264 HW" : "JPEG"}
                   </span>
                 )}
@@ -2513,7 +2513,7 @@ export function DeepfakeStudio() {
                   a.click();
                   URL.revokeObjectURL(a.href);
                   ensureObsEnabled();
-                  toast({ title: "Shortcut downloaded! 📁", description: "Double-click the file or drag it into OBS. Broadcast is now ON." });
+                  toast({ title: "Shortcut downloaded!", description: "Double-click the file or drag it into OBS. Broadcast is now ON." });
                 }}
                 size="sm"
                 variant="outline"

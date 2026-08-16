@@ -5,6 +5,7 @@ import { TopReviews } from "@/components/TopReviews";
 import PromoBanner from "@/components/PromoBanner";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import logo from "@/assets/logo.jpg";
+import { Wand2, Zap, Video } from "lucide-react";
 
 
 export default function Landing() {
@@ -22,7 +23,6 @@ export default function Landing() {
       </Helmet>
       {/* Background effects */}
 
-      <div className="absolute inset-0 scanline pointer-events-none opacity-30" />
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
 
       {/* Promo banner */}
@@ -34,13 +34,13 @@ export default function Landing() {
       <header className="relative z-20 flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate("/")}>
           <img src={logo} alt="Elite Swap" className="w-10 h-10 rounded-lg" />
-          <span className="text-xl font-heading font-bold gradient-text">Elite Swap</span>
+          <span className="text-xl font-heading font-bold text-primary">Elite Swap</span>
         </div>
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           <Button variant="ghost" onClick={() => navigate("/forum")} className="font-heading text-sm">Forum</Button>
           <Button variant="ghost" onClick={() => navigate("/pricing")} className="font-heading text-sm">Pricing</Button>
-          <Button onClick={() => navigate("/auth")} className="font-heading text-sm neon-glow">Get Started</Button>
+          <Button onClick={() => navigate("/auth")} className="font-heading text-sm">Get Started</Button>
         </div>
       </header>
 
@@ -48,14 +48,19 @@ export default function Landing() {
       <main className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-lg space-y-10 text-center relative z-10">
           <div className="space-y-4">
-            <h1 className="text-6xl md:text-7xl font-heading font-bold gradient-text">Elite Swap — Realtime AI Character Transformation</h1>
+            <p className="text-xs font-heading font-semibold tracking-[0.2em] uppercase text-primary">
+              Realtime &middot; OBS-ready
+            </p>
+            <h1 className="text-5xl md:text-6xl font-heading font-bold leading-[1.05] tracking-tight [text-wrap:balance]">
+              Realtime AI <span className="gradient-text">character transformation</span>
+            </h1>
 
             <p className="text-lg text-muted-foreground font-body max-w-md mx-auto">
-              Realtime AI character swap & character transformation - compatible with OBS Studio.
+              Swap your face and character live, streamed directly into OBS — no render queue, no cutoffs.
             </p>
           </div>
 
-          <div className="glass neon-border rounded-2xl p-8 space-y-4">
+          <div className="glass border border-border rounded-2xl p-8 space-y-4">
             <h2 className="text-xl font-heading font-semibold text-foreground">Get Started</h2>
             <p className="text-sm text-muted-foreground">
               Create an account, make a payment, and receive your unique key instantly.
@@ -63,23 +68,23 @@ export default function Landing() {
             <div className="flex flex-col gap-3">
               <Button
                 onClick={() => navigate("/auth?redirect=trial")}
-                className="w-full bg-gradient-to-r from-primary to-primary/70 text-primary-foreground hover:opacity-90 font-heading font-semibold text-base py-6 neon-glow"
+                className="w-full font-heading font-semibold text-base py-6"
               >
-                Start $10 Trial — 4 min 💳
+                Start $10 Trial — 4 min
               </Button>
               <Button
                 onClick={() => navigate("/auth")}
                 variant="outline"
                 className="w-full font-heading font-semibold text-base py-6"
               >
-                Sign Up / Log In 🚀
+                Sign Up / Log In
               </Button>
               <Button
                 variant="ghost"
                 onClick={() => navigate("/pricing")}
                 className="w-full font-heading font-semibold text-sm"
               >
-                View Pricing 💎
+                View Pricing
               </Button>
             </div>
           </div>
@@ -90,13 +95,13 @@ export default function Landing() {
           {/* Demo video */}
           <div className="space-y-3">
             <div className="flex items-center justify-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-neon" />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               <span className="text-xs font-heading font-semibold tracking-[0.2em] uppercase text-muted-foreground">
                 Watch the demo
               </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-neon" />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
             </div>
-            <div className="glass neon-border rounded-2xl p-2 overflow-hidden">
+            <div className="glass border border-border rounded-2xl p-2 overflow-hidden">
               <div className="aspect-video w-full rounded-xl overflow-hidden bg-background/50">
                 <iframe
                   src="https://www.youtube.com/embed/6-4vyVxh7Oo?rel=0&modestbranding=1"
@@ -112,12 +117,12 @@ export default function Landing() {
 
           <div className="grid grid-cols-3 gap-4 text-center">
             {[
-              { icon: "🎭", label: "Face Swap", desc: "Drive any face with your webcam" },
-              { icon: "⚡", label: "Realtime", desc: "Low-latency WebRTC stream" },
-              { icon: "🎬", label: "OBS Ready", desc: "Capture output in OBS Studio" },
+              { Icon: Wand2, label: "Face Swap", desc: "Drive any face with your webcam" },
+              { Icon: Zap, label: "Realtime", desc: "Low-latency WebRTC stream" },
+              { Icon: Video, label: "OBS Ready", desc: "Capture output in OBS Studio" },
             ].map((f) => (
-              <div key={f.label} className="glass rounded-xl p-4 space-y-2">
-                <div className="text-2xl">{f.icon}</div>
+              <div key={f.label} className="glass border border-border rounded-xl p-4 space-y-2">
+                <f.Icon className="w-5 h-5 mx-auto text-primary" strokeWidth={1.75} />
                 <div className="text-xs font-heading font-semibold text-foreground/80">{f.label}</div>
                 <div className="text-xs text-muted-foreground">{f.desc}</div>
               </div>

@@ -31,10 +31,10 @@ export function ReviewPromptModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
-      <DialogContent className="glass neon-border max-w-md">
+      <DialogContent className="glass border border-border max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-heading gradient-text">
-            {title ?? (showingForm ? "Leave a quick review ⭐" : "Enjoying Elite Swap?")}
+          <DialogTitle className="font-heading">
+            {title ?? (showingForm ? "Leave a quick review" : "Enjoying Elite Swap?")}
           </DialogTitle>
           <DialogDescription>
             {showingForm
@@ -55,9 +55,9 @@ export function ReviewPromptModal({
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <Button
               onClick={() => setShowForm(true)}
-              className="flex-1 neon-glow font-heading font-semibold"
+              className="flex-1 font-heading font-semibold"
             >
-              Leave a review ⭐
+              Leave a review
             </Button>
             <Button
               variant="outline"

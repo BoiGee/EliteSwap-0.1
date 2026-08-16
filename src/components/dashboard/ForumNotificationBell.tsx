@@ -38,7 +38,7 @@ export default function ForumNotificationBell() {
         <Button
           variant="outline"
           size="sm"
-          className="relative font-heading text-xs neon-border"
+          className="relative font-heading text-xs"
           aria-label="Community notifications"
         >
           <Bell className="h-4 w-4" />

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { Users, Clock, CheckCircle2, KeyRound } from "lucide-react";
 // Lazy-loaded: only the active tab's manager (and its dependencies, e.g.
 // FinanceManager's recharts import) is ever downloaded, instead of every
 // admin tab loading up front regardless of which one staff actually open.
@@ -264,7 +265,7 @@ export default function Admin() {
   if (!isStaff && !devAdminOverrideEnabled) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="glass neon-border rounded-2xl p-8 text-center space-y-4 max-w-sm">
+        <div className="glass border border-border rounded-2xl p-8 text-center space-y-4 max-w-sm">
           <h1 className="text-2xl font-heading font-bold text-destructive">Access Denied</h1>
           <p className="text-sm text-muted-foreground">You don't have admin privileges.</p>
           <Button onClick={() => navigate("/dashboard")} variant="outline" className="font-heading">Back to Dashboard</Button>
@@ -345,8 +346,8 @@ export default function Admin() {
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-heading font-bold gradient-text">Elite Swap</h1>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-heading font-semibold ${isAdmin ? "bg-destructive/20 text-destructive" : isSecAdmin ? "bg-amber-500/20 text-amber-400" : "bg-primary/20 text-primary"}`}>{isAdmin ? "ADMIN" : isSecAdmin ? "SEC ADMIN" : "MODERATOR"}</span>
+          <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-heading font-semibold ${isAdmin ? "bg-destructive/20 text-destructive" : isSecAdmin ? "bg-warning/20 text-warning" : "bg-primary/20 text-primary"}`}>{isAdmin ? "ADMIN" : isSecAdmin ? "SEC ADMIN" : "MODERATOR"}</span>
         </div>
         <div className="flex items-center gap-3">
           <NotificationBell />
@@ -369,13 +370,13 @@ export default function Admin() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm font-heading transition-all flex items-center gap-2 ${
-                tab === t.id ? "bg-primary/10 text-primary neon-border" : "text-muted-foreground hover:bg-muted/30"
+                tab === t.id ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:bg-muted/30"
               }`}
             >
               <span>{t.icon}</span>
               {t.label}
               {t.id === "payments" && pendingPayments > 0 && (
-                <span className="ml-auto bg-amber-500/20 text-amber-400 text-xs px-1.5 py-0.5 rounded-full font-semibold">{pendingPayments}</span>
+                <span className="ml-auto bg-warning/20 text-warning text-xs px-1.5 py-0.5 rounded-full font-semibold">{pendingPayments}</span>
               )}
               {t.id === "support" && supportUnread > 0 && tab !== "support" && (
                 <span className="ml-auto min-w-[20px] h-5 px-1 bg-destructive text-destructive-foreground text-xs rounded-full font-semibold flex items-center justify-center">
@@ -393,20 +394,20 @@ export default function Admin() {
               <h2 className="text-2xl font-heading font-bold text-foreground">Dashboard Overview</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { label: "Total Users", value: totalUsers, icon: "👥" },
-                  { label: "Pending Payments", value: pendingPayments, icon: "⏳" },
-                  { label: "Confirmed Payments", value: confirmedPayments, icon: "✅" },
-                  { label: "Active Unique Keys", value: activeKeys, icon: "🔑" },
+                  { label: "Total Users", value: totalUsers, Icon: Users },
+                  { label: "Pending Payments", value: pendingPayments, Icon: Clock },
+                  { label: "Confirmed Payments", value: confirmedPayments, Icon: CheckCircle2 },
+                  { label: "Active Unique Keys", value: activeKeys, Icon: KeyRound },
                 ].map((s) => (
-                  <div key={s.label} className="glass neon-border rounded-xl p-4 text-center space-y-2">
-                    <div className="text-2xl">{s.icon}</div>
+                  <div key={s.label} className="glass border border-border rounded-xl p-4 text-center space-y-2">
+                    <s.Icon className="w-5 h-5 mx-auto text-primary" strokeWidth={1.75} />
                     <div className="text-3xl font-heading font-bold text-foreground">{s.value}</div>
                     <div className="text-xs text-muted-foreground font-heading">{s.label}</div>
                   </div>
                 ))}
               </div>
 
-              <div className="glass neon-border rounded-xl p-4 space-y-3">
+              <div className="glass border border-border rounded-xl p-4 space-y-3">
                 <h3 className="font-heading font-semibold text-foreground">Recent Payments</h3>
                 {payments.slice(0, 5).map((p) => (
                   <div key={p.id} className="flex items-center justify-between bg-muted/20 rounded-lg px-3 py-2 text-xs">
@@ -416,7 +417,7 @@ export default function Admin() {
                     <span className={`font-heading font-semibold px-2 py-0.5 rounded-full ${
                       p.status === "confirmed" ? "bg-primary/20 text-primary" :
                       p.status === "rejected" ? "bg-destructive/20 text-destructive" :
-                      "bg-amber-500/20 text-amber-400"
+                      "bg-warning/20 text-warning"
                     }`}>{p.status}</span>
                   </div>
                 ))}

@@ -51,7 +51,7 @@ export default function ProfileSection() {
   if (!loaded) return null;
 
   return (
-    <div className="glass neon-border rounded-2xl p-6 space-y-4">
+    <div className="glass border border-border rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-heading font-bold text-lg">
           {(displayName || email || "?")[0].toUpperCase()}

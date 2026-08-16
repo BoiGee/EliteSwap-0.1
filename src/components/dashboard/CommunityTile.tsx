@@ -24,7 +24,7 @@ export default function CommunityTile() {
   const following = data?.isFollowing ?? false;
 
   return (
-    <div className="glass neon-border rounded-2xl p-5 space-y-4">
+    <div className="glass border border-border rounded-2xl p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-xl bg-primary/10 text-primary">
@@ -40,7 +40,7 @@ export default function CommunityTile() {
         <Button
           size="sm"
           onClick={() => navigate("/forum")}
-          className="font-heading neon-glow"
+          className="font-heading"
         >
           Open
         </Button>

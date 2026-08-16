@@ -2,7 +2,7 @@
 import * as React from 'npm:react@18.3.1'
 import { Heading, Text, Section, Row, Column } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
-import { BrandFrame, BrandCta, BrandNote } from './_brand-frame.tsx'
+import { BrandFrame, BrandCta, BrandNote, BRAND } from './_brand-frame.tsx'
 
 interface Props {
   displayName?: string
@@ -115,5 +115,5 @@ const tableBox = {
 }
 const tableLabel = { color: '#55575d', fontSize: '14px', padding: '6px 0' }
 const tableVal = { color: '#1a1a1a', fontSize: '14px', padding: '6px 0', textAlign: 'right' as const, fontWeight: 600 as const }
-const tableLabelStrong = { color: '#A64DFF', fontSize: '14px', padding: '8px 0 0', fontWeight: 700 as const, borderTop: '1px solid #e6deff' }
-const tableValStrong = { color: '#A64DFF', fontSize: '16px', padding: '8px 0 0', textAlign: 'right' as const, fontWeight: 800 as const, borderTop: '1px solid #e6deff' }
+const tableLabelStrong = { color: BRAND.primaryDeep, fontSize: '14px', padding: '8px 0 0', fontWeight: 700 as const, borderTop: '1px solid #e3d9fc' }
+const tableValStrong = { color: BRAND.primaryDeep, fontSize: '16px', padding: '8px 0 0', textAlign: 'right' as const, fontWeight: 800 as const, borderTop: '1px solid #e3d9fc' }

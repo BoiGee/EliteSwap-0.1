@@ -34,7 +34,7 @@ export default function CommunityFab() {
       </button>
       <button
         onClick={() => navigate("/forum")}
-        className="group flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-3 shadow-lg neon-glow font-heading text-sm hover:opacity-90"
+        className="group flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-3 shadow-lg font-heading text-sm hover:opacity-90"
         title="Ask the Community"
       >
         <MessageSquarePlus className="h-4 w-4" />

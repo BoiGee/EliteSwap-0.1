@@ -89,7 +89,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
 
   if (loading) {
     return (
-      <div className="glass neon-border rounded-2xl p-6">
+      <div className="glass border border-border rounded-2xl p-6">
         <div className="text-center text-primary animate-pulse font-heading">Loading plans...</div>
       </div>
     );
@@ -98,7 +98,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
   if (plans.length === 0) return null;
 
   return (
-    <div className="glass neon-border rounded-2xl p-6 space-y-5">
+    <div className="glass border border-border rounded-2xl p-6 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-lg font-heading font-semibold text-foreground">Available Plans</h2>
         <div className="flex items-center gap-3">
@@ -142,7 +142,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
             <div
               key={plan.id}
               className={`rounded-xl p-4 flex flex-col space-y-3 transition-transform hover:scale-[1.01] ${
-                isHighlighted ? "neon-border bg-primary/5" : "border border-border bg-muted/10"
+                isHighlighted ? "border border-primary/50 bg-primary/5" : "border border-border bg-muted/10"
               }`}
             >
               {isHighlighted && (
@@ -202,7 +202,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                     size="sm"
                     className={`w-full font-heading font-semibold text-xs ${
                       isHighlighted
-                        ? "bg-primary text-primary-foreground hover:bg-primary/90 neon-glow"
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
                         : "bg-muted/50 text-foreground hover:bg-muted"
                     }`}
                   >
@@ -227,7 +227,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                 onClick={() => { setDiscountPlanId(p.id); setAppliedDiscount(null); }}
                 className={`px-3 py-1 rounded-full text-xs font-heading transition-all ${
                   discountPlanId === p.id
-                    ? "bg-primary/20 text-primary neon-border"
+                    ? "bg-primary/20 text-primary border border-primary/40"
                     : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
                 }`}
               >

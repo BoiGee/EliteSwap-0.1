@@ -393,8 +393,8 @@ function MailerPreview({ subject, body, ctaLabel, ctaUrl }: {
 }) {
   return (
     <div className="rounded-xl border border-border overflow-hidden bg-white text-black">
-      <div className="px-6 py-5" style={{ background: "linear-gradient(135deg, #00FFFF 0%, #A64DFF 50%, #FF4DCB 100%)" }}>
-        <div className="text-white text-lg font-bold tracking-wide">⚡ Elite Swap</div>
+      <div className="px-6 py-5" style={{ background: "linear-gradient(135deg, #6D3FE0 0%, #8B5CF6 100%)" }}>
+        <div className="text-lg font-bold tracking-wide" style={{ color: "#15121F" }}>Elite Swap</div>
       </div>
       <div className="p-6 space-y-4">
         <h2 className="text-xl font-bold text-black">{subject || "Your subject preview"}</h2>
@@ -403,8 +403,8 @@ function MailerPreview({ subject, body, ctaLabel, ctaUrl }: {
         </div>
         {ctaLabel && ctaUrl && (
           <a href={ctaUrl} target="_blank" rel="noreferrer"
-            className="inline-block px-5 py-2.5 rounded-lg text-white font-semibold text-sm"
-            style={{ background: "linear-gradient(135deg, #A64DFF, #FF4DCB)" }}>
+            className="inline-block px-5 py-2.5 rounded-lg font-semibold text-sm"
+            style={{ background: "#8B5CF6", color: "#15121F" }}>
             {ctaLabel}
           </a>
         )}

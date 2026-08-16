@@ -11,7 +11,7 @@ export default function PartnersLoungeTile() {
   if (!partner || !partner.is_active) return null;
 
   return (
-    <div className="glass neon-border rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
+    <div className="glass border border-border rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
       <div className="flex items-start gap-3">
         <div className="p-2 rounded-xl bg-primary/10 text-primary">
           <Handshake className="h-5 w-5" />
@@ -26,7 +26,7 @@ export default function PartnersLoungeTile() {
       <Button
         size="sm"
         onClick={() => navigate("/forum/c/partners-lounge")}
-        className="font-heading neon-glow shrink-0"
+        className="font-heading shrink-0"
       >
         Enter Lounge
       </Button>

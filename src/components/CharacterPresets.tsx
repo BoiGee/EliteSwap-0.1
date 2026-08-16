@@ -5,18 +5,20 @@ interface CharacterPreset {
   name: string;
   prompt: string;
   emoji: string;
-  color: string;
 }
 
+// Emoji here are the actual content (the visual identifier for each preset),
+// not decoration — kept deliberately, unlike the decorative emoji removed
+// elsewhere in the redesign.
 const PRESETS: CharacterPreset[] = [
-  { id: "superhero", name: "Superhero", prompt: "Transform the person into a superhero with a cape and mask, comic book style", emoji: "🦸", color: "from-neon-cyan to-neon-purple" },
-  { id: "anime", name: "Anime", prompt: "Transform the person into an anime character with large expressive eyes, anime art style", emoji: "🎌", color: "from-neon-magenta to-neon-purple" },
-  { id: "zombie", name: "Zombie", prompt: "Transform the person into a zombie with pale green skin, dark eye circles, and torn clothing", emoji: "🧟", color: "from-neon-green to-neon-cyan" },
-  { id: "robot", name: "Cyborg", prompt: "Transform the person into a cyborg with metallic skin, glowing eyes, and mechanical parts", emoji: "🤖", color: "from-neon-cyan to-neon-green" },
-  { id: "vampire", name: "Vampire", prompt: "Transform the person into an elegant vampire with pale skin, red eyes, and fangs", emoji: "🧛", color: "from-neon-magenta to-destructive" },
-  { id: "elf", name: "Elf", prompt: "Transform the person into a fantasy elf with pointed ears, ethereal glow, and elegant features", emoji: "🧝", color: "from-neon-purple to-neon-cyan" },
-  { id: "pirate", name: "Pirate", prompt: "Transform the person into a pirate captain with an eyepatch, tricorn hat, and weathered face", emoji: "🏴‍☠️", color: "from-amber-500 to-neon-magenta" },
-  { id: "alien", name: "Alien", prompt: "Transform the person into an alien with blue-grey skin, large dark eyes, and an elongated head", emoji: "👽", color: "from-neon-green to-neon-purple" },
+  { id: "superhero", name: "Superhero", prompt: "Transform the person into a superhero with a cape and mask, comic book style", emoji: "🦸" },
+  { id: "anime", name: "Anime", prompt: "Transform the person into an anime character with large expressive eyes, anime art style", emoji: "🎌" },
+  { id: "zombie", name: "Zombie", prompt: "Transform the person into a zombie with pale green skin, dark eye circles, and torn clothing", emoji: "🧟" },
+  { id: "robot", name: "Cyborg", prompt: "Transform the person into a cyborg with metallic skin, glowing eyes, and mechanical parts", emoji: "🤖" },
+  { id: "vampire", name: "Vampire", prompt: "Transform the person into an elegant vampire with pale skin, red eyes, and fangs", emoji: "🧛" },
+  { id: "elf", name: "Elf", prompt: "Transform the person into a fantasy elf with pointed ears, ethereal glow, and elegant features", emoji: "🧝" },
+  { id: "pirate", name: "Pirate", prompt: "Transform the person into a pirate captain with an eyepatch, tricorn hat, and weathered face", emoji: "🏴‍☠️" },
+  { id: "alien", name: "Alien", prompt: "Transform the person into an alien with blue-grey skin, large dark eyes, and an elongated head", emoji: "👽" },
 ];
 
 interface Props {
@@ -41,7 +43,7 @@ function CharacterPresetsImpl({ onSelect, disabled }: Props) {
             relative group flex flex-col items-center gap-1.5 p-3 rounded-lg
             border transition-all duration-300 cursor-pointer
             ${selected === preset.id
-              ? "border-primary/60 bg-primary/10 neon-glow"
+              ? "border-primary bg-primary/10 ring-1 ring-primary/40"
               : "border-border hover:border-primary/30 bg-muted/30 hover:bg-muted/50"
             }
             disabled:opacity-40 disabled:cursor-not-allowed

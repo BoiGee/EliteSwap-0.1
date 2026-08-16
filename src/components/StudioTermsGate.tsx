@@ -94,9 +94,9 @@ export default function StudioTermsGate({ children }: { children: React.ReactNod
 
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl glass neon-border rounded-2xl p-6 space-y-5">
+      <div className="w-full max-w-2xl glass border border-border rounded-2xl p-6 space-y-5">
         <div className="text-center space-y-2">
-          <h2 className="text-3xl font-heading font-bold gradient-text">Before you continue</h2>
+          <h2 className="text-3xl font-heading font-bold text-foreground">Before you continue</h2>
           <p className="text-sm text-muted-foreground font-body">
             Please review and agree to our Terms, Privacy Policy, and Responsible Use Policy to enter the Studio.
           </p>
@@ -123,7 +123,7 @@ export default function StudioTermsGate({ children }: { children: React.ReactNod
             Cancel
           </Button>
           <Button
-            className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold neon-glow"
+            className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold"
             disabled={!agreed || saving}
             onClick={handleAgree}
           >
