@@ -74,6 +74,11 @@ export default function Dashboard() {
   const [repurchaseMode, setRepurchaseMode] = useState<boolean>(false);
   const { partner, loading: partnerLoading } = usePartner();
   const [partnerPromoDismissed, setPartnerPromoDismissed] = useState<boolean>(false);
+  // Get Started stepper (Payment / Keys / Launch) — defaults to the step the
+  // user actually needs next, but stops auto-advancing once they click a tab
+  // themselves so a background refresh doesn't yank them away mid-read.
+  const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
+  const [stepTouched, setStepTouched] = useState(false);
   // Lightweight list of active plans for the inline "Submit Transaction Hash"
   // form. Lets users pick which plan they paid for without first opening the
   // wallet modal (otherwise the submit toasts "Choose a plan first").
@@ -272,6 +277,12 @@ export default function Dashboard() {
     setReviewBannerDismissed(true);
   };
 
+  useEffect(() => {
+    if (stepTouched) return;
+    const next: 1 | 2 | 3 = (!hasConfirmedPayment || repurchaseMode) ? 1 : apiKeys.length === 0 ? 2 : 3;
+    setActiveStep(next);
+  }, [hasConfirmedPayment, repurchaseMode, apiKeys.length, stepTouched]);
+
   const submitPayment = async (
     hashOverride?: string,
     currencyOverride?: "BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20",
@@ -378,12 +389,12 @@ export default function Dashboard() {
         }}
       />
 
-      <div className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full space-y-6">
+      <div className="flex-1 p-4 md:p-8 max-w-6xl mx-auto w-full space-y-6">
         {/* Returning users with a ready key land straight on the one thing
             they came here to do, instead of scrolling past the full
-            onboarding flow (Steps 1-3 below) every single visit. New users
-            and anyone without a usable key never see this — they still get
-            the step-by-step flow first, which is the right order for them. */}
+            onboarding flow (Get Started card below) every single visit. New
+            users and anyone without a usable key never see this — they still
+            get the step-by-step flow first, which is the right order for them. */}
         {usableApiKeys.length > 0 && (
           <div className="rounded-2xl border border-primary/40 bg-primary/[0.06] p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
@@ -407,278 +418,307 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Profile */}
-        <ProfileSection />
-
-        {/* Referral code (only shows if user has none) */}
-        <ReferralCodeInput />
-
-        {/* Community */}
-        <CommunityTile />
-        <PartnersLoungeTile />
-
-        {/* Promo banner — hides automatically once paid */}
-        {!hasConfirmedPayment && (
-          <PromoBanner
-            variant="compact"
-            onApplyToPlan={(code) => {
-              setPricingPrefillCode(code);
-              setTimeout(() => {
-                document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }, 50);
-            }}
-          />
-        )}
-
-        {/* Tutorial */}
-        <TutorialSection
-          isFirstTimer={apiKeys.length === 0 && payments.length === 0}
-          trialExhaustedNoPayment={
-            apiKeys.filter((k) => k.label?.startsWith("Free Trial")).length >= 2 && !hasConfirmedPayment
-          }
-        />
-
-        {/* Pricing Plans */}
-        {!hasConfirmedPayment && (
-          <TrialPurchaseCard
-            remaining={trialsRemaining}
-            onTrialActivated={() => {
-              fetchApiKeys();
-              fetchTrialsRemaining();
-            }}
-          />
-        )}
-
-        <div id="pricing-section">
-          <PricingSection
-            onSelectPlan={(plan) => {
-              setSelectedPlanForCrypto(plan);
-              setShowPayment(true);
-            }}
-            hasConfirmedPayment={hasConfirmedPayment}
-            prefillCode={pricingPrefillCode}
-            onRepurchaseModeChange={setRepurchaseMode}
-          />
-        </div>
-
-        {/* Step 1: Payment */}
-        <div className="glass border border-border rounded-2xl p-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-sm">1</span>
-            <h2 className="text-lg font-heading font-semibold text-foreground">Make Payment</h2>
-            {hasConfirmedPayment && <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading">✓ Paid</span>}
-          </div>
-
-          {(!hasConfirmedPayment || repurchaseMode) && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Send BTC, BNB, or USDT (BEP-20 / TRC20) to our wallet, then submit your transaction hash below for verification.
-              </p>
-              <Button
-                onClick={() => {
-                  if (!selectedPlanForCrypto) {
+        {/* Dashboard body: primary flow (payment/plans/setup) on the left,
+            account + community on the right — instead of one long stack. */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2 space-y-6">
+            {/* Promo banner — hides automatically once paid */}
+            {!hasConfirmedPayment && (
+              <PromoBanner
+                variant="compact"
+                onApplyToPlan={(code) => {
+                  setPricingPrefillCode(code);
+                  setTimeout(() => {
                     document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    toast({ title: "Select a plan first", description: "Use a plan's Pay with Crypto button before submitting your transaction." });
-                    return;
-                  }
+                  }, 50);
+                }}
+              />
+            )}
+
+            {/* $10 trial */}
+            {!hasConfirmedPayment && (
+              <TrialPurchaseCard
+                remaining={trialsRemaining}
+                onTrialActivated={() => {
+                  fetchApiKeys();
+                  fetchTrialsRemaining();
+                }}
+              />
+            )}
+
+            {/* Pricing Plans */}
+            <div id="pricing-section">
+              <PricingSection
+                onSelectPlan={(plan) => {
+                  setSelectedPlanForCrypto(plan);
                   setShowPayment(true);
                 }}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading gap-1.5"
-              >
-                <Wallet className="w-4 h-4" strokeWidth={1.75} />
-                View Wallet Addresses
-              </Button>
-
-              <div className="border-t border-border pt-4 space-y-3">
-                <h3 className="text-sm font-heading font-semibold text-foreground/80">Submit Transaction Hash</h3>
-                {/* Live crypto prices */}
-                <div className="flex gap-2 text-xs flex-wrap">
-                  {cryptoPrices.bitcoin !== null && (
-                    <span className="bg-muted/30 rounded-lg px-2 py-1 font-heading">
-                      ₿ BTC: <span className="text-foreground font-semibold">${cryptoPrices.bitcoin.toLocaleString()}</span>
-                    </span>
-                  )}
-                  {cryptoPrices.binancecoin !== null && (
-                    <span className="bg-muted/30 rounded-lg px-2 py-1 font-heading">
-                      ◆ BNB: <span className="text-foreground font-semibold">${cryptoPrices.binancecoin.toLocaleString()}</span>
-                    </span>
-                  )}
-                  <span className="bg-muted/30 rounded-lg px-2 py-1 font-heading">
-                    ₮ USDT: <span className="text-foreground font-semibold">$1.00</span>
-                  </span>
-                </div>
-                {/* Plan picker — required so the verifier knows the expected amount.
-                    Pre-fills automatically if the user already clicked "Pay with Crypto" on a plan. */}
-                <div>
-                  <label className="block text-[10px] font-heading uppercase tracking-wider text-muted-foreground mb-1">
-                    Plan you paid for
-                  </label>
-                  <select
-                    value={inlinePlanId || selectedPlanForCrypto?.id || ""}
-                    onChange={(e) => setInlinePlanId(e.target.value)}
-                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
-                  >
-                    <option value="">— Select the plan you paid for —</option>
-                    {inlinePlans.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} — ${Number(p.price_usd).toFixed(0)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <select
-                    value={txCurrency}
-                    onChange={(e) => setTxCurrency(e.target.value as "BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20")}
-                    className="bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
-                  >
-                    <option value="BTC">BTC</option>
-                    <option value="BNB">BNB</option>
-                    <option value="USDT-BEP20">USDT (BEP-20)</option>
-                    <option value="USDT-TRC20">USDT (TRC20)</option>
-                  </select>
-                  <Input
-                    placeholder="Paste your transaction hash..."
-                    value={txHash}
-                    onChange={(e) => setTxHash(e.target.value)}
-                    className="bg-muted/30 border-border focus:border-primary text-sm flex-1"
-                  />
-                  <Button onClick={() => submitPayment()} disabled={submittingPayment || !txHash.trim() || (!selectedPlanForCrypto && !inlinePlanId)} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0">
-                    Submit
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {payments.length > 0 && (
-            <div className="space-y-2 pt-2">
-              <h3 className="text-xs font-heading text-muted-foreground uppercase tracking-wider">Payment History</h3>
-              {payments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between bg-muted/20 rounded-lg px-3 py-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-heading font-semibold">{p.currency}</span>
-                    <span className="text-muted-foreground font-mono truncate max-w-[200px]">{p.tx_hash}</span>
-                  </div>
-                  <span className={`font-heading font-semibold px-2 py-0.5 rounded-full ${
-                    p.status === "confirmed" ? "bg-primary/20 text-primary" :
-                    p.status === "rejected" ? "bg-destructive/20 text-destructive" :
-                    "bg-amber-500/20 text-amber-400"
-                  }`}>
-                    {p.status}
-                  </span>
-                </div>
-              ))}
+                hasConfirmedPayment={hasConfirmedPayment}
+                prefillCode={pricingPrefillCode}
+                onRepurchaseModeChange={setRepurchaseMode}
+              />
             </div>
-          )}
-        </div>
 
-        {/* Step 2: Unique Keys */}
-        <div className={`glass border border-border rounded-2xl p-6 space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-sm">2</span>
-            <h2 className="text-lg font-heading font-semibold text-foreground">Your Unique Keys</h2>
-          </div>
+            {/* Get Started: Payment / Unique Keys / Launch as a single stepper
+                card the user switches between, instead of three panels stacked
+                one under the other. */}
+            <div className="glass border border-border rounded-2xl overflow-hidden">
+              <div className="flex border-b border-border">
+                {([
+                  { n: 1 as const, label: "Payment" },
+                  { n: 2 as const, label: "Unique Keys" },
+                  { n: 3 as const, label: "Launch Studio" },
+                ]).map((step) => (
+                  <button
+                    key={step.n}
+                    onClick={() => { setActiveStep(step.n); setStepTouched(true); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 text-xs sm:text-sm font-heading font-semibold transition-colors border-b-2 ${
+                      activeStep === step.n
+                        ? "text-primary bg-primary/5 border-primary"
+                        : "text-muted-foreground hover:text-foreground border-transparent"
+                    }`}
+                  >
+                    <span className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold shrink-0 ${
+                      activeStep === step.n ? "bg-primary text-primary-foreground" : "bg-muted/40 text-muted-foreground"
+                    }`}>
+                      {step.n}
+                    </span>
+                    <span className="hidden sm:inline">{step.label}</span>
+                  </button>
+                ))}
+              </div>
 
-          {!canUseStudio && (
-            <p className="text-sm text-muted-foreground">Purchase a $10 trial or a paid plan to unlock your unique keys.</p>
-          )}
-
-          {canUseStudio && (
-            <>
-              {apiKeys.length === 0 ? (
-                <div className="text-center py-8 space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                    <span className="text-3xl">⏳</span>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-sm font-heading font-semibold text-foreground">Payment confirmed!</p>
-                    <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                      Your unique key will be sent to <span className="font-semibold text-foreground/80">{user?.email}</span> within <span className="font-semibold text-primary">15 to 60 minutes</span>. Please check your inbox (and spam folder).
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {apiKeys.map((k) => (
-                    <div key={k.id} className="flex flex-col sm:flex-row sm:items-center gap-3 bg-muted/20 rounded-lg px-4 py-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-xs font-heading text-muted-foreground">{k.label}</span>
-                          <ApiKeyTimer
-                            remainingMs={k.remaining_ms}
-                            activeSessionStartedAt={k.active_session_started_at}
-                            expiresAt={k.expires_at}
-                            isActive={k.is_active}
-                          />
-                        </div>
-                        <div className="font-mono text-sm text-foreground/80 truncate">{k.key}</div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyKey(k.key, k.id)}
-                        className="shrink-0 font-heading text-xs self-start sm:self-auto"
-                      >
-                        {copiedId === k.id ? "Copied!" : "Copy"}
-                      </Button>
+              <div className="p-6 space-y-4">
+                {activeStep === 1 && (
+                  <>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-heading font-semibold text-foreground">Make Payment</h2>
+                      {hasConfirmedPayment && <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading">✓ Paid</span>}
                     </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
 
-        {/* Step 3: Launch Studio */}
-        <div className={`glass border border-border rounded-2xl p-6 space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-sm">3</span>
-            <h2 className="text-lg font-heading font-semibold text-foreground">Launch Studio</h2>
+                    {(!hasConfirmedPayment || repurchaseMode) && (
+                      <>
+                        <p className="text-sm text-muted-foreground">
+                          Send BTC, BNB, or USDT (BEP-20 / TRC20) to our wallet, then submit your transaction hash below for verification.
+                        </p>
+                        <Button
+                          onClick={() => {
+                            if (!selectedPlanForCrypto) {
+                              document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                              toast({ title: "Select a plan first", description: "Use a plan's Pay with Crypto button before submitting your transaction." });
+                              return;
+                            }
+                            setShowPayment(true);
+                          }}
+                          className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading gap-1.5"
+                        >
+                          <Wallet className="w-4 h-4" strokeWidth={1.75} />
+                          View Wallet Addresses
+                        </Button>
+
+                        <div className="border-t border-border pt-4 space-y-3">
+                          <h3 className="text-sm font-heading font-semibold text-foreground/80">Submit Transaction Hash</h3>
+                          {/* Live crypto prices */}
+                          <div className="flex gap-2 text-xs flex-wrap">
+                            {cryptoPrices.bitcoin !== null && (
+                              <span className="bg-muted/30 rounded-lg px-2 py-1 font-heading">
+                                ₿ BTC: <span className="text-foreground font-semibold">${cryptoPrices.bitcoin.toLocaleString()}</span>
+                              </span>
+                            )}
+                            {cryptoPrices.binancecoin !== null && (
+                              <span className="bg-muted/30 rounded-lg px-2 py-1 font-heading">
+                                ◆ BNB: <span className="text-foreground font-semibold">${cryptoPrices.binancecoin.toLocaleString()}</span>
+                              </span>
+                            )}
+                            <span className="bg-muted/30 rounded-lg px-2 py-1 font-heading">
+                              ₮ USDT: <span className="text-foreground font-semibold">$1.00</span>
+                            </span>
+                          </div>
+                          {/* Plan picker — required so the verifier knows the expected amount.
+                              Pre-fills automatically if the user already clicked "Pay with Crypto" on a plan. */}
+                          <div>
+                            <label className="block text-[10px] font-heading uppercase tracking-wider text-muted-foreground mb-1">
+                              Plan you paid for
+                            </label>
+                            <select
+                              value={inlinePlanId || selectedPlanForCrypto?.id || ""}
+                              onChange={(e) => setInlinePlanId(e.target.value)}
+                              className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
+                            >
+                              <option value="">— Select the plan you paid for —</option>
+                              {inlinePlans.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} — ${Number(p.price_usd).toFixed(0)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex gap-2">
+                            <select
+                              value={txCurrency}
+                              onChange={(e) => setTxCurrency(e.target.value as "BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20")}
+                              className="bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
+                            >
+                              <option value="BTC">BTC</option>
+                              <option value="BNB">BNB</option>
+                              <option value="USDT-BEP20">USDT (BEP-20)</option>
+                              <option value="USDT-TRC20">USDT (TRC20)</option>
+                            </select>
+                            <Input
+                              placeholder="Paste your transaction hash..."
+                              value={txHash}
+                              onChange={(e) => setTxHash(e.target.value)}
+                              className="bg-muted/30 border-border focus:border-primary text-sm flex-1"
+                            />
+                            <Button onClick={() => submitPayment()} disabled={submittingPayment || !txHash.trim() || (!selectedPlanForCrypto && !inlinePlanId)} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0">
+                              Submit
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {payments.length > 0 && (
+                      <div className="space-y-2 pt-2">
+                        <h3 className="text-xs font-heading text-muted-foreground uppercase tracking-wider">Payment History</h3>
+                        {payments.map((p) => (
+                          <div key={p.id} className="flex items-center justify-between bg-muted/20 rounded-lg px-3 py-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-heading font-semibold">{p.currency}</span>
+                              <span className="text-muted-foreground font-mono truncate max-w-[200px]">{p.tx_hash}</span>
+                            </div>
+                            <span className={`font-heading font-semibold px-2 py-0.5 rounded-full ${
+                              p.status === "confirmed" ? "bg-primary/20 text-primary" :
+                              p.status === "rejected" ? "bg-destructive/20 text-destructive" :
+                              "bg-warning/20 text-warning"
+                            }`}>
+                              {p.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {activeStep === 2 && (
+                  <div className={!canUseStudio ? "opacity-50 pointer-events-none" : ""}>
+                    <h2 className="text-lg font-heading font-semibold text-foreground mb-4">Your Unique Keys</h2>
+
+                    {!canUseStudio && (
+                      <p className="text-sm text-muted-foreground">Purchase a $10 trial or a paid plan to unlock your unique keys.</p>
+                    )}
+
+                    {canUseStudio && (
+                      <>
+                        {apiKeys.length === 0 ? (
+                          <div className="text-center py-8 space-y-4">
+                            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                              <span className="text-3xl">⏳</span>
+                            </div>
+                            <div className="space-y-2">
+                              <p className="text-sm font-heading font-semibold text-foreground">Payment confirmed!</p>
+                              <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                                Your unique key will be sent to <span className="font-semibold text-foreground/80">{user?.email}</span> within <span className="font-semibold text-primary">15 to 60 minutes</span>. Please check your inbox (and spam folder).
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {apiKeys.map((k) => (
+                              <div key={k.id} className="flex flex-col sm:flex-row sm:items-center gap-3 bg-muted/20 rounded-lg px-4 py-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                    <span className="text-xs font-heading text-muted-foreground">{k.label}</span>
+                                    <ApiKeyTimer
+                                      remainingMs={k.remaining_ms}
+                                      activeSessionStartedAt={k.active_session_started_at}
+                                      expiresAt={k.expires_at}
+                                      isActive={k.is_active}
+                                    />
+                                  </div>
+                                  <div className="font-mono text-sm text-foreground/80 truncate">{k.key}</div>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => copyKey(k.key, k.id)}
+                                  className="shrink-0 font-heading text-xs self-start sm:self-auto"
+                                >
+                                  {copiedId === k.id ? "Copied!" : "Copy"}
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {activeStep === 3 && (
+                  <div className={`space-y-4 ${!canUseStudio ? "opacity-50 pointer-events-none" : ""}`}>
+                    <h2 className="text-lg font-heading font-semibold text-foreground">Launch Studio</h2>
+                    <p className="text-sm text-muted-foreground">
+                      {usableApiKeys.length > 0
+                        ? "Your unique key is ready. Launch the realtime face swap studio."
+                        : hasConfirmedPayment
+                          ? "Your previous unique key has run out of time. Repurchase a plan below to get a fresh key."
+                          : "Purchase a $10 trial or a paid plan to unlock the studio."}
+                    </p>
+                    <Button
+                      onClick={() => {
+                        if (usableApiKeys.length > 0) {
+                          navigate("/studio");
+                          return;
+                        }
+                        if (hasConfirmedPayment) {
+                          setRepurchaseMode(true);
+                          toast({
+                            title: "Time to top up",
+                            description: "Pick a plan below to refresh your unique key — your account stays the same.",
+                          });
+                          setTimeout(() => {
+                            document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }, 50);
+                        }
+                      }}
+                      disabled={!canUseStudio}
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-base py-6"
+                    >
+                      {usableApiKeys.length > 0 ? "Launch Elite Swap Studio" : "Repurchase to Launch Studio"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Tutorial */}
+            <TutorialSection
+              isFirstTimer={apiKeys.length === 0 && payments.length === 0}
+              trialExhaustedNoPayment={
+                apiKeys.filter((k) => k.label?.startsWith("Free Trial")).length >= 2 && !hasConfirmedPayment
+              }
+            />
           </div>
-          <p className="text-sm text-muted-foreground">
-            {usableApiKeys.length > 0
-              ? "Your unique key is ready. Launch the realtime face swap studio."
-              : hasConfirmedPayment
-                ? "Your previous unique key has run out of time. Repurchase a plan below to get a fresh key."
-                : "Purchase a $10 trial or a paid plan to unlock the studio."}
-          </p>
-          <Button
-            onClick={() => {
-              if (usableApiKeys.length > 0) {
-                navigate("/studio");
-                return;
-              }
-              if (hasConfirmedPayment) {
-                setRepurchaseMode(true);
-                toast({
-                  title: "Time to top up",
-                  description: "Pick a plan below to refresh your unique key — your account stays the same.",
-                });
-                setTimeout(() => {
-                  document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }, 50);
-              }
-            }}
-            disabled={!canUseStudio}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-base py-6"
-          >
-            {usableApiKeys.length > 0 ? "Launch Elite Swap Studio" : "Repurchase to Launch Studio"}
-          </Button>
-        </div>
 
-        {/* Partner program promo for paid non-partners */}
-        {hasConfirmedPayment && !partnerLoading && !partner && !partnerPromoDismissed && (
-          <div className="glass border border-border rounded-2xl p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-start gap-4 justify-between">
-              <div className="space-y-3 flex-1">
+          {/* Sidebar: account + community, out of the main flow's way */}
+          <div className="space-y-6">
+            <ProfileSection />
+            <ReferralCodeInput />
+            <CommunityTile />
+            <PartnersLoungeTile />
+
+            {/* Partner program promo for paid non-partners */}
+            {hasConfirmedPayment && !partnerLoading && !partner && !partnerPromoDismissed && (
+              <div className="glass border border-border rounded-2xl p-5 space-y-4">
                 <div className="space-y-1">
                   <p className="text-xs font-heading uppercase tracking-wider text-primary">
                     Partner Program
                   </p>
-                  <h2 className="text-lg font-heading font-semibold text-foreground">
+                  <h3 className="text-base font-heading font-semibold text-foreground">
                     Earn 20% on every referral — and 5% on theirs
-                  </h2>
+                  </h3>
                 </div>
                 <ul className="space-y-2 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
@@ -699,27 +739,27 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground">
                   Payouts are reviewed and processed by the team on request from your partner dashboard.
                 </p>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => navigate("/partner")}
+                    className="font-heading"
+                  >
+                    Become a Partner
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={dismissPartnerPromo}
+                    className="font-heading"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
               </div>
-              <div className="flex sm:flex-col gap-2 shrink-0">
-                <Button
-                  size="sm"
-                  onClick={() => navigate("/partner")}
-                  className="font-heading"
-                >
-                  Become a Partner
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={dismissPartnerPromo}
-                  className="font-heading"
-                >
-                  Dismiss
-                </Button>
-              </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
 
         {/* Secondary review nudge for long-standing paid users */}
         {showReviewBanner && (

@@ -62,7 +62,7 @@ export default function ProfileSection() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <div>
           <label className="text-xs text-muted-foreground font-heading block mb-1">Display Name</label>
           <Input
