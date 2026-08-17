@@ -181,6 +181,7 @@ export default function BackupManager() {
       </div>
 
       <div className="glass neon-border rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/30 text-xs font-heading text-muted-foreground">
             <tr>
@@ -246,6 +247,7 @@ export default function BackupManager() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

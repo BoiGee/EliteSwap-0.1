@@ -115,7 +115,7 @@ export default function KeyActivityManager() {
           <h2 className="text-lg font-heading font-bold">Key Activity</h2>
           <p className="text-xs text-muted-foreground">Per-key assignment & connection history. Surfaces keys that were assigned but never connected.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
@@ -130,7 +130,7 @@ export default function KeyActivityManager() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter by email or label…"
-            className="bg-background border border-border rounded px-2 py-1 text-xs w-56"
+            className="bg-background border border-border rounded px-2 py-1 text-xs w-full sm:w-56"
           />
           <Button size="sm" variant="outline" onClick={() => fetchRows()} className="font-heading text-xs">Refresh</Button>
         </div>

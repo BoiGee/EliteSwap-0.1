@@ -398,6 +398,7 @@ export default function TimeLedgerManager() {
 
       {/* Per-user table */}
       <div className="glass neon-border rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -466,8 +467,8 @@ export default function TimeLedgerManager() {
                           {u.keys.map((k) => {
                             const kRemPct = pct(k.remaining_ms, k.allocated_ms);
                             return (
-                              <div key={k.key_id} className="grid grid-cols-12 gap-2 text-xs items-center px-2 py-1.5 rounded bg-background/40">
-                                <div className="col-span-3">
+                              <div key={k.key_id} className="grid grid-cols-2 sm:grid-cols-12 gap-2 text-xs items-center px-2 py-1.5 rounded bg-background/40">
+                                <div className="col-span-2 sm:col-span-3">
                                   <div className="font-heading flex items-center gap-2">
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${k.key_type === "paid" ? "bg-primary/15 text-primary" : "bg-amber-500/15 text-amber-400"}`}>{k.key_type}</span>
                                     {k.label || k.key_id.slice(0, 8)}
@@ -475,28 +476,28 @@ export default function TimeLedgerManager() {
                                   </div>
                                   <div className="text-[10px] text-muted-foreground font-mono truncate">{k.key_id}</div>
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-1 sm:col-span-2">
                                   <div className="text-[10px] text-muted-foreground">Allocated</div>
                                   <div className="font-mono">{fmtDuration(k.allocated_ms)}</div>
                                   <div className="text-[10px] text-muted-foreground">{credits(k.allocated_ms, cps)} cr</div>
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-1 sm:col-span-2">
                                   <div className="text-[10px] text-muted-foreground">Used</div>
                                   <div className="font-mono">{fmtDuration(k.used_ms)}</div>
                                   <div className="text-[10px] text-muted-foreground">{credits(k.used_ms, cps)} cr</div>
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-1 sm:col-span-2">
                                   <div className="text-[10px] text-muted-foreground">Remaining</div>
                                   <div className="font-mono">{fmtDuration(k.remaining_ms)}</div>
                                   <div className="w-full h-1 bg-muted/40 rounded-full mt-1 overflow-hidden">
                                     <div className="h-full bg-primary" style={{ width: `${kRemPct}%` }} />
                                   </div>
                                 </div>
-                                <div className="col-span-1 text-center">
+                                <div className="col-span-1 sm:col-span-1 text-center">
                                   <div className="text-[10px] text-muted-foreground">Sessions</div>
                                   <div className="font-mono">{k.sessions}</div>
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-1 sm:col-span-2">
                                   <div className="text-[10px] text-muted-foreground">Last / Expires</div>
                                   <div className="font-mono text-[11px]">{fmtDate(k.last_session_at)}</div>
                                   <div className="font-mono text-[10px] text-muted-foreground">{k.expires_at ? `exp ${fmtDate(k.expires_at)}` : "no expiry"}</div>
@@ -520,6 +521,7 @@ export default function TimeLedgerManager() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </div>
   );

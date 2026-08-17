@@ -223,11 +223,11 @@ export default function ActivityManager({ profiles }: Props) {
 
       {/* User Presence List */}
       <div className="glass neon-border rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="font-heading font-semibold text-foreground flex items-center gap-2">
             <User className="w-4 h-4" /> User Status
           </h3>
-          <div className="relative w-48">
+          <div className="relative w-full sm:w-48">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
               placeholder="Search users..."

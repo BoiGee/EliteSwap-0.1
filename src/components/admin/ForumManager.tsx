@@ -94,8 +94,8 @@ function MediaPreview({ id, kind }: { id: string; kind: "image" | "audio" }) {
     getSignedMediaUrl(id).then((r) => setUrl(r.url)).catch(() => {});
   }, [id]);
   if (!url) return <div className="text-xs text-muted-foreground">Loading…</div>;
-  if (kind === "image") return <img src={url} alt="" className="w-32 h-32 object-cover rounded" />;
-  return <audio controls src={url} className="w-64" />;
+  if (kind === "image") return <img src={url} alt="" className="w-32 h-32 object-cover rounded flex-shrink-0" />;
+  return <audio controls src={url} className="w-full sm:w-64" />;
 }
 
 export default function ForumManager() {
@@ -254,9 +254,9 @@ export default function ForumManager() {
         <div className="space-y-3">
           {media.length === 0 && !loading && <p className="text-sm text-muted-foreground">Nothing pending. 🎉</p>}
           {media.map((m) => (
-            <Card key={m.id} className="p-3 flex items-start gap-3">
+            <Card key={m.id} className="p-3 flex items-start gap-3 flex-wrap">
               <MediaPreview id={m.id} kind={m.kind} />
-              <div className="flex-1 text-xs space-y-1">
+              <div className="flex-1 min-w-[160px] text-xs space-y-1">
                 <p>Kind: <b>{m.kind}</b> · {m.mime}</p>
                 <p>Owner: {m.owner_id.slice(0, 8)}…</p>
                 <p>Attached: {m.thread_id ? "thread" : m.reply_id ? "reply" : "(unattached)"}</p>

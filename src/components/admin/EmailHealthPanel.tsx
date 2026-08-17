@@ -85,6 +85,7 @@ export default function EmailHealthPanel() {
       )}
 
       <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted/30 text-muted-foreground font-heading">
             <tr>
@@ -112,6 +113,7 @@ export default function EmailHealthPanel() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

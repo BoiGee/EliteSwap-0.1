@@ -332,7 +332,7 @@ export default function FreeTrialManager({ emailForUser }: Props) {
           return (
             <div
               key={k.id}
-              className={`glass rounded-xl px-4 py-3 flex items-center gap-4 text-sm transition-all ${
+              className={`glass rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap gap-y-2 text-sm transition-all ${
                 isSelected ? "ring-1 ring-primary/50 bg-primary/5" : ""
               }`}
             >
@@ -350,8 +350,8 @@ export default function FreeTrialManager({ emailForUser }: Props) {
                 </div>
               </div>
               {isClaimed ? (
-                <div className="text-right">
-                  <div className="text-xs font-heading font-semibold text-muted-foreground">
+                <div className="text-right max-w-[220px] min-w-0">
+                  <div className="text-xs font-heading font-semibold text-muted-foreground truncate">
                     {emailForUser(k.claimed_by_user_id!)}
                   </div>
                   <div className="text-xs text-muted-foreground">

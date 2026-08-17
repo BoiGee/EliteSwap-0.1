@@ -194,6 +194,7 @@ export default function DecartPoolManager() {
       </div>
 
       <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -245,6 +246,7 @@ export default function DecartPoolManager() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
 
       <div className="glass rounded-xl overflow-hidden">
@@ -261,6 +263,7 @@ export default function DecartPoolManager() {
             above if you confirm deliberate abuse.
           </p>
         </div>
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -290,6 +293,7 @@ export default function DecartPoolManager() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
 
       <Dialog open={showAdd} onOpenChange={setShowAdd}>

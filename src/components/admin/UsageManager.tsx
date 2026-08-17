@@ -227,6 +227,7 @@ export default function UsageManager() {
       </div>
 
       <div className="glass neon-border rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -278,6 +279,7 @@ export default function UsageManager() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </div>
   );

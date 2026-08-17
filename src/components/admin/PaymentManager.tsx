@@ -116,6 +116,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
 
       {/* Table */}
       <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="border-border">
@@ -265,6 +266,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
 
       <PaymentActionDialog

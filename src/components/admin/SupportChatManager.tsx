@@ -19,6 +19,7 @@ import {
   Trash2,
   Flag,
   MessageSquarePlus,
+  ArrowLeft,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -44,9 +45,11 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   useSupportChatNotifications,
   markConversationRead,
@@ -159,6 +162,7 @@ function relativeTime(ts: string) {
 export default function SupportChatManager({ profiles, userRoles = [] }: { profiles: Profile[]; userRoles?: StaffRole[] }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [lastMessageMap, setLastMessageMap] = useState<Record<string, { content: string; created_at: string; is_admin: boolean }>>({});
   const [selectedConv, setSelectedConv] = useState<string | null>(null);
@@ -549,6 +553,53 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
     return list.slice(0, 50);
   }, [profiles, newMsgSearch]);
 
+  const notesPanelBody = (
+    <>
+      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-xs font-heading font-semibold text-foreground">
+          <StickyNote className="w-3.5 h-3.5 text-amber-500" /> Internal notes
+        </div>
+        <button onClick={() => setNotesOpen(false)} className="text-muted-foreground hover:text-foreground">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {notes.map((n) => (
+          <div key={n.id} className="group bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 text-xs">
+            <p className="whitespace-pre-wrap break-words text-foreground">{n.content}</p>
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[10px] text-muted-foreground">
+                {labelForUser(n.author_id)} · {relativeTime(n.created_at)}
+              </span>
+              <button
+                onClick={() => deleteNote(n.id)}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        ))}
+        {notes.length === 0 && (
+          <p className="text-[11px] text-muted-foreground text-center py-4">
+            Notes are admin-only. The user never sees these.
+          </p>
+        )}
+      </div>
+      <div className="border-t border-border p-2 space-y-1.5">
+        <Textarea
+          value={newNote}
+          onChange={(e) => setNewNote(e.target.value)}
+          placeholder="Add an internal note..."
+          className="text-xs min-h-[60px] resize-none"
+        />
+        <Button size="sm" onClick={addNote} disabled={!newNote.trim()} className="w-full h-7 text-xs">
+          <Plus className="w-3 h-3 mr-1" /> Add note
+        </Button>
+      </div>
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -621,9 +672,14 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
         </div>
       </div>
 
-      <div className="flex gap-4 h-[calc(100vh-260px)] min-h-[520px]">
+      <div className="flex gap-4 h-[calc(100vh-220px)] md:h-[calc(100vh-260px)] min-h-[420px] md:min-h-[520px]">
         {/* Conversation list */}
-        <div className="w-72 flex-shrink-0 glass rounded-xl overflow-hidden flex flex-col">
+        <div
+          className={cn(
+            "w-full md:w-72 flex-shrink-0 glass rounded-xl overflow-hidden flex flex-col",
+            isMobile && selectedConv && "hidden",
+          )}
+        >
           <div className="p-3 border-b border-border space-y-2">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -714,7 +770,12 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
         </div>
 
         {/* Message thread */}
-        <div className="flex-1 glass rounded-xl overflow-hidden flex flex-col min-w-0">
+        <div
+          className={cn(
+            "flex-1 glass rounded-xl overflow-hidden flex flex-col min-w-0",
+            isMobile && !selectedConv && "hidden",
+          )}
+        >
           {!selectedConv || !activeConv ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
               <MessageSquare className="w-12 h-12 text-muted-foreground/40 mb-3" />
@@ -725,6 +786,15 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
             <>
               {/* Header */}
               <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-wrap">
+                {isMobile && (
+                  <button
+                    onClick={() => setSelectedConv(null)}
+                    className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                    aria-label="Back to conversations"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                )}
                 <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
                   <User className="w-4 h-4 text-primary" />
                 </div>
@@ -834,58 +904,29 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
                   )}
                 </div>
 
-                {/* Notes side panel */}
-                {notesOpen && (
+                {/* Notes side panel (desktop: inline column) */}
+                {notesOpen && !isMobile && (
                   <div className="w-72 flex-shrink-0 border-l border-border bg-amber-500/5 flex flex-col">
-                    <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-heading font-semibold text-foreground">
-                        <StickyNote className="w-3.5 h-3.5 text-amber-500" /> Internal notes
-                      </div>
-                      <button onClick={() => setNotesOpen(false)} className="text-muted-foreground hover:text-foreground">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                      {notes.map((n) => (
-                        <div key={n.id} className="group bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 text-xs">
-                          <p className="whitespace-pre-wrap break-words text-foreground">{n.content}</p>
-                          <div className="flex items-center justify-between mt-1.5">
-                            <span className="text-[10px] text-muted-foreground">
-                              {labelForUser(n.author_id)} · {relativeTime(n.created_at)}
-                            </span>
-                            <button
-                              onClick={() => deleteNote(n.id)}
-                              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      {notes.length === 0 && (
-                        <p className="text-[11px] text-muted-foreground text-center py-4">
-                          Notes are admin-only. The user never sees these.
-                        </p>
-                      )}
-                    </div>
-                    <div className="border-t border-border p-2 space-y-1.5">
-                      <Textarea
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
-                        placeholder="Add an internal note..."
-                        className="text-xs min-h-[60px] resize-none"
-                      />
-                      <Button size="sm" onClick={addNote} disabled={!newNote.trim()} className="w-full h-7 text-xs">
-                        <Plus className="w-3 h-3 mr-1" /> Add note
-                      </Button>
-                    </div>
+                    {notesPanelBody}
                   </div>
                 )}
               </div>
 
+              {/* Notes panel (mobile: overlay sheet) */}
+              {isMobile && (
+                <Sheet open={notesOpen} onOpenChange={setNotesOpen}>
+                  <SheetContent side="right" className="w-full sm:max-w-sm p-0 flex flex-col">
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>Internal notes</SheetTitle>
+                    </SheetHeader>
+                    {notesPanelBody}
+                  </SheetContent>
+                </Sheet>
+              )}
+
               {/* Composer */}
               <div className="border-t border-border p-3 space-y-2">
-                <div className="flex items-end gap-2">
+                <div className="flex items-end gap-2 flex-wrap">
                   <input
                     type="file"
                     ref={fileRef}

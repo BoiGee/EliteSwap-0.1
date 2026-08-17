@@ -748,6 +748,7 @@ export default function PartnerManager({ profiles }: Props) {
                       if (all.length === 0) return <p className="text-xs text-muted-foreground">No referrals yet.</p>;
                       return (
                         <div className="rounded-lg overflow-hidden border border-border">
+                          <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow className="border-border">
@@ -793,6 +794,7 @@ export default function PartnerManager({ profiles }: Props) {
                               )}
                             </TableBody>
                           </Table>
+                          </div>
                         </div>
                       );
                     })()

@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Clock, CheckCircle2, KeyRound } from "lucide-react";
+import { Users, Clock, CheckCircle2, KeyRound, Menu } from "lucide-react";
 // Lazy-loaded: only the active tab's manager (and its dependencies, e.g.
 // FinanceManager's recharts import) is ever downloaded, instead of every
 // admin tab loading up front regardless of which one staff actually open.
@@ -101,6 +102,7 @@ export default function Admin() {
   const [editKeyValue, setEditKeyValue] = useState("");
   const [editKeyLabel, setEditKeyLabel] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const { totalUnread: supportUnread } = useSupportChatNotifications();
 
   const fetchAll = useCallback(async () => {
@@ -342,16 +344,56 @@ export default function Admin() {
   const emailForUser = (userId: string | null) =>
     (userId && profiles.find((p) => p.user_id === userId)?.email) ?? (userId ? userId.slice(0, 8) : "deleted account");
 
+  const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
+    <>
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => { setTab(t.id); onNavigate?.(); }}
+          className={`w-full text-left px-3 py-2 rounded-lg text-sm font-heading transition-all flex items-center gap-2 ${
+            tab === t.id ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:bg-muted/30"
+          }`}
+        >
+          <span>{t.icon}</span>
+          {t.label}
+          {t.id === "payments" && pendingPayments > 0 && (
+            <span className="ml-auto bg-warning/20 text-warning text-xs px-1.5 py-0.5 rounded-full font-semibold">{pendingPayments}</span>
+          )}
+          {t.id === "support" && supportUnread > 0 && tab !== "support" && (
+            <span className="ml-auto min-w-[20px] h-5 px-1 bg-destructive text-destructive-foreground text-xs rounded-full font-semibold flex items-center justify-center">
+              {supportUnread > 99 ? "99+" : supportUnread}
+            </span>
+          )}
+        </button>
+      ))}
+    </>
+  );
+
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
+      <header className="border-b border-border glass px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3">
+          <Sheet open={navOpen} onOpenChange={setNavOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="md:hidden h-8 w-8 flex-shrink-0" aria-label="Open menu">
+                <Menu className="w-4 h-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-3 overflow-y-auto">
+              <SheetHeader className="mb-2 text-left">
+                <SheetTitle className="font-heading text-left">Elite Swap Admin</SheetTitle>
+              </SheetHeader>
+              <nav className="space-y-1">
+                <NavLinks onNavigate={() => setNavOpen(false)} />
+              </nav>
+            </SheetContent>
+          </Sheet>
           <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
           <span className={`text-xs px-2 py-0.5 rounded-full font-heading font-semibold ${isAdmin ? "bg-destructive/20 text-destructive" : isSecAdmin ? "bg-warning/20 text-warning" : "bg-primary/20 text-primary"}`}>{isAdmin ? "ADMIN" : isSecAdmin ? "SEC ADMIN" : "MODERATOR"}</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
           <NotificationBell />
-          <span className="text-xs text-muted-foreground font-heading">{user?.email}</span>
+          <span className="text-xs text-muted-foreground font-heading hidden sm:inline">{user?.email}</span>
           <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")} className="font-heading text-xs">Dashboard</Button>
           <Button variant="outline" size="sm" onClick={async () => { await signOut(); navigate("/"); }} className="font-heading text-xs">Sign Out</Button>
         </div>
@@ -363,31 +405,12 @@ export default function Admin() {
 
 
 
-      <div className="flex-1 flex">
-        <nav className="w-48 border-r border-border glass p-3 space-y-1">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-heading transition-all flex items-center gap-2 ${
-                tab === t.id ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:bg-muted/30"
-              }`}
-            >
-              <span>{t.icon}</span>
-              {t.label}
-              {t.id === "payments" && pendingPayments > 0 && (
-                <span className="ml-auto bg-warning/20 text-warning text-xs px-1.5 py-0.5 rounded-full font-semibold">{pendingPayments}</span>
-              )}
-              {t.id === "support" && supportUnread > 0 && tab !== "support" && (
-                <span className="ml-auto min-w-[20px] h-5 px-1 bg-destructive text-destructive-foreground text-xs rounded-full font-semibold flex items-center justify-center">
-                  {supportUnread > 99 ? "99+" : supportUnread}
-                </span>
-              )}
-            </button>
-          ))}
+      <div className="flex-1 flex min-w-0">
+        <nav className="hidden md:block w-48 flex-shrink-0 border-r border-border glass p-3 space-y-1">
+          <NavLinks />
         </nav>
 
-        <div className="flex-1 p-6 overflow-auto">
+        <div className="flex-1 min-w-0 p-3 sm:p-6 overflow-auto">
         <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
           {tab === "analytics" && (
             <div className="space-y-6">

@@ -830,7 +830,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
             <div key={p.user_id} className="glass rounded-xl overflow-hidden">
               <button
                 onClick={() => toggleExpand(p.user_id)}
-                className="w-full px-4 py-3 flex items-center justify-between text-sm hover:bg-muted/20 transition-colors"
+                className="w-full px-4 py-3 flex items-center justify-between flex-wrap gap-y-2 text-sm hover:bg-muted/20 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-heading font-bold text-xs">
@@ -843,7 +843,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {uRoles.map((r) => (
                     <span key={r.id} className="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded-full font-heading">
                       {r.role}
@@ -1107,7 +1107,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                       const isExpired = timerDisplay === "Expired";
                       return (
                         <div key={k.id} className="bg-muted/20 rounded-lg px-3 py-2 text-xs space-y-1">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap gap-y-1">
                             <div className="flex-1 min-w-0">
                               <span className="text-muted-foreground font-heading">{k.label ?? "Unlabeled"}</span>
                               <div className="font-mono text-foreground/70 truncate mt-0.5">{k.key}</div>
