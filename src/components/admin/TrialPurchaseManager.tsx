@@ -140,7 +140,7 @@ export default function TrialPurchaseManager() {
   const trialStats = useMemo(() => {
     const confirmed = filteredTrials.filter((t) => t.status === "confirmed");
     const usdt = confirmed.filter((t) => t.payment_method === "usdt");
-    const ps = confirmed.filter((t) => t.payment_method === "paystack");
+    const ps = confirmed.filter((t) => t.payment_method === "paystack" || t.payment_method === "momo_manual");
     const sum = (arr: TrialRow[]) => arr.reduce((s, t) => s + Number(t.amount_usd || 0), 0);
     return {
       total_usd: sum(confirmed),
@@ -184,7 +184,8 @@ export default function TrialPurchaseManager() {
       email: profiles[t.user_id] || "",
       method: t.payment_method === "usdt"
         ? `USDT${t.usdt_network ? ` (${t.usdt_network})` : ""}`
-        : t.payment_method === "paystack" ? "Momo/Card" : t.payment_method,
+        : t.payment_method === "momo_manual" ? "Momo (manual)"
+        : t.payment_method === "paystack" ? "Momo/Card (legacy)" : t.payment_method,
       amount_usd: t.amount_usd ?? "",
       amount_local: t.amount_local ?? "",
       currency: t.currency || "",
@@ -256,7 +257,8 @@ export default function TrialPurchaseManager() {
           <SelectContent>
             <SelectItem value="all">All methods</SelectItem>
             <SelectItem value="usdt">USDT</SelectItem>
-            <SelectItem value="paystack">Momo/Card</SelectItem>
+            <SelectItem value="momo_manual">Momo (manual)</SelectItem>
+            <SelectItem value="paystack">Momo/Card (legacy)</SelectItem>
           </SelectContent>
         </Select>
         <Select value={trialKey} onValueChange={setTrialKey}>
@@ -314,7 +316,8 @@ export default function TrialPurchaseManager() {
               const d = t.confirmed_at || t.created_at;
               const method = t.payment_method === "usdt"
                 ? `USDT${t.usdt_network ? ` (${t.usdt_network})` : ""}`
-                : t.payment_method === "paystack" ? "Momo/Card" : t.payment_method;
+                : t.payment_method === "momo_manual" ? "Momo (manual)"
+                : t.payment_method === "paystack" ? "Momo/Card (legacy)" : t.payment_method;
               const busy = trialBusy === t.id;
               return (
                 <TableRow key={t.id}>
@@ -332,7 +335,7 @@ export default function TrialPurchaseManager() {
                   <TableCell className="text-xs">{t.amount_local ? `${t.amount_local} ${t.currency || ""}` : "—"}</TableCell>
                   <TableCell className="text-xs font-mono truncate max-w-[160px]">
                     {t.provider_reference || "—"}
-                    {t.needs_admin_review && t.provider_reference && (
+                    {t.needs_admin_review && t.provider_reference && t.payment_method === "usdt" && (
                       <a
                         href={binanceDepositUrl(t.provider_reference)}
                         target="_blank"
@@ -356,7 +359,7 @@ export default function TrialPurchaseManager() {
                           variant="outline"
                           className="font-heading font-semibold text-[10px] bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
                         >
-                          Binance off-chain
+                          {t.payment_method === "momo_manual" ? "Needs manual review" : "Binance off-chain"}
                         </Badge>
                       )}
                     </div>

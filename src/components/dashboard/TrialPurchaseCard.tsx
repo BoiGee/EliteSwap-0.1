@@ -3,13 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Loader2, Copy, ExternalLink, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Loader2, Copy, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useFiatRates } from "@/hooks/useFiatRates";
 import { formatFiat } from "@/components/CurrencySelector";
 import { useDisplayLocale } from "@/i18n/useDisplayLocale";
 
 const TRIAL_USD = 10;
+const TRIAL_GHS = 150;
 
 interface Props {
   onTrialActivated: () => void;
@@ -17,13 +18,17 @@ interface Props {
 }
 
 type UsdtNetwork = "USDT-BEP20" | "USDT-TRC20";
+type ManualKind = "usdt" | "momo";
 
-interface UsdtPurchase {
+interface ManualPurchase {
+  kind: ManualKind;
   purchase_id: string;
-  network: UsdtNetwork;
+  network: UsdtNetwork | null;
   label: string;
   address: string;
-  amount_usdt: number;
+  recipientName?: string;
+  amount: number;
+  amountUnit: string;
 }
 
 const USDT_LABELS: Record<UsdtNetwork, string> = {
@@ -33,9 +38,9 @@ const USDT_LABELS: Record<UsdtNetwork, string> = {
 
 export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props) {
   const { toast } = useToast();
-  const [open, setOpen] = useState<null | "choose" | "usdt" | "paystack">(null);
+  const [open, setOpen] = useState<null | "choose" | "manual">(null);
   const [busy, setBusy] = useState(false);
-  const [usdt, setUsdt] = useState<UsdtPurchase | null>(null);
+  const [manual, setManual] = useState<ManualPurchase | null>(null);
   const [usdtNetwork, setUsdtNetwork] = useState<UsdtNetwork>("USDT-BEP20");
   const [txHash, setTxHash] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -48,7 +53,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
   const trialDisplay = formatFiat(convert(TRIAL_USD, currency), currency, locale);
   const trialUsdSubtext = currency !== "USD" ? ` (≈ $${TRIAL_USD} USD)` : "";
 
-  // Resume any pending USDT purchase (page refresh / deep-link / notification click).
+  // Resume any pending USDT or manual-MoMo purchase (page refresh / deep-link / notification click).
   const resumePending = async (purchaseId?: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -58,7 +63,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
       .select("id,usdt_network,usdt_address,created_at,provider_reference,status,payment_method")
       .eq("user_id", user.id)
       .eq("status", "pending")
-      .eq("payment_method", "usdt")
+      .in("payment_method", ["usdt", "momo_manual"])
       .is("provider_reference", null)
       .gt("created_at", cutoff)
       .order("created_at", { ascending: false })
@@ -69,23 +74,32 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
       setPendingBadge(false);
       return;
     }
+    setTxHash("");
+    setVerifyMsg(null);
+    setConfirmClose(false);
+    if (data.payment_method === "momo_manual") {
+      // Momo details are a fixed constant on the server — refetch via the
+      // same reuse-a-fresh-pending-row path startMomo already uses, instead
+      // of duplicating the number/network/name here.
+      await startMomo();
+      return;
+    }
     setPendingBadge(true);
     const net = (data.usdt_network || "USDT-BEP20") as UsdtNetwork;
     setUsdtNetwork(net);
-    setUsdt({
+    setManual({
+      kind: "usdt",
       purchase_id: data.id,
       network: net,
       label: USDT_LABELS[net] || "USDT",
       address: data.usdt_address || "",
-      amount_usdt: TRIAL_USD,
+      amount: TRIAL_USD,
+      amountUnit: "USDT",
     });
-    setTxHash("");
-    setVerifyMsg(null);
-    setConfirmClose(false);
-    setOpen("usdt");
+    setOpen("manual");
   };
 
-  // On mount: handle Paystack return, deep-link resume, and background pending check.
+  // On mount: handle deep-link resume and background pending check.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
 
@@ -97,45 +111,9 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
       window.history.replaceState({}, "", window.location.pathname + (q ? `?${q}` : ""));
       resumePending(resumeId);
     } else {
-      // Silent check for any pending USDT purchase awaiting a TXID
+      // Silent check for any pending USDT/MoMo purchase awaiting a reference
       resumePending();
     }
-
-    if (params.get("paystack_trial") !== "1") return;
-    const reference = params.get("reference") || params.get("trxref");
-    if (!reference) return;
-    params.delete("paystack_trial");
-    params.delete("reference");
-    params.delete("trxref");
-    const q = params.toString();
-    window.history.replaceState({}, "", window.location.pathname + (q ? `?${q}` : ""));
-
-    (async () => {
-      setVerifying(true);
-      setOpen("paystack");
-      let attempts = 0;
-      while (attempts < 10) {
-        attempts++;
-        const { data } = await supabase.functions.invoke("verify-trial-payment", {
-          body: { reference },
-        });
-        if (data?.status === "confirmed") {
-          toast({ title: "Trial activated 🎁", description: "4 minutes of studio time is ready." });
-          setOpen(null);
-          onTrialActivated();
-          setVerifying(false);
-          return;
-        }
-        if (data?.status === "failed") {
-          toast({ title: "Payment failed", description: data?.reason || "Try again or use USDT.", variant: "destructive" });
-          setVerifying(false);
-          return;
-        }
-        await new Promise((r) => setTimeout(r, 3000));
-      }
-      setVerifyMsg("Still verifying — refresh in a minute if the trial doesn't appear.");
-      setVerifying(false);
-    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -151,41 +129,65 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
         toast({ title: code === "LIMIT_REACHED" ? "Trial limit reached" : "Unavailable", description: msg, variant: "destructive" });
         return;
       }
-      setUsdt(data as UsdtPurchase);
+      const net = ((data as any).network || usdtNetwork) as UsdtNetwork;
+      setManual({
+        kind: "usdt",
+        purchase_id: (data as any).purchase_id,
+        network: net,
+        label: (data as any).label || USDT_LABELS[net],
+        address: (data as any).address,
+        amount: (data as any).amount_usdt ?? TRIAL_USD,
+        amountUnit: "USDT",
+      });
       setTxHash("");
       setVerifyMsg(null);
       setConfirmClose(false);
       setPendingBadge(true);
-      setOpen("usdt");
+      setOpen("manual");
     } finally {
       setBusy(false);
     }
   };
 
-  const startPaystack = async () => {
+  const startMomo = async () => {
     setBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke("create-trial-purchase", {
-        body: { method: "paystack" },
+        body: { method: "momo_manual" },
       });
-      if (error || !data?.authorization_url) {
-        const msg = (data as any)?.message || error?.message || "Paystack unavailable.";
-        toast({ title: "Unavailable", description: msg, variant: "destructive" });
+      if (error || !data?.purchase_id) {
+        const code = (data as any)?.code;
+        const msg = (data as any)?.message || error?.message || "Could not start trial purchase.";
+        toast({ title: code === "LIMIT_REACHED" ? "Trial limit reached" : "Unavailable", description: msg, variant: "destructive" });
         return;
       }
-      window.location.href = data.authorization_url;
+      setManual({
+        kind: "momo",
+        purchase_id: (data as any).purchase_id,
+        network: null,
+        label: (data as any).momo_network || "Mobile Money",
+        address: (data as any).momo_number || "",
+        recipientName: (data as any).momo_name || "",
+        amount: (data as any).amount_ghs ?? TRIAL_GHS,
+        amountUnit: "GHS",
+      });
+      setTxHash("");
+      setVerifyMsg(null);
+      setConfirmClose(false);
+      setPendingBadge(true);
+      setOpen("manual");
     } finally {
       setBusy(false);
     }
   };
 
   const submitTxHash = async () => {
-    if (!usdt || !txHash.trim()) return;
+    if (!manual || !txHash.trim()) return;
     setVerifying(true);
     setVerifyMsg(null);
     try {
       const { data, error } = await supabase.functions.invoke("verify-trial-payment", {
-        body: { purchase_id: usdt.purchase_id, tx_hash: txHash.trim() },
+        body: { purchase_id: manual.purchase_id, tx_hash: txHash.trim() },
       });
       if (error) {
         setVerifyMsg(error.message || "Verification failed");
@@ -194,14 +196,24 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
       if (data?.status === "confirmed") {
         toast({ title: "Trial activated 🎁", description: "4 minutes of studio time is ready." });
         setOpen(null);
-        setUsdt(null);
+        setManual(null);
         setTxHash("");
         setPendingBadge(false);
         onTrialActivated();
         return;
       }
       if (data?.code === "REPLAY") {
-        setVerifyMsg("This transaction was already used for another trial.");
+        setVerifyMsg(
+          manual.kind === "momo"
+            ? "This transaction ID was already used for another trial."
+            : "This transaction was already used for another trial."
+        );
+        return;
+      }
+      if (manual.kind === "momo") {
+        // Manual MoMo never auto-confirms — every submission is routed to admin review.
+        setPendingBadge(false);
+        setVerifyMsg("Reference saved ✓ — we'll manually verify your Mobile Money payment, usually within a few hours. You can close this window.");
         return;
       }
       if (data?.hash_saved) {
@@ -216,11 +228,11 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
   };
 
   const cancelPurchase = async () => {
-    if (!usdt) return;
+    if (!manual) return;
     setCancelling(true);
     try {
       const { data, error } = await supabase.functions.invoke("cancel-trial-purchase", {
-        body: { purchase_id: usdt.purchase_id },
+        body: { purchase_id: manual.purchase_id },
       });
       if (error || (data && (data as any).code && !(data as any).ok)) {
         toast({
@@ -232,7 +244,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
       }
       toast({ title: "Purchase cancelled", description: "No charge on our side. Start again anytime." });
       setOpen(null);
-      setUsdt(null);
+      setManual(null);
       setTxHash("");
       setConfirmClose(false);
       setPendingBadge(false);
@@ -246,10 +258,10 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
     toast({ title: "Copied" });
   };
 
-  const hashSaved = !!verifyMsg && verifyMsg.startsWith("Hash saved");
-  const mustKeepOpen = !!usdt && !hashSaved && !txHash.trim();
+  const hashSaved = !!verifyMsg && (verifyMsg.startsWith("Hash saved") || verifyMsg.startsWith("Reference saved"));
+  const mustKeepOpen = !!manual && !hashSaved && !txHash.trim();
 
-  const handleUsdtOpenChange = (v: boolean) => {
+  const handleManualOpenChange = (v: boolean) => {
     if (v) return;
     if (mustKeepOpen) {
       // Intercept close — show inline confirm instead of closing.
@@ -276,12 +288,12 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
             )}
             {pendingBadge && (
               <span className="text-[10px] bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full font-heading font-semibold flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3" /> TXID pending
+                <AlertTriangle className="h-3 w-3" /> Reference pending
               </span>
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Pay {trialDisplay}{trialUsdSubtext} to unlock one 4-minute realtime face-swap session. USDT or card/momo.
+            Pay {trialDisplay}{trialUsdSubtext} to unlock one 4-minute realtime face-swap session. USDT or Mobile Money.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -292,7 +304,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
             onClick={() => (pendingBadge ? resumePending() : setOpen("choose"))}
             className="font-heading font-semibold text-xs"
           >
-            {pendingBadge ? "Finish trial — paste TXID" : `Start Trial — ${trialDisplay}`}
+            {pendingBadge ? "Finish trial — paste reference" : `Start Trial — ${trialDisplay}`}
           </Button>
         </div>
       </div>
@@ -324,18 +336,19 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
               </Button>
             </div>
             <div className="rounded-lg border border-border p-3 space-y-2">
-              <span className="font-heading font-semibold text-sm">Card or Mobile Money (GHS)</span>
-              <Button size="sm" className="w-full" disabled={busy} onClick={startPaystack}>
-                {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : (
-                  <>Pay with Momo or Card <ExternalLink className="h-3 w-3 ml-1" /></>
-                )}
+              <span className="font-heading font-semibold text-sm">Mobile Money (GHS {TRIAL_GHS})</span>
+              <p className="text-[10px] text-muted-foreground leading-snug">
+                Manual transfer — we'll show you the number to send to. After sending, paste your transaction ID here. No transaction ID = no trial.
+              </p>
+              <Button size="sm" className="w-full" disabled={busy} onClick={startMomo}>
+                {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Pay via Mobile Money"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={open === "usdt"} onOpenChange={handleUsdtOpenChange}>
+      <Dialog open={open === "manual"} onOpenChange={handleManualOpenChange}>
         <DialogContent
           className="sm:max-w-md max-h-[90vh] overflow-y-auto"
           onInteractOutside={(e) => { if (mustKeepOpen) e.preventDefault(); }}
@@ -343,44 +356,60 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
         >
 
           <DialogHeader>
-            <DialogTitle>Send ${usdt?.amount_usdt} {usdt?.label}</DialogTitle>
-            <DialogDescription>Send the exact amount, then paste the transaction hash below.</DialogDescription>
+            <DialogTitle>
+              {manual?.kind === "momo"
+                ? `Send GHS ${manual?.amount} via ${manual?.label}`
+                : `Send $${manual?.amount} ${manual?.label}`}
+            </DialogTitle>
+            <DialogDescription>
+              {manual?.kind === "momo"
+                ? "Send the exact amount, then paste the Mobile Money transaction ID below."
+                : "Send the exact amount, then paste the transaction hash below."}
+            </DialogDescription>
           </DialogHeader>
-          {usdt && (
+          {manual && (
             <div className="space-y-3">
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex gap-2 items-start">
                 <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-700 dark:text-amber-300 leading-snug">
-                  <strong>Do not close this window without pasting your TXID.</strong> Without the transaction hash, we cannot confirm your trial and your $10 will sit unmatched.
+                  <strong>Do not close this window without pasting your {manual.kind === "momo" ? "transaction ID" : "TXID"}.</strong> Without it, we cannot confirm your trial and your {manual.kind === "momo" ? `GHS ${manual.amount}` : `$${TRIAL_USD}`} will sit unmatched.
                 </p>
               </div>
 
               <div className="rounded-lg bg-muted/30 p-3 space-y-1">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Network</p>
-                <p className="text-sm font-mono">{usdt.network}</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-2">Address</p>
+                <p className="text-sm font-mono">{manual.kind === "momo" ? manual.label : manual.network}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-2">
+                  {manual.kind === "momo" ? "Number" : "Address"}
+                </p>
                 <div className="flex items-center gap-2">
-                  <p className="text-xs font-mono break-all flex-1">{usdt.address}</p>
-                  <Button size="sm" variant="ghost" onClick={() => copy(usdt.address)}>
+                  <p className="text-xs font-mono break-all flex-1">{manual.address}</p>
+                  <Button size="sm" variant="ghost" onClick={() => copy(manual.address)}>
                     <Copy className="h-3 w-3" />
                   </Button>
                 </div>
+                {manual.kind === "momo" && manual.recipientName && (
+                  <>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-2">Registered name</p>
+                    <p className="text-xs">{manual.recipientName}</p>
+                  </>
+                )}
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-2">Amount</p>
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-mono flex-1">{usdt.amount_usdt} USDT</p>
-                  <Button size="sm" variant="ghost" onClick={() => copy(String(usdt.amount_usdt))}>
+                  <p className="text-sm font-mono flex-1">{manual.amount} {manual.amountUnit}</p>
+                  <Button size="sm" variant="ghost" onClick={() => copy(String(manual.amount))}>
                     <Copy className="h-3 w-3" />
                   </Button>
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-heading">
-                  Transaction hash <span className="text-destructive">*</span>
+                  Transaction {manual.kind === "momo" ? "ID" : "hash"} <span className="text-destructive">*</span>
                 </label>
                 <Input
                   value={txHash}
                   onChange={(e) => setTxHash(e.target.value)}
-                  placeholder="0x... or TRON hash"
+                  placeholder={manual.kind === "momo" ? "e.g. MP240815.1234.A56789" : "0x... or TRON hash"}
                   className="font-mono text-xs"
                   autoFocus
                 />
@@ -392,13 +421,13 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
 
               {confirmClose && mustKeepOpen && (
                 <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 space-y-2">
-                  <p className="text-xs font-heading font-semibold">You haven't submitted a TXID yet.</p>
+                  <p className="text-xs font-heading font-semibold">You haven't submitted a reference yet.</p>
                   <p className="text-[11px] text-muted-foreground">
-                    If you already sent USDT, paste the TXID above so we can auto-confirm. Otherwise cancel this purchase — no charge on our side.
+                    If you already sent the payment, paste the {manual.kind === "momo" ? "transaction ID" : "TXID"} above so we can confirm it. Otherwise cancel this purchase — no charge on our side.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="flex-1" onClick={() => setConfirmClose(false)}>
-                      Paste TXID now
+                      Paste reference now
                     </Button>
                     <Button size="sm" variant="destructive" className="flex-1" disabled={cancelling} onClick={cancelPurchase}>
                       {cancelling ? <Loader2 className="h-3 w-3 animate-spin" /> : "Cancel purchase"}
@@ -408,30 +437,12 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
               )}
 
               {hashSaved && (
-                <Button size="sm" variant="outline" className="w-full" onClick={() => { setOpen(null); setUsdt(null); }}>
+                <Button size="sm" variant="outline" className="w-full" onClick={() => { setOpen(null); setManual(null); }}>
                   Close
                 </Button>
               )}
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={open === "paystack"} onOpenChange={(v) => !v && setOpen(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirming your payment</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-3 py-4">
-            {verifying ? (
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            ) : (
-              <CheckCircle2 className="h-8 w-8 text-primary" />
-            )}
-            <p className="text-sm text-center text-muted-foreground">
-              {verifyMsg || "Verifying your card/momo transaction…"}
-            </p>
-          </div>
         </DialogContent>
       </Dialog>
     </>

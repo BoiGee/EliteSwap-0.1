@@ -102,8 +102,10 @@ async function verifyUsdtTrc20(hash: string, expectedUsd: number): Promise<{ ok:
 
 async function sendTrialEmails(admin: any, purchase: any, userEmail: string | null | undefined, displayName: string | null | undefined) {
   const methodLabel =
-    purchase.payment_method === "paystack"
-      ? "Card or Mobile Money (GHS)"
+    purchase.payment_method === "momo_manual"
+      ? "Mobile Money (manual, GHS)"
+      : purchase.payment_method === "paystack"
+      ? "Card or Mobile Money (GHS) — legacy"
       : purchase.usdt_network === "USDT-TRC20" ? "USDT (TRC-20)" : "USDT (BEP-20)";
   const ref = purchase.provider_reference || purchase.id;
   // User confirmation
@@ -277,51 +279,60 @@ Deno.serve(async (req) => {
       return json({ status: "confirmed", purchase_id: purchase.id, api_key: row?.api_key, expires_at: row?.expires_at });
     }
 
-    // ----- Paystack -----
-    if (purchase.payment_method === "paystack") {
-      const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
-      if (!PAYSTACK_SECRET) return json({ code: "MISCONFIG" }, 500);
+    // ----- Manual Mobile Money (GHS) -----
+    // There's no API to verify a manual MoMo transfer, so this never
+    // auto-confirms: save the pasted reference, flag for admin review (same
+    // as the USDT off-chain/Binance-internal path above), and let an admin
+    // confirm/reject via admin_manage_trial_purchase in TrialPurchaseManager.
+    if (purchase.payment_method === "momo_manual") {
+      const txHash = String(body?.tx_hash || "").trim();
+      if (!txHash) return json({ status: "pending", purchase_id: purchase.id });
 
-      const ref = purchase.provider_reference;
-      const r = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(ref)}`, {
-        headers: { Authorization: `Bearer ${PAYSTACK_SECRET}` },
-      });
-      const j = await r.json();
-      const tx = j?.data;
-      if (!j?.status || !tx) {
-        return json({ status: "pending", reason: "paystack_no_tx" });
-      }
-      if (tx.status !== "success") {
-        if (tx.status === "failed" || tx.status === "abandoned") {
-          await admin.from("trial_purchases").update({ status: "failed" }).eq("id", purchase.id);
-          admin.functions.invoke("send-admin-push", {
-            body: {
-              event: "trial_failed",
-              title: "Trial payment failed",
-              body: `Paystack ref ${ref} — ${tx.status}`,
-              url: "/admin",
-              tag: `trial-fail-${purchase.id}`,
-            },
-          }).catch(() => {});
-          return json({ status: "failed", reason: tx.status });
-        }
-        return json({ status: "pending", reason: tx.status });
-      }
-
-      await admin
+      // Replay protection: don't accept a reference already used elsewhere.
+      const { data: replay } = await admin
         .from("trial_purchases")
-        .update({ status: "confirmed", confirmed_at: new Date().toISOString() })
-        .eq("id", purchase.id)
-        .eq("status", "pending");
+        .select("id")
+        .eq("provider_reference", txHash)
+        .neq("id", purchase.id)
+        .limit(1);
+      if (replay && replay.length) {
+        return json({ code: "REPLAY", message: "Transaction reference already used" }, 409);
+      }
 
-      const { data: assignRows, error: assignErr } = await admin.rpc(
-        "assign_trial_key_from_purchase",
-        { p_purchase_id: purchase.id },
-      );
-      if (assignErr) return json({ code: "ASSIGN_ERROR", message: assignErr.message }, 500);
-      const row = Array.isArray(assignRows) ? assignRows[0] : assignRows;
-      await sendTrialEmails(admin, purchase, ud.user.email, (ud.user.user_metadata as any)?.display_name || null);
-      return json({ status: "confirmed", purchase_id: purchase.id, api_key: row?.api_key, expires_at: row?.expires_at });
+      if (!purchase.provider_reference) {
+        await admin
+          .from("trial_purchases")
+          .update({ provider_reference: txHash })
+          .eq("id", purchase.id)
+          .is("provider_reference", null);
+      }
+
+      if (!purchase.needs_admin_review) {
+        await admin
+          .from("trial_purchases")
+          .update({ needs_admin_review: true })
+          .eq("id", purchase.id);
+        try {
+          await admin.functions.invoke("send-admin-push", {
+            body: {
+              event: "trial_momo_manual_review",
+              title: "Trial payment needs manual review",
+              body: `${Number(purchase.amount_local) || 150} GHS • Mobile Money reference ${txHash}`,
+              url: "/admin",
+              tag: `trial-momo-${purchase.id}`,
+            },
+          });
+        } catch (e) {
+          console.warn("[verify-trial-payment] momo manual notify failed", e);
+        }
+      }
+
+      return json({
+        status: "pending",
+        reason: "manual_review",
+        hash_saved: true,
+        needs_admin_review: true,
+      });
     }
 
     return json({ status: "pending" });

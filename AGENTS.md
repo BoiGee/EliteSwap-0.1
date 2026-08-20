@@ -86,7 +86,7 @@ src/components/
 - **Crypto Support**: `CryptoPayment` component for non-fiat currency checkout
 - **Fiat Rates**: Real-time conversion rates (`useFiatRates`)
 - **Crypto Prices**: Live price feeds (`useCryptoPrices`)
-- **Webhook Verification**: `paystack-webhook` + `verify-crypto-payment` Edge Functions handle payment callbacks
+- **Webhook Verification**: `verify-crypto-payment` Edge Function handles crypto payment callbacks; the $10 trial's Mobile Money leg is a manual paste-reference flow (no webhook) confirmed by an admin
 
 ## Build & Deployment
 

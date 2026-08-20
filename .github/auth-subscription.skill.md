@@ -135,8 +135,7 @@ User sees upgraded plan immediately
 **Key Functions**:
 - `verify-trial-payment` - Confirm trial purchase succeeded
 - `verify-crypto-payment` - Check blockchain for tx confirmation
-- `paystack-webhook` - Stripe/Paystack webhook processor
-- `reconcile-trial-purchases` - Nightly cron to fix missed payments
+- `reconcile-trial-purchases` - Nightly cron to fix missed payments; the $10 trial's Mobile Money leg is a manual paste-reference flow (no webhook), confirmed by an admin via `admin_manage_trial_purchase`
 
 ### Crypto Payment Integration
 ```typescript

@@ -1,4 +1,4 @@
-// Create a $10 trial purchase. Method = "usdt" or "paystack".
+// Create a $10 trial purchase. Method = "usdt" or "momo_manual".
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -8,6 +8,10 @@ const corsHeaders = {
 };
 
 const TRIAL_USD = 10;
+const TRIAL_GHS = 150;
+const MOMO_NUMBER = "0502657294";
+const MOMO_NETWORK = "Telecel Cash";
+const MOMO_NAME = "Linda Brakoh-Kwakyi";
 
 const USDT_NETWORKS: Record<string, { label: string; network: string; address: string }> = {
   "USDT-BEP20": {
@@ -27,18 +31,6 @@ const json = (b: unknown, s = 200) =>
     status: s,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-
-async function fetchGhsRate(): Promise<number> {
-  try {
-    const r = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=ghs",
-    );
-    const j = await r.json();
-    const v = Number(j?.["usd-coin"]?.ghs);
-    if (v > 0) return v;
-  } catch { /* ignore */ }
-  return 15;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -62,8 +54,8 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const method = String(body?.method || "").toLowerCase();
     const network = String(body?.network || "USDT-BEP20");
-    if (method !== "usdt" && method !== "paystack") {
-      return json({ code: "BAD_REQUEST", message: "method must be 'usdt' or 'paystack'" }, 400);
+    if (method !== "usdt" && method !== "momo_manual") {
+      return json({ code: "BAD_REQUEST", message: "method must be 'usdt' or 'momo_manual'" }, 400);
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE, {
@@ -141,79 +133,51 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Paystack
-    const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
-    if (!PAYSTACK_SECRET) {
-      return json({ code: "MISCONFIG", message: "Paystack not configured" }, 500);
+    // Manual Mobile Money (GHS) — fixed amount, provided number, user pastes
+    // the transaction ID after sending. No automatic verification exists for
+    // this path; every purchase is confirmed by an admin (needs_admin_review
+    // gets set in verify-trial-payment once the reference is submitted).
+    {
+      let purchaseId = reuse?.id;
+      let isNew = false;
+      if (!purchaseId) {
+        const { data: ins, error: ie } = await admin
+          .from("trial_purchases")
+          .insert({
+            user_id: userId,
+            payment_method: "momo_manual",
+            amount_usd: TRIAL_USD,
+            amount_local: TRIAL_GHS,
+            currency: "GHS",
+            status: "pending",
+          })
+          .select("id")
+          .single();
+        if (ie) return json({ code: "ERROR", message: ie.message }, 500);
+        purchaseId = ins.id;
+        isNew = true;
+      }
+      if (isNew) {
+        admin.functions.invoke("send-admin-push", {
+          body: {
+            event: "pending_review",
+            title: "New trial purchase started",
+            body: `$${TRIAL_USD} • ${ud.user.email ?? "user"} • Momo (manual, GHS)`,
+            url: "/admin",
+            tag: `trial-pending-${purchaseId}`,
+          },
+        }).catch((e) => console.warn("[create-trial-purchase] push failed", e));
+      }
+
+      return json({
+        purchase_id: purchaseId,
+        method: "momo_manual",
+        momo_number: MOMO_NUMBER,
+        momo_network: MOMO_NETWORK,
+        momo_name: MOMO_NAME,
+        amount_ghs: TRIAL_GHS,
+      });
     }
-    const ghsRate = await fetchGhsRate();
-    const ghsAmount = Math.round(TRIAL_USD * ghsRate * 100) / 100;
-    const pesewas = Math.round(ghsAmount * 100);
-
-    const ALLOWED_ORIGINS = new Set([
-      "https://eliteswap.online",
-      "https://www.eliteswap.online",
-    ]);
-    const rawOrigin = (req.headers.get("origin") || "").replace(/\/+$/, "");
-    const safeOrigin = ALLOWED_ORIGINS.has(rawOrigin) ? rawOrigin : "https://eliteswap.online";
-    const callbackUrl = `${safeOrigin}/dashboard?paystack_trial=1`;
-
-    const initRes = await fetch("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: ud.user.email,
-        amount: pesewas,
-        currency: "GHS",
-        callback_url: callbackUrl,
-        metadata: { user_id: userId, purpose: "trial", trial_usd: TRIAL_USD },
-      }),
-    });
-    const initJson = await initRes.json();
-    if (!initRes.ok || !initJson?.status) {
-      console.error("paystack init failed", initJson);
-      return json({ code: "PAYSTACK_ERROR", message: initJson?.message || "Could not initialize payment" }, 502);
-    }
-    const reference = initJson.data.reference as string;
-    const authorization_url = initJson.data.authorization_url as string;
-
-    const { data: ins, error: ie } = await admin
-      .from("trial_purchases")
-      .insert({
-        user_id: userId,
-        payment_method: "paystack",
-        amount_usd: TRIAL_USD,
-        amount_local: ghsAmount,
-        currency: "GHS",
-        provider_reference: reference,
-        paystack_authorization_url: authorization_url,
-        status: "pending",
-      })
-      .select("id")
-      .single();
-    if (ie) return json({ code: "ERROR", message: ie.message }, 500);
-
-    admin.functions.invoke("send-admin-push", {
-      body: {
-        event: "pending_review",
-        title: "New trial purchase started",
-        body: `$${TRIAL_USD} • ${ud.user.email ?? "user"} • Paystack (GHS)`,
-        url: "/admin",
-        tag: `trial-pending-${ins.id}`,
-      },
-    }).catch((e) => console.warn("[create-trial-purchase] push failed", e));
-
-
-    return json({
-      purchase_id: ins.id,
-      method: "paystack",
-      authorization_url,
-      reference,
-      amount_ghs: ghsAmount,
-    });
   } catch (e) {
     console.error("[create-trial-purchase] uncaught", e);
     return json({ code: "ERROR", message: "Unexpected error" }, 500);

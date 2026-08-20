@@ -3,9 +3,6 @@ project_id = "bbxahisheugfryyxfidg"
 [functions.sync-internal-service-key]
 verify_jwt = false
 
-[functions.paystack-webhook]
-verify_jwt = false
-
 [functions.handle-email-suppression]
 verify_jwt = false
 
