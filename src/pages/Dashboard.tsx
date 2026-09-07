@@ -11,6 +11,7 @@ import { getSafeErrorMessage } from "@/lib/errors";
 import ProfileSection from "@/components/dashboard/ProfileSection";
 import PricingSection, { type SelectedPlanInfo } from "@/components/dashboard/PricingSection";
 import TutorialSection from "@/components/dashboard/TutorialSection";
+import TutorialGuideModal from "@/components/dashboard/TutorialGuideModal";
 import PromoBanner from "@/components/PromoBanner";
 import { ReviewPromptModal } from "@/components/dashboard/ReviewPromptModal";
 import ReferralCodeInput from "@/components/dashboard/ReferralCodeInput";
@@ -84,6 +85,7 @@ export default function Dashboard() {
   // wallet modal (otherwise the submit toasts "Choose a plan first").
   const [inlinePlans, setInlinePlans] = useState<{ id: string; name: string; price_usd: number }[]>([]);
   const [inlinePlanId, setInlinePlanId] = useState<string>("");
+  const [showTutorialGuide, setShowTutorialGuide] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -277,6 +279,16 @@ export default function Dashboard() {
     setReviewBannerDismissed(true);
   };
 
+  // Auto-open the beginner walkthrough once a user first has a usable key
+  // (trial or paid), unless they've previously opted out. The manual
+  // "Tutorial Guide" button next to TutorialSection always reopens it
+  // regardless of this flag.
+  useEffect(() => {
+    if (!user || !canUseStudio) return;
+    if (localStorage.getItem(`tutorial-guide-dismissed-${user.id}`)) return;
+    setShowTutorialGuide(true);
+  }, [user, canUseStudio]);
+
   useEffect(() => {
     if (stepTouched) return;
     const next: 1 | 2 | 3 = (!hasConfirmedPayment || repurchaseMode) ? 1 : apiKeys.length === 0 ? 2 : 3;
@@ -349,6 +361,13 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen flex flex-col">
       <SystemAnnouncementModal />
+      <TutorialGuideModal
+        open={showTutorialGuide}
+        onOpenChange={setShowTutorialGuide}
+        onDisableAutoShow={() => {
+          if (user) localStorage.setItem(`tutorial-guide-dismissed-${user.id}`, "1");
+        }}
+      />
       {showPayment && (
         <CryptoPayment
           onClose={() => setShowPayment(false)}
@@ -694,6 +713,18 @@ export default function Dashboard() {
             </div>
 
             {/* Tutorial */}
+            {canUseStudio && (
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTutorialGuide(true)}
+                  className="font-heading text-xs gap-1.5"
+                >
+                  🎓 Tutorial Guide
+                </Button>
+              </div>
+            )}
             <TutorialSection
               isFirstTimer={apiKeys.length === 0 && payments.length === 0}
               trialExhaustedNoPayment={
