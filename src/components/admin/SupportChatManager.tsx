@@ -433,7 +433,7 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
       return;
     }
     const ext = file.name.split(".").pop() || "bin";
-    const path = `admin/${Date.now()}.${ext}`;
+    const path = `${user.id}/${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from("chat-attachments").upload(path, file);
     if (error) {
       toast({ title: "Upload failed", variant: "destructive" });
