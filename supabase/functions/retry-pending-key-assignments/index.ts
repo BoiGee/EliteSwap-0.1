@@ -1,7 +1,7 @@
 // Scheduled reconciler for payments stuck in pending_key_assignment=true.
 // Cause: pool for the plan was empty when the payment was confirmed.
 // This function retries public.issue_api_key_for_payment for every stuck row
-// (cheap — the RPC no-ops if a key already exists or the pool is still empty),
+// (cheap: the RPC no-ops if a key already exists or the pool is still empty),
 // and pushes an admin alert once per payment when the wait exceeds 15 min so
 // the operator can top up the pool. Idempotent; safe to run every 5 min.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   // Require an exact match against the literal service-role key. verify_jwt is
-  // off at the gateway, so we must gate this here — otherwise anyone could
+  // off at the gateway, so we must gate this here; otherwise anyone could
   // trigger the RPC + admin push fan-out on demand.
   const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
         results.issued++;
         continue;
       }
-      // Still no key — check age; alert once via a piggyback record.
+      // Still no key: check age; alert once via a piggyback record.
       results.still_stuck++;
       const ageMs = Date.now() - new Date(p.updated_at ?? p.created_at).getTime();
       if (ageMs < ALERT_AFTER_MS) continue;

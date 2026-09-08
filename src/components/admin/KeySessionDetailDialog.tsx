@@ -135,7 +135,7 @@ export default function KeySessionDetailDialog({ keyId, onClose }: { keyId: stri
                     </div>
                     {m.penalty_ms > 0 && (
                       <div className="text-amber-400">
-                        Handshake burn: {fmtMs(m.penalty_ms)} debited ({m.penalty_reason ?? "no reason logged"}) — credential was issued but never connected
+                        Handshake burn: {fmtMs(m.penalty_ms)} debited ({m.penalty_reason ?? "no reason logged"}); credential was issued but never connected
                       </div>
                     )}
                   </div>
@@ -152,7 +152,7 @@ export default function KeySessionDetailDialog({ keyId, onClose }: { keyId: stri
                 <p className="text-[10px] text-muted-foreground mb-2">
                   A separate reclaim mechanism: waste (short sessions / handshake burns) an admin reclaimed while this
                   user's balance was too low to cover it, deferred as a debt and silently taken from whichever key
-                  next gained balance. These deductions never create a session or mint row — this is the only place
+                  next gained balance. These deductions never create a session or mint row; this is the only place
                   they're visible.
                 </p>
                 <div className="space-y-1.5">
@@ -167,7 +167,7 @@ export default function KeySessionDetailDialog({ keyId, onClose }: { keyId: stri
                       <span className="text-amber-400 font-heading">
                         ⚠ {fmtMs(detail.debts.outstanding_ms)} still owed by this user
                       </span>
-                      <span className="text-muted-foreground"> — will be silently taken from the next key that gains balance (any of this user's keys, not necessarily this one).</span>
+                      <span className="text-muted-foreground"> Will be silently taken from the next key that gains balance (any of this user's keys, not necessarily this one).</span>
                     </div>
                   )}
                 </div>

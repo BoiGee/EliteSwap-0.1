@@ -83,7 +83,7 @@ export default function FreeTrialManager({ emailForUser }: Props) {
     const rows = lines.map((api_key) => ({ api_key }));
     // upsert + ignoreDuplicates so one already-in-the-pool key doesn't fail
     // the entire pasted batch (a plain insert is all-or-nothing on the
-    // api_key unique constraint) — every genuinely new key still lands,
+    // api_key unique constraint); every genuinely new key still lands,
     // duplicates are just silently skipped and reported.
     const { data, error } = await supabase
       .from("free_trial_keys")
@@ -141,7 +141,7 @@ export default function FreeTrialManager({ emailForUser }: Props) {
   const claimed = keys.filter((k) => k.claimed_by_user_id !== null).length;
   const available = total - claimed;
   // This pool backs $10 trial purchase confirmations (assign_trial_key_from_purchase
-  // draws from this same table) — running out means new $10 purchases can't be fulfilled.
+  // draws from this same table); running out means new $10 purchases can't be fulfilled.
   const LOW_STOCK_THRESHOLD = 10;
 
   const filtered = keys.filter((k) => {
@@ -183,8 +183,8 @@ export default function FreeTrialManager({ emailForUser }: Props) {
         <h2 className="text-2xl font-heading font-bold text-foreground">Trial Key Pool</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Pool of pre-generated unique keys backing the $10 trial purchase flow. Default duration is 2
-          minutes — override per-key below. (The old unpaid "free trial" claim path this pool originally
-          served was retired 2026-08-11 — trials are $10 now.)
+          minutes; override per-key below. (The old unpaid "free trial" claim path this pool originally
+          served was retired 2026-08-11; trials are $10 now.)
         </p>
       </div>
 
@@ -193,7 +193,7 @@ export default function FreeTrialManager({ emailForUser }: Props) {
           available === 0 ? "border-destructive/50 text-destructive" : "border-amber-500/50 text-amber-400"
         }`}>
           {available === 0
-            ? "⚠️ Pool exhausted — new $10 trial purchases can't be fulfilled until more keys are added."
+            ? "⚠️ Pool exhausted: new $10 trial purchases can't be fulfilled until more keys are added."
             : `⚠️ Only ${available} unclaimed key${available === 1 ? "" : "s"} left.`}
         </div>
       )}

@@ -24,7 +24,7 @@ function stubCanvas() {
   return ctxCalls;
 }
 
-describe("useDecartRealtime — output console without an API key", () => {
+describe("useDecartRealtime: output console without an API key", () => {
   beforeEach(() => {
     window.localStorage.clear();
   });

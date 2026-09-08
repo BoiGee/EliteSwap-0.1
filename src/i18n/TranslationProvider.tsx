@@ -115,7 +115,7 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
   const [lang, setLangState] = useState<string>(() => getInitialLang());
   const [isTranslating, setIsTranslating] = useState(false);
   const cacheRef = useRef<Record<string, string>>({});
-  // Track the last value WE wrote to each node — if the current nodeValue
+  // Track the last value WE wrote to each node; if the current nodeValue
   // no longer matches, React updated it and we must refresh the original.
   const appliedTextRef = useRef<WeakMap<Text, string>>(new WeakMap());
   const originalsRef = useRef<WeakMap<Text, string>>(new WeakMap());
@@ -133,7 +133,7 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
 
   // On sign-in, prefer the server-side saved language.
   // Only persist to the profile when the user explicitly changes language,
-  // never on cold-load — otherwise the browser default overwrites the saved pref.
+  // never on cold-load, otherwise the browser default overwrites the saved pref.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -198,7 +198,7 @@ export function TranslationProvider({ children }: { children: React.ReactNode })
         });
         if (error) throw error;
         // If the language changed while this request was in flight, cacheRef
-        // now points at a different language's cache object — writing into
+        // now points at a different language's cache object; writing into
         // it here would mix this stale batch's translations into the wrong
         // language, both in memory and in what gets persisted to
         // localStorage. Drop the result instead; the new language's own

@@ -27,13 +27,13 @@ interface CompositorState {
 /**
  * Composites a custom background behind the person in `sourceStream` (the
  * live Decart output). When `config` is null this is a true no-op pass-
- * through — no canvas, no worker, zero added cost — which matters since the
+ * through (no canvas, no worker, zero added cost), which matters since the
  * large majority of sessions never touch this feature at all.
  *
  * When active: segmentation mode runs MediaPipe's ImageSegmenter in a Web
- * Worker (CPU delegate — no GPU dependency) on a throttled, adaptive
+ * Worker (CPU delegate, no GPU dependency) on a throttled, adaptive
  * cadence, reusing the last mask between updates since a person's silhouette
- * barely changes frame-to-frame. Chroma-key mode needs no ML at all — the
+ * barely changes frame-to-frame. Chroma-key mode needs no ML at all; the
  * alpha is computed inline in the WebGL shader every frame, essentially
  * free. Either way, the actual per-frame compositing (blend background +
  * foreground by the alpha) is one GPU draw call.
@@ -63,11 +63,11 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
   const segmentBusyRef = useRef(false);
   const emaInferenceRef = useRef<number | null>(null);
   // True only once a REAL segmentation result has ever been applied. Until
-  // then (initial model warmup, or the worker never becoming ready at all —
+  // then (initial model warmup, or the worker never becoming ready at all:
   // slow/failed WASM+model fetch, unsupported browser), segmentation mode
   // forces the shader into passthrough (uMode 2, alpha always 1) instead of
   // sampling the mask texture at all. This is deliberately redundant with
-  // the mask texture's white placeholder above — two independent mechanisms
+  // the mask texture's white placeholder above; two independent mechanisms
   // that both have to fail for the person/swap to ever be hidden.
   const hasReceivedMaskRef = useRef(false);
   const nextRequestIdRef = useRef(1);
@@ -110,13 +110,13 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
     // Each texture must be created while ITS OWN unit is active. createTexture()
-    // binds whatever it creates to the currently-active unit — without these
+    // binds whatever it creates to the currently-active unit; without these
     // activeTexture() calls, all three would land on unit 0 (the default),
     // and units 1/2 would have nothing bound at all until the background
     // image loads / the first segmentation result arrives. Sampling an
     // unbound WebGL texture unit returns (0,0,0,0), which zeroed out the
     // mask's alpha exactly like the black-placeholder bug this was meant to
-    // fix — confirmed by testing: setting a white placeholder alone did not
+    // fix; confirmed by testing: setting a white placeholder alone did not
     // change the observed output, because it was never actually bound to
     // unit 2 in the first place.
     gl.activeTexture(gl.TEXTURE0);
@@ -125,8 +125,8 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     const bgTex = createTexture(gl);
     // White placeholder: the mask's red channel is read directly as alpha
     // (fully-foreground = 1). Before the first real segmentation result
-    // arrives — or if the worker never becomes ready at all (slow/failed
-    // model load, unsupported browser) — this must default to showing the
+    // arrives, or if the worker never becomes ready at all (slow/failed
+    // model load, unsupported browser), this must default to showing the
     // person/swap, not to a black placeholder that reads as alpha=0 and
     // hides them behind the background image indefinitely.
     gl.activeTexture(gl.TEXTURE2);
@@ -178,7 +178,7 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
     });
     // Without this, a worker that fails to start (model/WASM fetch failure,
     // unsupported browser) never posts "ready" and never posts an "error"
-    // message either — it just silently never segments again, leaving the
+    // message either; it just silently never segments again, leaving the
     // white placeholder mask in place. That's the safe fallback now (see
     // the mask texture above), but still worth surfacing so it's visible in
     // the console instead of looking like AI Background quietly did nothing.
@@ -210,7 +210,7 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
         const tex = texturesRef.current?.mask;
         if (gl && tex) {
           // Normalize the confidence mask (0..1 float) to a Uint8 luminance
-          // texture — works on plain WebGL1 with no float-texture extension.
+          // texture; works on plain WebGL1 with no float-texture extension.
           const bytes = new Uint8Array(msg.mask.length);
           for (let i = 0; i < msg.mask.length; i++) bytes[i] = Math.max(0, Math.min(255, Math.round(msg.mask[i] * 255)));
           gl.activeTexture(gl.TEXTURE2);
@@ -325,7 +325,7 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
       ensureWorker();
     } else {
       // Switching away from AI Background mid-session (e.g. to Green
-      // Screen) — release the MediaPipe WASM worker and loaded model
+      // Screen), release the MediaPipe WASM worker and loaded model
       // instead of leaving them resident in memory for the rest of the
       // session.
       teardownWorker();
@@ -363,7 +363,7 @@ export function useBackgroundCompositor(config: BackgroundConfig | null, quality
       videoRef.current.srcObject = stream;
       if (stream) void videoRef.current.play().catch(() => {});
     }
-    // Pass-through when compositing isn't active — the majority case.
+    // Pass-through when compositing isn't active; the majority case.
     if (!configRef.current) {
       setState((s) => ({ ...s, outputStream: stream }));
     }

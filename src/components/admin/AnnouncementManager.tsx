@@ -207,7 +207,7 @@ export default function AnnouncementManager() {
             </div>
             <div className="space-y-1.5">
               <Label className="font-heading text-xs">Message</Label>
-              <Textarea rows={4} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} placeholder="We'll be upgrading the platform from 10pm–11pm UTC." />
+              <Textarea rows={4} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} placeholder="We'll be upgrading the platform from 10pm-11pm UTC." />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

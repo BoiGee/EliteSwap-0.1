@@ -45,12 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      // Only log truly new sign-ins — NEVER on TOKEN_REFRESHED / INITIAL_SESSION
+      // Only log truly new sign-ins, NEVER on TOKEN_REFRESHED / INITIAL_SESSION
       // / USER_UPDATED, because those fire on every refresh cycle and pile up
       // useless activity rows plus extra DB traffic.
       if (event === "SIGNED_IN" && session?.user) {
         const userId = session.user.id;
-        // Key by user only, per browser session — one login row per tab-open,
+        // Key by user only, per browser session; one login row per tab-open,
         // not one per refresh.
         const key = `login-logged-${userId}`;
         if (!sessionStorage.getItem(key)) {

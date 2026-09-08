@@ -19,7 +19,7 @@ export function sanitizePromptForLucy(prompt?: string): string {
 
 export function buildPromptWithIdentityGuard(prompt?: string): string {
   const safePrompt = sanitizePromptForLucy(prompt);
-  // Each suffix is checked and appended independently — a prompt that
+  // Each suffix is checked and appended independently; a prompt that
   // already mentions "avoid extra limbs" but not the identity phrase (or
   // vice versa) used to get the whole block re-appended as one unit,
   // duplicating whichever half was already present.

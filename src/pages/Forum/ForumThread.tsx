@@ -65,7 +65,7 @@ export default function ForumThread() {
   return (
     <ForumLayout>
       <Helmet>
-        <title>{thread.title} — Forum</title>
+        <title>{thread.title}: Forum</title>
         <meta name="description" content={thread.body_md.slice(0, 160)} />
         <link rel="canonical" href={`https://eliteswap.online/forum/t/${thread.id}`} />
       </Helmet>

@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useToast } from "@/hooks/use-toast";
 
-// Tiny ~0.15s beep WAV (440Hz) base64-encoded — keeps bundle small, no asset import
+// Tiny ~0.15s beep WAV (440Hz) base64-encoded; keeps bundle small, no asset import
 const BEEP_DATA_URI =
   "data:audio/wav;base64,UklGRiQEAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAEAAAAAAcAEAAaACMALABAAFAAYABzAIYAlgCnALsAzgDeAOoA9gAFAQ8BFwEbARsBGAESAQwBBAH3AOYA0gC9AKkAlwCDAG8AWwBHADcAKAAaAA8ABwAAAP3//P/8//7/AAACAAUACAAMABEAFwAfACgAMQA8AEgAVABhAG0AeAB+AIIAhgCJAIoAjwCRAJUAmwCdAJ4AnwCeAJ4AnQCYAJEAhwB7AGwAXwBSAEMAMQAdAAwA+v/o/9P/wf+u/57/jv+B/3X/aP9b/0//Q/82/yj/Hf8U/wn///7y/uX+1/7H/rb+pf6V/oP+cv5h/lH+Qf4z/iX+Gv4P/gT++/3y/ev95f3i/d/93f3c/dz93P3c/dz93P3c/dz93P3c/dz93f3g/eP95v3p/e398P3y/fT99f31/fX99f30/fT98/3y/fL98v3y/fL98v3z/fT99/35/fz9//4D/gj+D/4Y/iT+Mv5C/lP+Zf54/o3+pP67/tT+7v4J/yX/Q/9i/4P/pv/I/+v/AAAUACgAOgBJAFcAYwBuAHcAfwCEAIcAhwCHAIYAggB+AHkAcwBrAGEAVgBJADoAKgAYAAYA9P/i/9D/v/+u/57/jv9//3D/Yf9T/0X/N/8q/x3/EP8E//j+7P7g/tT+yP67/q7+oP6S/oP+c/5j/lL+Qf4w/h/+D/7//e795f3d/dX9zv3I/cP9v/27/bj9tf2y/bD9rv2s/ar9qf2o/af9pv2l/aT9o/2j/aL9of2h/aH9of2h/aL9o/2k/ab9qP2q/a39sP2z/bf9u/3A/cb9zP3T/dr94f3p/fH9+f0B/gn+EP4X/h7+I/4n/iv+Lv4w/jH+Mv4y/jH+L/4t/ir+Jv4i/h3+GP4S/gz+Bf7+/ff97/3o/eD92P3R/cn9wv27/bP9rP2k/Z39lf2N/YX9ff11/Wz9ZP1c/VT9TP1E/T39N/0w/Sr9JP0e/Rj9E/0O/Qn9Bf0B/f78+vz3/PT88vzx/PD87/zw/PH88vz0/Pf8+vz9/AH9Bf0K/Q/9Ff0a/SD9Jv0t/TT9O/1C/Un9UP1Y/V/9Z/1u/Xb9ff2E/Yz9k/2a/aH9p/2t/bP9uf2+/cP9yP3M/dD90/3W/dn92/3d/d/94P3h/eL94v3i/eL94f3g/d/93P3a/df91P3R/c39yf3F/cD9u/22/bH9rP2n/aL9nf2X/ZL9jf2I/YT9f/17/Xj9dP1x/W/9bP1q/Wn9aP1n/Wf9aP1p/Wr9bP1u/XH9dP14/Xz9gf2G/Yv9kf2X/Z39o/2q/bH9uP2//cb9zv3V/dz94/3q/fH9+P3//gX+C/4R/hb+G/4f/iL+Jf4n/in+Kv4q/in+KP4n/iX+Iv4f/hv+F/4S/g3+CP4D/v3++P3y/ez95v3g/dr91P3O/cn9w/2+/bn9tP2w/az9qP2k/aH9nv2c/Zr9mP2X/Zb9lf2V/ZX9lf2W/Zf9mf2b/Z39oP2j/ab9qv2u/bL9tv26/b/9w/3I/cz90f3V/dr93v3i/eb96v3t/fH99P32/fn9+/39/f7+/wAAAQEBAQEBAQEAAP/+/v38/Pv6+fj39vXz8vDu7Onm5OHe29jUz8vGwby4tLCspaCYj4Z+dWtgVUg7LR8RAfDg0MGyo5WHe3FpYltVUE9PUFFTV1xkbXiDjpijra235L/Ix9HX3eDk5+nq6u3y+P8GDhYeJjA5Q01ZZHB7iJSfqrTAytLY3eHj5OTj4t/d2dXQy8XAurOsppyTio";
 
@@ -99,7 +99,7 @@ export function useSupportChatNotifications() {
     return () => window.removeEventListener("chat-read-updated", handler);
   }, [recomputeFromStorage]);
 
-  // Initial load — count unread per conversation since last read
+  // Initial load: count unread per conversation since last read
   useEffect(() => {
     if (!user) return;
     let cancelled = false;

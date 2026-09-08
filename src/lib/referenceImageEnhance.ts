@@ -18,7 +18,7 @@ export async function enhanceImage(file: File, score: ImageScore): Promise<File>
 
   // 1. Choose a crop rect (face-centered with padding to include shoulders/torso)
   //    or the full frame. Wider padding gives Lucy visible outfit context to
-  //    carry into the output — a face-only crop leaves the model guessing.
+  //    carry into the output; a face-only crop leaves the model guessing.
   let sx = 0, sy = 0, sw = bitmap.width, sh = bitmap.height;
   if (score.faceBounds) {
     const fb = score.faceBounds;

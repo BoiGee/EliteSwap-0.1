@@ -33,7 +33,7 @@ export function ReviewForm({ onSuccess, compact }: ReviewFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const [existingReviewId, setExistingReviewId] = useState<string | null>(null);
 
-  // Reviews are one-per-user (enforced by a unique constraint on user_id) —
+  // Reviews are one-per-user (enforced by a unique constraint on user_id), so
   // load any existing review so re-visiting this form edits it instead of
   // failing on a duplicate insert.
   useEffect(() => {

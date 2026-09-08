@@ -18,7 +18,6 @@ import ReferralCodeInput from "@/components/dashboard/ReferralCodeInput";
 import { trackFunnel } from "@/lib/paymentFunnel";
 import { notifyAdminPaymentEvent } from "@/lib/adminNotify";
 import { useCryptoPrices } from "@/hooks/useCryptoPrices";
-import { getDeviceFingerprint } from "@/lib/fingerprint";
 import { attachPendingPartnerCode } from "@/lib/partnerCode";
 import { ApiKeyTimer } from "@/components/dashboard/ApiKeyTimer";
 import { usePartner } from "@/hooks/usePartner";
@@ -75,7 +74,7 @@ export default function Dashboard() {
   const [repurchaseMode, setRepurchaseMode] = useState<boolean>(false);
   const { partner, loading: partnerLoading } = usePartner();
   const [partnerPromoDismissed, setPartnerPromoDismissed] = useState<boolean>(false);
-  // Get Started stepper (Payment / Keys / Launch) — defaults to the step the
+  // Get Started stepper (Payment / Keys / Launch), defaults to the step the
   // user actually needs next, but stops auto-advancing once they click a tab
   // themselves so a background refresh doesn't yank them away mid-read.
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
@@ -241,7 +240,7 @@ export default function Dashboard() {
 
   const fetchPayments = async () => {
     if (!user) return;
-    // Same reasoning as fetchApiKeys — payment managers/admins have a
+    // Same reasoning as fetchApiKeys: payment managers/admins have a
     // "view all" RLS policy on payments too.
     const { data } = await supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setPayments(data);
@@ -412,7 +411,7 @@ export default function Dashboard() {
         {/* Returning users with a ready key land straight on the one thing
             they came here to do, instead of scrolling past the full
             onboarding flow (Get Started card below) every single visit. New
-            users and anyone without a usable key never see this — they still
+            users and anyone without a usable key never see this; they still
             get the step-by-step flow first, which is the right order for them. */}
         {usableApiKeys.length > 0 && (
           <div className="rounded-2xl border border-primary/40 bg-primary/[0.06] p-6 space-y-4">
@@ -438,10 +437,10 @@ export default function Dashboard() {
         )}
 
         {/* Dashboard body: primary flow (payment/plans/setup) on the left,
-            account + community on the right — instead of one long stack. */}
+            account + community on the right, instead of one long stack. */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2 space-y-6">
-            {/* Promo banner — hides automatically once paid */}
+            {/* Promo banner: hides automatically once paid */}
             {!hasConfirmedPayment && (
               <PromoBanner
                 variant="compact"
@@ -553,7 +552,7 @@ export default function Dashboard() {
                               ₮ USDT: <span className="text-foreground font-semibold">$1.00</span>
                             </span>
                           </div>
-                          {/* Plan picker — required so the verifier knows the expected amount.
+                          {/* Plan picker: required so the verifier knows the expected amount.
                               Pre-fills automatically if the user already clicked "Pay with Crypto" on a plan. */}
                           <div>
                             <label className="block text-[10px] font-heading uppercase tracking-wider text-muted-foreground mb-1">
@@ -564,10 +563,10 @@ export default function Dashboard() {
                               onChange={(e) => setInlinePlanId(e.target.value)}
                               className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
                             >
-                              <option value="">— Select the plan you paid for —</option>
+                              <option value="">Select the plan you paid for</option>
                               {inlinePlans.map((p) => (
                                 <option key={p.id} value={p.id}>
-                                  {p.name} — ${Number(p.price_usd).toFixed(0)}
+                                  {p.name} (${Number(p.price_usd).toFixed(0)})
                                 </option>
                               ))}
                             </select>
@@ -695,7 +694,7 @@ export default function Dashboard() {
                           setRepurchaseMode(true);
                           toast({
                             title: "Time to top up",
-                            description: "Pick a plan below to refresh your unique key — your account stays the same.",
+                            description: "Pick a plan below to refresh your unique key; your account stays the same.",
                           });
                           setTimeout(() => {
                             document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -748,7 +747,7 @@ export default function Dashboard() {
                     Partner Program
                   </p>
                   <h3 className="text-base font-heading font-semibold text-foreground">
-                    Earn 20% on every referral — and 5% on theirs
+                    Earn 20% on every referral and 5% on theirs
                   </h3>
                 </div>
                 <ul className="space-y-2 text-sm text-muted-foreground">

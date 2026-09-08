@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
   const actorRole: string | null = typeof body?.actorRole === 'string' ? body.actorRole : null
   // Set by callers that are about to send their own richer user-facing
   // email directly (e.g. PaymentActionDialog, with an admin-composed
-  // note) — skips ONLY the generic user-email fan-out below; the admin
+  // note), skips ONLY the generic user-email fan-out below; the admin
   // push notification still fires either way.
   const skipUserEmail: boolean = body?.skipUserEmail === true
   if (!paymentId || !eventType || !ALLOWED_EVENTS.has(eventType)) {
@@ -183,8 +183,8 @@ Deno.serve(async (req) => {
     const isApproved = userEmailSpec.template === 'payment-approved'
     const adminNote = isApproved
       ? (eventType === 'auto_confirmed_key_pending'
-          ? 'Your transaction was verified — your unique key is being assigned and will appear in your dashboard shortly.'
-          : 'Your transaction has been confirmed — your account is fully unlocked. Welcome aboard!')
+          ? 'Your transaction was verified; your unique key is being assigned and will appear in your dashboard shortly.'
+          : 'Your transaction has been confirmed; your account is fully unlocked. Welcome aboard!')
       : undefined
     try {
       await admin.functions.invoke('send-transactional-email', {

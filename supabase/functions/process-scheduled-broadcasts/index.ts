@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
     // admin-broadcast-email always passes overrideCooldown:true for
     // fire_scheduled (it has no other way to know "was this checked
     // already"), so without a check here two broadcasts scheduled a
-    // minute apart would both fire back-to-back with no gap at all —
+    // minute apart would both fire back-to-back with no gap at all,
     // exactly what the cooldown exists to prevent. Deferring (not
     // claiming) rather than failing means it's simply picked up again
     // next tick once the cooldown clears.
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       })
       const json = await resp.json().catch(() => ({}))
       if (!resp.ok) {
-        // admin-broadcast-email returned an error — record it on the broadcast
+        // admin-broadcast-email returned an error; record it on the broadcast
         // so the row doesn't stay stuck in 'sending' forever.
         const errMsg = String(json?.error ?? json?.message ?? `HTTP ${resp.status}`)
         console.error('admin-broadcast-email returned non-OK', { id: b.id, status: resp.status, error: errMsg })

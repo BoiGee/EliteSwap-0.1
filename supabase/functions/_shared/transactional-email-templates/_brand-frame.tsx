@@ -5,7 +5,7 @@ import {
 } from 'npm:@react-email/components@0.0.22'
 
 // Matches the web app's "refined dark studio" palette (src/index.css
-// --primary: 255 85% 65%) — a single signature indigo-violet instead of
+// --primary: 255 85% 65%): a single signature indigo-violet instead of
 // the old cyan/magenta/purple trio, so emails no longer clash with the
 // redesigned app. Email clients need literal hex, not CSS custom
 // properties, so these are a one-time conversion of the same tokens.
@@ -92,7 +92,7 @@ const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, Helvetica, sans-s
 const outer = { maxWidth: '600px', margin: '0 auto', padding: '0' }
 const headerBar = {
   // Monochromatic depth (two shades of the same violet), not the old
-  // three-hue cyan/purple/magenta rainbow — matches the "one confident
+  // three-hue cyan/purple/magenta rainbow; matches the "one confident
   // accent" rule the app redesign uses instead of gradient-as-decoration.
   background: `linear-gradient(135deg, ${BRAND.primaryDeep} 0%, ${BRAND.primary} 100%)`,
   padding: '28px 24px',

@@ -135,8 +135,8 @@ export default function ActivityManager({ profiles }: Props) {
     fetchActivities();
   }, [fetchActivities]);
 
-  // Presence + the filter-bar counts don't depend on the log's filters —
-  // fetch once on mount only.
+  // Presence + the filter-bar counts don't depend on the log's filters,
+  // so fetch once on mount only.
   useEffect(() => {
     fetchPresence();
     fetchActionCounts();

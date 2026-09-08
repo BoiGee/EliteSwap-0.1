@@ -19,7 +19,7 @@ const formatNumber = (n?: number) =>
 const DailyBackupReadyEmail = ({
   backupDate, tableCount, totalRows, fileSizeMb, downloadUrl, storagePath,
 }: Props) => (
-  <BrandFrame preview={`EliteSwap database backup ready — ${backupDate ?? 'today'}`}>
+  <BrandFrame preview={`EliteSwap database backup ready (${backupDate ?? 'today'})`}>
     <Heading style={h1}>Daily backup ready 💾</Heading>
     <Text style={text}>
       Your daily EliteSwap database backup completed successfully.
@@ -40,7 +40,7 @@ const DailyBackupReadyEmail = ({
     )}
 
     <BrandNote title="About this link">
-      The download link is signed and valid for 1 year. The backup file itself is kept permanently in private storage — if the link ever expires, a new one can be re-issued from the admin panel.
+      The download link is signed and valid for 1 year. The backup file itself is kept permanently in private storage; if the link ever expires, a new one can be re-issued from the admin panel.
     </BrandNote>
 
     <Text style={textMuted}>
@@ -52,7 +52,7 @@ const DailyBackupReadyEmail = ({
 export const template = {
   component: DailyBackupReadyEmail,
   subject: (d: Record<string, any>) =>
-    `EliteSwap daily backup ready — ${d.backupDate ?? 'today'}`,
+    `EliteSwap daily backup ready (${d.backupDate ?? 'today'})`,
   displayName: 'Daily DB backup ready',
   previewData: {
     backupDate: '2026-06-15',

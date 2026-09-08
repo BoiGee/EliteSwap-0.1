@@ -25,7 +25,7 @@ export default function PaidUsersManager({ profiles, payments }: Props) {
   const [loading, setLoading] = useState(false);
 
   // Studio time and partner attribution are computed server-side via
-  // admin_paid_user_stats() — a raw client-side fetch of studio_sessions
+  // admin_paid_user_stats(): a raw client-side fetch of studio_sessions
   // used to silently cap at PostgREST's default 1000 rows (the table has
   // 5,575+ rows), undercounting every user's studio time to a fraction of
   // reality. Aggregating with GROUP BY server-side is correct regardless
@@ -55,7 +55,7 @@ export default function PaidUsersManager({ profiles, payments }: Props) {
   // Periodic refresh: studio time changes constantly from real usage with
   // zero admin action involved, and this tab previously had no way to see
   // fresh data short of navigating away and back. A plain poll (not a
-  // postgres_changes subscription) deliberately — studio_sessions gets a
+  // postgres_changes subscription) deliberately: studio_sessions gets a
   // heartbeat UPDATE every few seconds per active session, and with 1800+
   // users there's rarely a quiet moment, so an event-driven debounce risks
   // never actually firing. This aggregate doesn't need second-level

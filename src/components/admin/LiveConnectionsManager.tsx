@@ -536,7 +536,7 @@ export default function LiveConnectionsManager() {
         </div>
         <div className="glass rounded-xl p-4 text-center space-y-1 border border-amber-500/30">
           <div className="text-3xl font-heading font-bold text-amber-400">{counts.stale}</div>
-          <div className="text-xs text-muted-foreground font-heading">Stale (60–90s)</div>
+          <div className="text-xs text-muted-foreground font-heading">Stale (60-90s)</div>
         </div>
         <div className="glass rounded-xl p-4 text-center space-y-1 border border-destructive/30">
           <div className="text-3xl font-heading font-bold text-destructive">{counts.orphaned}</div>

@@ -71,7 +71,7 @@ export default function PromoBanner({ variant = "hero", onApplyToPlan }: Props) 
 
   const headline =
     variant === "hero"
-      ? `Limited offer — ${percentOff}% off your first plan`
+      ? `Limited offer: ${percentOff}% off your first plan`
       : `Save ${percentOff}% on any plan today`;
 
   if (variant === "compact") {
@@ -115,7 +115,7 @@ export default function PromoBanner({ variant = "hero", onApplyToPlan }: Props) 
     );
   }
 
-  // hero variant — landing page
+  // hero variant, landing page
   return (
     <div className="relative w-full bg-gradient-to-r from-primary/30 via-primary/20 to-primary/10 border-b border-primary/40">
       <button

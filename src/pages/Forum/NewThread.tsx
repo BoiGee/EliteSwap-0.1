@@ -28,7 +28,7 @@ export default function NewThread() {
 
   return (
     <ForumLayout>
-      <Helmet><title>New thread — Forum</title></Helmet>
+      <Helmet><title>New thread: Forum</title></Helmet>
       <div className="max-w-2xl mx-auto space-y-4">
         <h1 className="text-2xl font-heading font-bold">Start a new thread</h1>
         <div className="space-y-1">

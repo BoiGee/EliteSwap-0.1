@@ -70,20 +70,20 @@ function ActivityTrackerWrapper({ children }: { children: React.ReactNode }) {
 
 // The PWA manifest's start_url was hardcoded to /dashboard, so an admin who
 // installs the app to their iPhone home screen (required for Web Push to
-// work at all on iOS — Safari doesn't support Notification/Push in a regular
-// tab) always relaunches into the user dashboard instead of /admin, with no
-// admin controls in sight.
+// work at all on iOS, since Safari doesn't support Notification/Push in a
+// regular tab) always relaunches into the user dashboard instead of /admin,
+// with no admin controls in sight.
 //
 // This used to swap the <link rel="manifest"> via a React effect after
 // mount. Confirmed on-device that doesn't work: iOS Safari's Add to Home
 // Screen preview still showed the default target even with a brand-new,
 // never-before-seen manifest URL (ruling out simple caching) while the
-// address bar correctly showed /admin — meaning Safari reads the manifest
+// address bar correctly showed /admin, meaning Safari reads the manifest
 // during initial HTML parsing, before a post-mount async role check could
 // ever finish. The actual swap now happens synchronously in index.html
 // (see the inline script there), driven by a localStorage flag. This
 // component's only remaining job is writing that flag once the role is
-// known, so it's already set by the *next* load — and, for the current
+// known, so it's already set by the *next* load, and for the current
 // session before that flag exists, applying the same swap as a fallback in
 // case the user tries to install before ever having reloaded post-login.
 function ManifestLinkSwitcher() {
@@ -95,10 +95,10 @@ function ManifestLinkSwitcher() {
     // Also correct the DOM within the current session (e.g. a shared device
     // where a previous admin session's localStorage flag caused the inline
     // script to link the admin manifest for someone who then turns out not
-    // to be staff this time — the fallback needs to be able to revert, not
-    // just apply). Non-staff targets the plain default with no query string
-    // so this doesn't churn the DOM on every load for the common case —
-    // that's already what index.html ships with.
+    // to be staff this time; the fallback needs to be able to revert, not
+    // just apply). Non-staff targets the plain default with no query string,
+    // so this doesn't churn the DOM on every load for the common case,
+    // which is already what index.html ships with.
     const target = isStaff
       ? `${import.meta.env.BASE_URL}manifest-admin.webmanifest?r=admin`
       : `${import.meta.env.BASE_URL}manifest.webmanifest`;
@@ -124,7 +124,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      {/* basename tracks Vite's `base` (import.meta.env.BASE_URL) automatically —
+      {/* basename tracks Vite's `base` (import.meta.env.BASE_URL) automatically:
           /EliteSwap-0.1/ on the GitHub Pages project site, / once a custom
           domain is attached. Without this, BrowserRouter matches routes
           against the full pathname (which includes the subpath prefix) and

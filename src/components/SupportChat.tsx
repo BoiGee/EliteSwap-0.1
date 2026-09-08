@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MessageCircle, X, Send, Paperclip, File, Image, Music, Video, Bell } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -71,7 +69,7 @@ export default function SupportChat() {
       supabase
         .from("support_conversations")
         .select("id")
-        // "pending" is still an active thread (admin flagged it, not resolved) —
+        // "pending" is still an active thread (admin flagged it, not resolved);
         // only "closed" should start a fresh conversation on reopen.
         .in("status", ["open", "pending"])
         .eq("user_id", user.id)
@@ -99,7 +97,7 @@ export default function SupportChat() {
       }
 
       // Lost a create race against another tab/device (a unique constraint
-      // guarantees only one "open" conversation per user) — fall back to
+      // guarantees only one "open" conversation per user), so fall back to
       // whichever one now exists instead of leaving the widget stuck with
       // no conversation at all.
       if (error) {

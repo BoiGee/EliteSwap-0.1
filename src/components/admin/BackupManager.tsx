@@ -91,7 +91,7 @@ export default function BackupManager() {
 
   // The backup itself now runs in the background (it can take anywhere from
   // under a minute to several, well past what's safe to hold a button's
-  // loading spinner on) — poll while a run is actually in flight so
+  // loading spinner on), so poll while a run is actually in flight so
   // "running" flips to "success"/"failed" without the admin needing to
   // remember to hit Refresh.
   useEffect(() => {
@@ -110,7 +110,7 @@ export default function BackupManager() {
       toast({
         title: (data as any)?.queued ? "Backup started 🚀" : "Backup complete ✅",
         description: (data as any)?.queued
-          ? "Running in the background — this list updates automatically when it finishes."
+          ? "Running in the background; this list updates automatically when it finishes."
           : `${(data as any)?.table_count ?? 0} tables, ${formatBytes((data as any)?.file_size_bytes ?? 0)}. Email sent.`,
       });
       await load();
@@ -126,7 +126,7 @@ export default function BackupManager() {
   };
 
   // Signed URLs expire after 48h (SIGNED_URL_TTL_SECONDS in the backup
-  // function — a storage security-policy max), but backups themselves are
+  // function, a storage security-policy max), but backups themselves are
   // kept indefinitely. The stored download_url column goes stale long
   // before the file does, so always mint a fresh one on click rather than
   // trusting whatever was signed at creation time.
@@ -153,7 +153,7 @@ export default function BackupManager() {
         <div>
           <h2 className="text-2xl font-heading font-bold text-foreground">Database Backups</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Daily full-coverage backup at 02:00 UTC — schema + data + auth + config + storage — emailed to the first admin and kept permanently in private storage.
+            Daily full-coverage backup at 02:00 UTC (schema + data + auth + config + storage), emailed to the first admin and kept permanently in private storage.
           </p>
         </div>
         <Button
@@ -168,16 +168,16 @@ export default function BackupManager() {
       <div className="glass rounded-xl p-4 text-xs text-muted-foreground space-y-2">
         <div className="font-heading text-sm text-foreground">What each zip contains</div>
         <ul className="list-disc pl-5 space-y-1">
-          <li><span className="text-foreground">schema/ddl.sql</span> — full public schema: tables, indexes, views, enums, functions, triggers, RLS, policies. Makes a full rebuild possible.</li>
-          <li><span className="text-foreground">tables/*.csv</span> — every public table (auto-discovered, 2M-row cap per table).</li>
-          <li><span className="text-foreground">auth_users.csv</span>, <span className="text-foreground">auth_identities.csv</span>, <span className="text-foreground">auth_mfa_factors.csv</span>, <span className="text-foreground">auth_sessions.csv</span> — auth data (no password hashes, no tokens).</li>
-          <li><span className="text-foreground">config/</span> — pg_cron jobs and recent runs, realtime publication membership, storage bucket settings, pgmq queues.</li>
-          <li><span className="text-foreground">storage/&lt;bucket&gt;/…</span> — files from every non-backup bucket. Capped at ~500 MB per run.</li>
-          <li><span className="text-foreground">MANIFEST.json</span> — machine-readable summary (per-table row counts, truncation flags, coverage map).</li>
-          <li><span className="text-foreground">README.txt</span> — coverage notes and limits.</li>
+          <li><span className="text-foreground">schema/ddl.sql</span>: full public schema (tables, indexes, views, enums, functions, triggers, RLS, policies). Makes a full rebuild possible.</li>
+          <li><span className="text-foreground">tables/*.csv</span>: every public table (auto-discovered, 2M-row cap per table).</li>
+          <li><span className="text-foreground">auth_users.csv</span>, <span className="text-foreground">auth_identities.csv</span>, <span className="text-foreground">auth_mfa_factors.csv</span>, <span className="text-foreground">auth_sessions.csv</span>: auth data (no password hashes, no tokens).</li>
+          <li><span className="text-foreground">config/</span>: pg_cron jobs and recent runs, realtime publication membership, storage bucket settings, pgmq queues.</li>
+          <li><span className="text-foreground">storage/&lt;bucket&gt;/…</span>: files from every non-backup bucket. Capped at ~500 MB per run.</li>
+          <li><span className="text-foreground">MANIFEST.json</span>: machine-readable summary (per-table row counts, truncation flags, coverage map).</li>
+          <li><span className="text-foreground">README.txt</span>: coverage notes and limits.</li>
         </ul>
         <div className="pt-2 font-heading text-sm text-foreground">Not included (by design)</div>
-        <p>Password hashes, OAuth refresh tokens, project secrets, and edge function source. These live outside the database — secrets are managed in Supabase project settings, and edge function source lives in the GitHub repo.</p>
+        <p>Password hashes, OAuth refresh tokens, project secrets, and edge function source. These live outside the database; secrets are managed in Supabase project settings, and edge function source lives in the GitHub repo.</p>
       </div>
 
       <div className="glass neon-border rounded-xl overflow-hidden">

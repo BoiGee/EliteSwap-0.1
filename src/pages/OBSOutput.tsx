@@ -121,7 +121,7 @@ export default function OBSOutput() {
       if (pendingPaint) return;
       pendingPaint = true;
       // N8: P2P canvas fallback (no MSTG) is already as low-latency as the
-      // transport allows — paint via microtask so we don't add another rAF
+      // transport allows, paint via microtask so we don't add another rAF
       // refresh of delay. Broker fallback keeps rAF to coalesce JPEG decodes.
       const t = transportRef.current;
       const useMicrotask = lowLatency || t === "p2p-canvas" || t === "p2p-video";
@@ -129,7 +129,7 @@ export default function OBSOutput() {
       else requestAnimationFrame(paintLatest);
     };
 
-    // Setup the MediaStreamTrackGenerator path. The browser handles paint —
+    // Setup the MediaStreamTrackGenerator path. The browser handles paint;
     // OBS Browser Source captures the <video> element directly via the GPU
     // compositor, which is the lowest-latency option Chromium offers.
     const setupTrackGenerator = () => {
@@ -159,12 +159,12 @@ export default function OBSOutput() {
       videoDecoder = new VideoDecoder({
         output: (frame) => {
           if (trackWriter) {
-            // Fast path — write frame directly into the track. Browser paints.
+            // Fast path: write frame directly into the track. Browser paints.
             trackWriter.write(frame).catch(() => {
               try { frame.close(); } catch {}
             });
           } else {
-            // Canvas fallback — freshest-frame-wins.
+            // Canvas fallback: freshest-frame-wins.
             latestFrame?.close();
             latestFrame = frame;
             schedulePaint();
@@ -209,7 +209,7 @@ export default function OBSOutput() {
     };
 
     // ============================================================
-    // Broker path — JPEG (or H.264 over Realtime, pre-Plan-M)
+    // Broker path: JPEG (or H.264 over Realtime, pre-Plan-M)
     // ============================================================
     let jpegLatest: BrokerPayload | null = null;
     let jpegDecoding = false;
@@ -257,7 +257,7 @@ export default function OBSOutput() {
     };
 
     channel.on("broadcast", { event: "frame" }, (msg) => {
-      // If we've already established P2P, ignore broker frames entirely —
+      // If we've already established P2P, ignore broker frames entirely;
       // the studio won't be sending us any anyway, but be defensive.
       if (transportRef.current === "p2p-video" || transportRef.current === "p2p-canvas") return;
 
@@ -296,7 +296,7 @@ export default function OBSOutput() {
     });
 
     // ============================================================
-    // P2P path — direct WebRTC DataChannel (Plan M)
+    // P2P path: direct WebRTC DataChannel (Plan M)
     // ============================================================
     let pc: RTCPeerConnection | null = null;
     let dc: RTCDataChannel | null = null;
@@ -310,7 +310,7 @@ export default function OBSOutput() {
       try { pc?.close(); } catch {}
       dc = null;
       pc = null;
-      // If we lose P2P, drop back to broker — receiver flips its presence and
+      // If we lose P2P, drop back to broker; receiver flips its presence and
       // the studio's broker effect will start sending frames again.
       if (transportRef.current === "p2p-video" || transportRef.current === "p2p-canvas") {
         setTransportSafe("broker");
@@ -325,7 +325,7 @@ export default function OBSOutput() {
       try { videoDecoder?.close(); } catch {}
       videoDecoder = null;
       decoderConfigured = false;
-      console.log("[p2p] receiver closed —", reason);
+      console.log("[p2p] receiver closed:", reason);
     };
 
     const handleP2PMessage = (data: ArrayBuffer) => {
@@ -455,7 +455,7 @@ export default function OBSOutput() {
         if (!forceBroker) {
           p2pOpenTimeout = setTimeout(() => {
             if (transportRef.current !== "p2p-video" && transportRef.current !== "p2p-canvas") {
-              console.warn("[p2p] open timeout — staying on broker");
+              console.warn("[p2p] open timeout, staying on broker");
               closeP2P("open-timeout");
               // Re-track without p2p so the studio stops trying.
               void channel.track({
@@ -506,7 +506,7 @@ export default function OBSOutput() {
     >
       <Helmet>
         <title>EliteSwap OBS Output Stream</title>
-        <meta name="description" content="EliteSwap OBS browser source output — receives the realtime face-swap video stream from the studio." />
+        <meta name="description" content="EliteSwap OBS browser source output, receives the realtime face-swap video stream from the studio." />
         <meta name="robots" content="noindex, nofollow" />
       </Helmet>
       <h1 className="sr-only">EliteSwap OBS browser-source output</h1>
@@ -516,7 +516,7 @@ export default function OBSOutput() {
           {status === "missing key"
             ? "Missing unique key in URL (?key=...)"
             : status === "connection error"
-            ? "Connection error — check your network."
+            ? "Connection error, check your network."
             : "Waiting for studio stream… Open the studio in another tab."}
         </p>
       )}
@@ -526,7 +526,7 @@ export default function OBSOutput() {
         playsInline
         muted
         // N6: prevent Chromium from spinning up Picture-in-Picture or remote
-        // playback machinery for the OBS video — both add a small amount of
+        // playback machinery for the OBS video; both add a small amount of
         // processing per frame and serve no purpose for an OBS Browser Source.
         disablePictureInPicture
         disableRemotePlayback

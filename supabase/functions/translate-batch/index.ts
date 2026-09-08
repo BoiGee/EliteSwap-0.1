@@ -24,7 +24,7 @@ async function sha256(s: string) {
 
 // The app's own caller (TranslationProvider.tsx) never flushes more than 80
 // strings per batch. These caps are generous headroom above that, not a
-// tight fit — their job is to stop a single request from forwarding an
+// tight fit; their job is to stop a single request from forwarding an
 // arbitrarily large payload to the paid AI Gateway call below, not to
 // constrain normal usage.
 const MAX_TEXTS_PER_REQUEST = 150;
@@ -91,7 +91,7 @@ Translate the numbered ${sourceName} strings below into ${targetName}.
 Rules:
 - Preserve emojis, punctuation, numbers, %, $, brand names (Elite Swap, OBS, Paystack, USDT), URLs, and code blocks exactly.
 - Do NOT translate proper nouns or email addresses.
-- Keep it concise — UI labels should stay short.
+- Keep it concise: UI labels should stay short.
 - Return ONLY a JSON array of strings in the SAME order and length as input. No commentary.`;
 
       const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {

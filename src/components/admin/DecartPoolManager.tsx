@@ -104,7 +104,7 @@ export default function DecartPoolManager() {
       setConfirmDeactivate(null);
       return;
     }
-    // Audit every status change — deactivating immediately affects every
+    // Audit every status change: deactivating immediately affects every
     // paid user's studio connection routing, the same reason revealKey is
     // audited. Logged before the mutation so the attempt is on record even
     // if the update itself then fails.
@@ -173,7 +173,7 @@ export default function DecartPoolManager() {
             <KeyRound className="w-5 h-5 text-primary" /> Decart Pool
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            The real Decart API key(s) backing every user's studio session. Users never see these — each paid user's
+            The real Decart API key(s) backing every user's studio session. Users never see these; each paid user's
             personal access key is checked and billed independently; the actual connection is assigned randomly from
             whichever keys here are active.
           </p>
@@ -184,7 +184,7 @@ export default function DecartPoolManager() {
       {!loading && activeCount === 0 && (
         <div className="glass border border-destructive/50 rounded-xl p-4 flex items-center gap-2 text-destructive font-heading text-sm">
           <AlertTriangle className="w-4 h-4" />
-          No active Decart keys — every studio connection attempt will fail right now.
+          No active Decart keys: every studio connection attempt will fail right now.
         </div>
       )}
 
@@ -256,9 +256,9 @@ export default function DecartPoolManager() {
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
             Sessions that started normally, then went silent long enough that we had to force-close them without a
-            heartbeat — the same signature you'd see from someone bypassing our own billing while keeping the raw
+            heartbeat, the same signature you'd see from someone bypassing our own billing while keeping the raw
             connection alive, since nothing here can actually terminate the Decart side of a live connection.{" "}
-            <strong>This is not proof of abuse</strong> — a single occurrence is completely normal (closed laptop,
+            <strong>This is not proof of abuse</strong>: a single occurrence is completely normal (closed laptop,
             dead wifi, crashed tab). Only users with a repeated pattern are listed. Use judgment; rotate the pool key
             above if you confirm deliberate abuse.
           </p>
@@ -283,7 +283,7 @@ export default function DecartPoolManager() {
                     {s.incident_count}
                   </span>
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{formatUnmonitored(s.total_unmonitored_ms)} (minimum — actual could be more)</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{formatUnmonitored(s.total_unmonitored_ms)} (minimum, actual could be more)</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{s.key_labels || "—"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{new Date(s.last_incident_at).toLocaleString()}</TableCell>
               </TableRow>
@@ -341,7 +341,7 @@ export default function DecartPoolManager() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Every paid user's studio session draws its real Decart credential at random from the active pool. Deactivating
-            this key stops new sessions from being assigned it immediately — sessions already using it keep working until
+            this key stops new sessions from being assigned it immediately; sessions already using it keep working until
             they end. This action is logged in the admin audit trail.
           </p>
           <DialogFooter>

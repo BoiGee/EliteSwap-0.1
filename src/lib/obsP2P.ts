@@ -6,8 +6,8 @@
 //   bytes 1-4    ts     (uint32, ms since session start)
 //   bytes 5-6    width  (uint16, pixels)
 //   bytes 7-8    height (uint16, pixels)
-//   bytes 9-10   configLen (uint16) — present only if flags & 0x02
-//   [configLen]  decoderConfig (avcC bytes) — present only if flags & 0x02
+//   bytes 9-10   configLen (uint16), present only if flags & 0x02
+//   [configLen]  decoderConfig (avcC bytes), present only if flags & 0x02
 //   [...]        H.264 encoded chunk bytes
 //
 // 9-byte fixed header (or 11 + configLen on keyframes with config). Compare

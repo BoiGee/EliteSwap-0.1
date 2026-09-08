@@ -213,7 +213,7 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
         </div>
 
 
-        {/* AMOUNT TO SEND — primary call-to-action when a plan is selected */}
+        {/* AMOUNT TO SEND: primary call-to-action when a plan is selected */}
         {selectedPlan && (
           <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-heading text-center">
@@ -326,7 +326,7 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
           </div>
         </div>
 
-        {/* Submit transaction hash directly here — no need to scroll back */}
+        {/* Submit transaction hash directly here; no need to scroll back */}
         {onSubmitHash && selectedPlan && (
           <div className="rounded-xl border border-primary/40 bg-primary/5 p-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-heading text-center">
@@ -367,7 +367,7 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
                           toast({
                             title: "Sent for manual review",
                             description:
-                              "Looks like a Binance internal transfer — we'll match it on the merchant Binance account and activate your key shortly.",
+                              "Looks like a Binance internal transfer. We'll match it on the merchant Binance account and activate your key shortly.",
                           });
                         }
                       }
@@ -385,11 +385,11 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
               {submitting ? "Submitting..." : `Submit ${wallet.symbol} Hash for Verification`}
             </Button>
             <p className="text-[10px] text-muted-foreground text-center">
-              We'll verify on-chain and activate your unique key — usually within minutes.
+              We'll verify on-chain and activate your unique key, usually within minutes.
             </p>
             <p className="text-[10px] text-muted-foreground/80 text-center leading-snug">
               Paid from <span className="font-semibold">inside Binance</span>? Paste the Binance
-              <span className="font-semibold"> txId</span> from your Withdrawal History — we'll match it manually.
+              <span className="font-semibold"> txId</span> from your Withdrawal History; we'll match it manually.
               Off-Binance payments must use the on-chain transaction hash.
             </p>
           </div>

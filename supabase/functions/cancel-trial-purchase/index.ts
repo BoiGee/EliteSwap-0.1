@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     if (row.user_id !== userId) return json({ code: "FORBIDDEN", message: "Not your purchase" }, 403);
     if (row.status !== "pending") return json({ code: "INVALID_STATE", message: `Cannot cancel a ${row.status} purchase` }, 409);
     if (row.payment_method !== "usdt") return json({ code: "INVALID_METHOD", message: "Only USDT purchases can be self-cancelled" }, 409);
-    if (row.provider_reference) return json({ code: "TXID_SUBMITTED", message: "A transaction hash was already submitted — contact support instead" }, 409);
+    if (row.provider_reference) return json({ code: "TXID_SUBMITTED", message: "A transaction hash was already submitted, contact support instead" }, 409);
     if (row.assigned_key_id) return json({ code: "ALREADY_FULFILLED", message: "Already fulfilled" }, 409);
 
     const { error: uErr } = await admin

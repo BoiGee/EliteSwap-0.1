@@ -24,7 +24,7 @@ interface Props {
 }
 
 /**
- * Diagnostics HUD — only mounted when ?debug=1 is in the URL.
+ * Diagnostics HUD, only mounted when ?debug=1 is in the URL.
  * Shows realtime input/output stream stats + OBS encoder telemetry.
  */
 export function StudioDiagnostics({ localStream, remoteStream, state }: Props) {

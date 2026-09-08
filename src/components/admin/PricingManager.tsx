@@ -167,7 +167,7 @@ export default function PricingManager() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground font-heading">Key duration (minutes)</label>
-              <Input value={form.key_duration_minutes} onChange={(e) => setForm({ ...form, key_duration_minutes: e.target.value })} type="number" min="0" placeholder="e.g. 45 — leave blank to never auto-issue" />
+              <Input value={form.key_duration_minutes} onChange={(e) => setForm({ ...form, key_duration_minutes: e.target.value })} type="number" min="0" placeholder="e.g. 45; leave blank to never auto-issue" />
             </div>
             <div>
               <label className="text-xs text-muted-foreground font-heading">Low-stock threshold</label>

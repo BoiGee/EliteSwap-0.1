@@ -1,21 +1,21 @@
-// Daily database backup — full-coverage edition
+// Daily database backup, full-coverage edition
 //
 // Zip contents:
-//   schema/ddl.sql                — CREATE TABLE / INDEX / VIEW / TYPE / FUNCTION / TRIGGER / POLICY for public schema
-//   tables/*.csv                  — every table in the public schema (dynamic discovery)
-//   auth_users.csv                — safe subset of auth.users (no password hashes)
-//   auth_identities.csv           — OAuth identities (no tokens)
-//   auth_mfa_factors.csv          — MFA factors metadata
-//   auth_sessions.csv             — session summaries (id, user, timestamps, ip, ua)
-//   config/cron_jobs.csv          — pg_cron scheduled jobs
-//   config/cron_recent_runs.csv   — last 100 cron run details
-//   config/realtime_publication.csv — tables in supabase_realtime publication
-//   config/storage_buckets.csv    — bucket metadata (public flag, size/mime limits)
-//   config/pgmq_queues.csv        — pgmq queue list (best-effort)
-//   storage/<bucket>/…            — files in every non-backup storage bucket
-//   storage/_manifest.csv         — index of copied storage files
-//   MANIFEST.json                 — machine-readable summary of coverage
-//   README.txt                    — human notes
+//   schema/ddl.sql: CREATE TABLE / INDEX / VIEW / TYPE / FUNCTION / TRIGGER / POLICY for public schema
+//   tables/*.csv: every table in the public schema (dynamic discovery)
+//   auth_users.csv: safe subset of auth.users (no password hashes)
+//   auth_identities.csv: OAuth identities (no tokens)
+//   auth_mfa_factors.csv: MFA factors metadata
+//   auth_sessions.csv: session summaries (id, user, timestamps, ip, ua)
+//   config/cron_jobs.csv: pg_cron scheduled jobs
+//   config/cron_recent_runs.csv: last 100 cron run details
+//   config/realtime_publication.csv: tables in supabase_realtime publication
+//   config/storage_buckets.csv: bucket metadata (public flag, size/mime limits)
+//   config/pgmq_queues.csv: pgmq queue list (best-effort)
+//   storage/<bucket>/…: files in every non-backup storage bucket
+//   storage/_manifest.csv: index of copied storage files
+//   MANIFEST.json: machine-readable summary of coverage
+//   README.txt: human notes
 //
 // Triggered by:
 //   - pg_cron daily at 02:00 UTC (service_role bearer)
@@ -40,7 +40,7 @@ const STORAGE_TOTAL_BYTES_CAP = 500 * 1024 * 1024 // 500 MB safety cap
 const PER_TABLE_ROW_CAP = 2_000_000
 // Historical successful runs (schema + every table + auth + config +
 // storage, combined) finished in under 90s. If schema/tables/auth/config
-// alone already took longer than this, something is unusually slow —
+// alone already took longer than this, something is unusually slow, so
 // storage copying (the most I/O-heavy remaining step) is skipped rather
 // than risk losing the whole run to whatever kills it past that point.
 const STORAGE_STEP_TIME_BUDGET_MS = 2 * 60 * 1000
@@ -119,9 +119,9 @@ Deno.serve(async (req) => {
 
   // Reap any prior run that crashed while `running` (>20min old). Every
   // successful run on record finished in under 2 minutes, so 20 minutes is
-  // already a generous multiple of that with room for the data to grow —
-  // no need for the original 1h grace period. Previously this only ever
-  // ran at the START of the NEXT invocation — since this function is
+  // already a generous multiple of that with room for the data to grow,
+  // so no need for the original 1h grace period. Previously this only ever
+  // ran at the START of the NEXT invocation; since this function is
   // normally only invoked once a day by cron, a crashed run could sit
   // showing "running" in the admin tab for up to 24 hours before anything
   // noticed. reap-watchdog (a separate cron job, every 15 min) calls this
@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
 
   // Signed URLs are capped at 48h (SIGNED_URL_TTL_SECONDS below, itself a
   // storage security-policy max) but backups are kept in private storage
-  // indefinitely — "Download" on anything older than 2 days was a dead
+  // indefinitely; "Download" on anything older than 2 days was a dead
   // link with no way to recover short of the Supabase dashboard. Re-sign
   // on demand instead of only ever signing once at creation time.
   if (body?.mode === 'resign' && typeof body?.run_id === 'string') {
@@ -186,14 +186,14 @@ Deno.serve(async (req) => {
 
   // The actual backup (schema export, ~60+ table dumps, storage file
   // copying) is a long, highly variable-duration chain of sequential
-  // network round-trips — normal runs finish in well under a minute, but
+  // network round-trips; normal runs finish in well under a minute, but
   // any hiccup anywhere in that chain has a real chance of pushing total
   // wall-clock time past this platform's synchronous-response ceiling,
   // which is exactly what the "timed_out_or_crashed" entries in
   // backup_runs' history show happening repeatedly (most recently:
   // stuck for 13+ hours with nothing to reap it until the next daily
-  // tick). Running it via EdgeRuntime.waitUntil — the same mechanism
-  // admin-broadcast-email already uses for large sends — frees it from
+  // tick). Running it via EdgeRuntime.waitUntil (the same mechanism
+  // admin-broadcast-email already uses for large sends) frees it from
   // that synchronous ceiling entirely; the HTTP response returns
   // immediately once the run is recorded, and backup_runs is the source
   // of truth for whether it actually finished. Falls back to awaiting
@@ -247,7 +247,7 @@ async function runBackup(
       }
     }
 
-    // 1) Schema DDL — the single most important addition
+    // 1) Schema DDL: the single most important addition
     try {
       const { data: ddlText, error: ddlErr } = await supabase.rpc('export_schema_ddl_for_backup' as any)
       if (ddlErr) throw ddlErr
@@ -275,7 +275,7 @@ async function runBackup(
     for (const table of tableNames) {
       // 5000 rather than 1000: fewer sequential round-trips per table is a
       // meaningful chunk of what makes this function's total runtime so
-      // variable — with 60+ tables, every extra page is another full
+      // variable; with 60+ tables, every extra page is another full
       // network round-trip multiplied across the whole run.
       const pageSize = 5000
       let from = 0
@@ -345,7 +345,7 @@ async function runBackup(
     const elapsedSoFarMs = Date.now() - startedAt.getTime()
     if (elapsedSoFarMs > STORAGE_STEP_TIME_BUDGET_MS) {
       // Schema + every table + auth + config already took longer than
-      // usual (normal full runs finish in well under 2 minutes total) —
+      // usual (normal full runs finish in well under 2 minutes total), so
       // downloading storage files one at a time is the single most
       // I/O-heavy remaining step and the most likely thing to push an
       // already-slow run over whatever ceiling kills it. Skipping it here
@@ -357,7 +357,7 @@ async function runBackup(
       storageSkippedOverBudget = true
       await zipWriter.add(
         'storage/_SKIPPED.txt',
-        new TextReader(`Storage copy skipped — backup was already ${Math.round(elapsedSoFarMs / 1000)}s in, over the ${STORAGE_STEP_TIME_BUDGET_MS / 1000}s budget for starting this step. Database contents above are unaffected.`),
+        new TextReader(`Storage copy skipped: backup was already ${Math.round(elapsedSoFarMs / 1000)}s in, over the ${STORAGE_STEP_TIME_BUDGET_MS / 1000}s budget for starting this step. Database contents above are unaffected.`),
       )
     } else {
     try {
@@ -474,20 +474,20 @@ async function runBackup(
       `Eliteswap full backup ${startedAt.toISOString()}`,
       ``,
       `INCLUDED:`,
-      `  schema/ddl.sql                — full public schema (tables, indexes, views, enums, functions, triggers, RLS + policies)`,
-      `  tables/*.csv                  — every public table (row cap ${PER_TABLE_ROW_CAP.toLocaleString()})`,
-      `  auth_users.csv                — safe subset of auth.users (no password hashes)`,
-      `  auth_identities.csv           — OAuth identity links (no refresh tokens)`,
-      `  auth_mfa_factors.csv          — MFA factor metadata`,
-      `  auth_sessions.csv             — recent session summaries (no access tokens)`,
-      `  config/cron_jobs.csv          — pg_cron scheduled jobs`,
-      `  config/cron_recent_runs.csv   — last 100 cron run details`,
-      `  config/realtime_publication.csv — realtime broadcast membership`,
-      `  config/storage_buckets.csv    — storage bucket metadata (public, size/mime limits)`,
-      `  config/pgmq_queues.csv        — pgmq queue list`,
-      `  storage/<bucket>/...          — file bytes from every non-backup bucket`,
-      `  storage/_manifest.csv         — index of copied storage files`,
-      `  MANIFEST.json                 — machine-readable summary`,
+      `  schema/ddl.sql: full public schema (tables, indexes, views, enums, functions, triggers, RLS + policies)`,
+      `  tables/*.csv: every public table (row cap ${PER_TABLE_ROW_CAP.toLocaleString()})`,
+      `  auth_users.csv: safe subset of auth.users (no password hashes)`,
+      `  auth_identities.csv: OAuth identity links (no refresh tokens)`,
+      `  auth_mfa_factors.csv: MFA factor metadata`,
+      `  auth_sessions.csv: recent session summaries (no access tokens)`,
+      `  config/cron_jobs.csv: pg_cron scheduled jobs`,
+      `  config/cron_recent_runs.csv: last 100 cron run details`,
+      `  config/realtime_publication.csv: realtime broadcast membership`,
+      `  config/storage_buckets.csv: storage bucket metadata (public, size/mime limits)`,
+      `  config/pgmq_queues.csv: pgmq queue list`,
+      `  storage/<bucket>/...: file bytes from every non-backup bucket`,
+      `  storage/_manifest.csv: index of copied storage files`,
+      `  MANIFEST.json: machine-readable summary`,
       ``,
       `NOT INCLUDED (by design):`,
       `  - Password hashes and OAuth refresh tokens (security)`,

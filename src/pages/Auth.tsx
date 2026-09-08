@@ -73,7 +73,7 @@ export default function Auth() {
         await signUp(normalizedEmail, password, `${window.location.origin}/auth?verified=1`);
         // Stamp acceptance on the user's profile + audit log. Best-effort:
         // signUp() with email confirmation required returns no session, so
-        // getUser() below has nothing to identify — this only actually
+        // getUser() below has nothing to identify; this only actually
         // stamps anything if confirmation is ever disabled again.
         try {
           const { data: { user } } = await supabase.auth.getUser();

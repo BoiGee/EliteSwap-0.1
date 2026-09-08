@@ -57,7 +57,7 @@ const AdminBroadcastEmail = ({ displayName, subject, blocks = [], ctaLabel, ctaU
 
       {ctaLabel && ctaUrl && <BrandCta href={ctaUrl}>{ctaLabel}</BrandCta>}
 
-      <Text style={textMuted}>— The EliteSwap Team</Text>
+      <Text style={textMuted}>The EliteSwap Team</Text>
     </BrandFrame>
   )
 }

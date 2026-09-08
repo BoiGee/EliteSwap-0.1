@@ -13,7 +13,7 @@ interface Props {
    * Server-authored snapshot of remaining time + the monotonic browser clock
    * value at which it was received. Countdown = remainingMs - (performance.now() - perf).
    * Using `performance.now()` (monotonic) instead of `Date.now()` (wall clock)
-   * makes the timer immune to device clock skew, DST jumps, and NTP drift —
+   * makes the timer immune to device clock skew, DST jumps, and NTP drift:
    * a device set 2h fast will still show the correct duration.
    */
   anchor: CountdownAnchor | null;

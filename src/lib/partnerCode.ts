@@ -52,10 +52,10 @@ export async function attachPendingPartnerCode(
     p_source: source,
   });
   if (error) {
-    // Network / unexpected error — keep the code and try again later.
+    // Network / unexpected error; keep the code and try again later.
     return { attempted: true, result: { ok: false, reason: "error" } };
   }
-  // Definitive answer received — burn the pending code regardless of outcome.
+  // Definitive answer received; burn the pending code regardless of outcome.
   clearPendingPartnerCode();
   return { attempted: true, result: data as AttachResult };
 }

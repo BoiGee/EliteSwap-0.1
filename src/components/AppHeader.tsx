@@ -19,7 +19,7 @@ interface AppHeaderProps {
   /** Which of the standard nav links corresponds to the current page, for the active-state highlight. */
   active?: NavKey;
   isStaff?: boolean;
-  /** Only pass this where the caller already fetches partner status — this component never queries it itself, to avoid duplicating that fetch. */
+  /** Only pass this where the caller already fetches partner status; this component never queries it itself, to avoid duplicating that fetch. */
   isPartner?: boolean;
   showNotifications?: boolean;
   /** Page-specific badge/label rendered right next to the logo (e.g. Partner's "PARTNER" pill). */

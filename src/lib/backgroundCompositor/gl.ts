@@ -1,5 +1,5 @@
 // Minimal WebGL plumbing for the background compositor. One draw call per
-// frame — sample the live video texture, sample either a segmentation mask
+// frame: sample the live video texture, sample either a segmentation mask
 // texture or compute a chroma-key alpha inline, and blend against the
 // background image texture. GPU-side work only; the only CPU cost per frame
 // is uploading the current video frame as a texture (native, cheap browser
@@ -16,8 +16,8 @@ void main() {
 `;
 
 // uMode: 0 = segmentation (alpha from uMask), 1 = chroma-key (alpha computed
-// from color distance to uKeyColor), 2 = forced passthrough (alpha always 1
-// — used whenever segmentation hasn't produced a real mask yet, so the
+// from color distance to uKeyColor), 2 = forced passthrough (alpha always 1,
+// used whenever segmentation hasn't produced a real mask yet, so the
 // person/swap is guaranteed visible without depending on mask texture
 // contents or binding at all; see hasReceivedMaskRef in useBackgroundCompositor).
 export const FRAGMENT_SHADER_SRC = `
@@ -94,7 +94,7 @@ export function createTexture(gl: WebGLRenderingContext, placeholder: [number, n
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   // 1x1 placeholder so the first few frames before real data arrives don't
-  // sample garbage. Callers pick the color deliberately — see the mask
+  // sample garbage. Callers pick the color deliberately; see the mask
   // texture in useBackgroundCompositor, which needs white (not this default
   // black) so an unready mask reads as "fully foreground" instead of
   // silently hiding the person behind the background image.

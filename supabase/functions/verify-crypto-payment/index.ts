@@ -349,7 +349,7 @@ async function verifyOne(
   paymentId: string,
   rates: { btc: number | null; bnb: number | null },
 ) {
-  // Fresh fetch — never trust request body
+  // Fresh fetch: never trust request body
   const { data: payment, error } = await admin
     .from("payments")
     .select("id,user_id,status,currency,tx_hash,amount_usd,plan_id,payment_method,created_at")
@@ -370,7 +370,7 @@ async function verifyOne(
 
   // If we've already escalated this payment to admin review (e.g. suspected
   // off-chain / exchange-internal transfer where the hash never appears on
-  // the public ledger), stop hitting chain providers — admin will action it.
+  // the public ledger), stop hitting chain providers; admin will action it.
   const { data: prevEscalation } = await admin
     .from("payment_verification_attempts")
     .select("id")
@@ -422,7 +422,7 @@ async function verifyOne(
   // ---------- Off-chain (Binance internal transfer) short-circuit ----------
   // The merchant addresses are Binance deposit addresses. When another Binance
   // user pays from inside Binance, Binance settles the transfer on its own
-  // books — nothing is ever broadcast to a public chain, so no explorer can
+  // books; nothing is ever broadcast to a public chain, so no explorer can
   // ever return that "hash". The reference the user pastes is a Binance
   // internal txId / withdrawal ID (e.g. "381479981610", "Off-chain Transfer …").
   // Detect those refs by shape before wasting any explorer calls, log a single
@@ -565,7 +565,7 @@ async function verifyOne(
       } catch (e) {
         console.warn("underpaid notify send failed", e);
       }
-      // Also push admin — once per payment (piggybacks the same claim).
+      // Also push admin, once per payment (piggybacks the same claim).
       admin.functions.invoke("send-admin-push", {
         body: {
           event: "underpaid_review",
@@ -588,7 +588,7 @@ async function verifyOne(
   // the verdict (30 min for tx_not_found which depends on explorer indexing,
   // 20 min for the others which are already derived from confirmed on-chain
   // data). We log a single escalation marker (short-circuits future cron runs
-  // via prevEscalation above) and notify admin. Status stays "pending" — admin
+  // via prevEscalation above) and notify admin. Status stays "pending"; admin
   // still flips it manually through the existing review UI.
   const TERMINAL_MISMATCH_REASONS = new Set([
     "wrong_address",
@@ -693,8 +693,8 @@ async function verifyOne(
         .maybeSingle();
       if (prof?.email) {
         const adminNote = keyIssued
-          ? "Your transaction was verified automatically on-chain — your account is fully unlocked. Welcome aboard!"
-          : "Your transaction was verified automatically on-chain. Your unique key is being assigned and will appear in your dashboard shortly — usually within a few minutes.";
+          ? "Your transaction was verified automatically on-chain; your account is fully unlocked. Welcome aboard!"
+          : "Your transaction was verified automatically on-chain. Your unique key is being assigned and will appear in your dashboard shortly, usually within a few minutes.";
         await admin.functions.invoke("send-transactional-email", {
           body: {
             templateName: "payment-approved",
@@ -730,9 +730,9 @@ Deno.serve(async (req) => {
   // ---- Authentication ----
   // Accept any of:
   //   (a) the service-role key (internal admin invocations),
-  //   (b) a valid end-user JWT — that user may only verify their OWN paymentId,
+  //   (b) a valid end-user JWT (that user may only verify their OWN paymentId),
   //   (c) cron mode with the project anon key in the `apikey` or Authorization header
-  //       (pg_cron retry loop — read-only side effects, gated by mode==="cron").
+  //       (pg_cron retry loop; read-only side effects, gated by mode==="cron").
   const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
   const authHeader = req.headers.get("Authorization") ?? "";
   const apikeyHeader = req.headers.get("apikey") ?? "";
@@ -743,7 +743,7 @@ Deno.serve(async (req) => {
   const isServiceRole = bearer.length > 0 && bearer === SERVICE_ROLE;
 
   // For cron, ONLY accept an exact match against the service-role key or the
-  // literal project anon/publishable key. Never trust decoded JWT role claims —
+  // literal project anon/publishable key. Never trust decoded JWT role claims;
   // they are unsigned in this path and can be forged trivially.
   const isCronAnon =
     body?.mode === "cron" &&
@@ -784,7 +784,7 @@ Deno.serve(async (req) => {
 
   const rates = await fetchUsdPrices();
 
-  // Cron mode: scan pending payments — service role OR anon-key cron call.
+  // Cron mode: scan pending payments (service role OR anon-key cron call).
   if (body?.mode === "cron") {
     if (!isServiceRole && !isCronAnon) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {

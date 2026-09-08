@@ -23,10 +23,10 @@ class EmailSendError extends Error {
 // Send one email via Resend's HTTP API. https://resend.com/docs/api-reference/emails/send-email
 // Field mapping notes vs. the old Lovable payload:
 //   - sender_domain / purpose / message_id: Lovable-specific routing/analytics
-//     fields with no Resend equivalent — dropped from the outbound request
+//     fields with no Resend equivalent, dropped from the outbound request
 //     (message_id is still logged locally to email_send_log, just not sent).
 //   - idempotency_key: Resend takes this as an `Idempotency-Key` HEADER, not
-//     a body field (confirmed against Resend's docs — different shape than
+//     a body field (confirmed against Resend's docs; different shape than
 //     the old SDK's body-field version).
 async function sendViaResend(
   apiKey: string,
@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
   // callers can trigger queue processing.
   // Require an exact match against the literal service-role key. verify_jwt is
   // off for this function at the gateway, so we can't rely on any decoded JWT
-  // claim — decoded (unsigned) claims are trivially forgeable.
+  // claim; decoded (unsigned) claims are trivially forgeable.
   const token = authHeader.slice('Bearer '.length).trim()
   if (!token || !safeEqual(token, supabaseServiceKey)) {
     return new Response(
@@ -356,7 +356,7 @@ Deno.serve(async (req) => {
             })
             .eq('id', 1)
 
-          // Stop processing — remaining messages stay in queue (VT expires, retried next cycle)
+          // Stop processing: remaining messages stay in queue (VT expires, retried next cycle)
           return new Response(
             JSON.stringify({ processed: totalProcessed, stopped: 'rate_limited' }),
             { headers: { 'Content-Type': 'application/json' } }

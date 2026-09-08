@@ -28,7 +28,7 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
   // Source partner gets nulled out by deleting partners row below; override rows for beneficiaries stay.
   // No mutation needed here besides ensuring payments delete cascades.
 
-  // Tables keyed by user_id — delete in dependency-safe order. Every
+  // Tables keyed by user_id: delete in dependency-safe order. Every
   // .delete().eq('user_id', ...) here is naturally idempotent (deleting an
   // already-empty set is a no-op), which is what makes it safe to retry
   // this whole function again on a later cron tick after a partial failure.
@@ -41,13 +41,13 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
     "api_keys",
     "partner_attributions",
     // support_messages has no user_id column (messages are keyed by
-    // conversation_id + sender_id, not the ticket owner directly) — deleting
+    // conversation_id + sender_id, not the ticket owner directly), deleting
     // it here always errored. It doesn't need an explicit entry anyway:
     // support_messages.conversation_id -> support_conversations(id) is
     // ON DELETE CASCADE, so a user's own messages are removed automatically
     // the moment their support_conversations row is deleted below. Left
     // alone on purpose: messages this user sent as staff replying on a
-    // DIFFERENT customer's ticket (sender_id, no FK) — deleting those would
+    // DIFFERENT customer's ticket (sender_id, no FK); deleting those would
     // rip content out of someone else's support history instead of this
     // user's own data.
     "support_internal_notes",
@@ -61,13 +61,13 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
     "profiles",
   ];
 
-  // payments is deliberately NOT in the delete list — per-decision, payment/
+  // payments is deliberately NOT in the delete list: per-decision, payment/
   // transaction records survive account deletion for accounting purposes.
   // payments.user_id is now ON DELETE SET NULL (was CASCADE), so the row is
   // automatically anonymized the moment auth.admin.deleteUser() runs below;
   // no explicit action needed here. This also means partner_override_earnings
   // tied to this payment (if it ever generated referral commission for
-  // someone else) is no longer collateral damage — its parent payment row
+  // someone else) is no longer collateral damage: its parent payment row
   // no longer gets deleted out from under it.
 
   // Delete payment_verification_attempts via payment ids first
@@ -78,13 +78,13 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
     if (error) console.warn(`[purge] payment_verification_attempts: ${error.message}`);
   }
 
-  // Collect every failure instead of only logging it — previously a failed
+  // Collect every failure instead of only logging it: previously a failed
   // delete on any of these tables (e.g. an FK constraint added later, or a
   // transient error) was swallowed by console.warn and the loop pressed on
   // regardless, still marking the request "purged" and still deleting the
   // auth login at the end. That leaves the row permanently unretriable
   // (purged_at is set, so the cron's WHERE purged_at IS NULL never picks it
-  // up again) while some of the user's personal data silently survives —
+  // up again) while some of the user's personal data silently survives:
   // exactly wrong for a "right to erasure" feature. Now: if anything here
   // fails, the auth user is NOT deleted and the request is NOT marked
   // purged, so it's simply retried in full on the next run.
@@ -109,10 +109,10 @@ async function purgeUser(admin: any, userId: string, email: string | null) {
 
   if (tableErrors.length) {
     console.error(`[purge] ${userId}: incomplete, leaving request unmarked for retry`, tableErrors);
-    return { ok: false, error: "Incomplete data cleanup — will retry", tableErrors };
+    return { ok: false, error: "Incomplete data cleanup; will retry", tableErrors };
   }
 
-  // Only now — once every personal-data table is confirmed clear — remove
+  // Only now (once every personal-data table is confirmed clear) remove
   // the auth login and mark the request purged. If deleteUser fails here,
   // the request is still left unmarked (not purged) so it retries too,
   // rather than leaving a "ghost" account with data gone but login intact.

@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 /**
- * Payment funnel stages — keep in sync with the DB trigger
+ * Payment funnel stages, keep in sync with the DB trigger
  * `tg_update_payment_funnel_stage`. Higher number = further along.
  */
 export const FUNNEL_STAGES = {

@@ -55,7 +55,7 @@ export function formatFiat(amount: number, currency: FiatCurrency, locale?: stri
   }
 }
 
-// Payment gateway can only handle these — used for actual charges, not display
+// Payment gateway can only handle these; used for actual charges, not display
 const PAYMENT_SUPPORTED: FiatCurrency[] = ["USD", "NGN", "GHS", "GBP"];
 export function toPaymentCurrency(display: FiatCurrency): FiatCurrency {
   return PAYMENT_SUPPORTED.includes(display) ? display : "USD";

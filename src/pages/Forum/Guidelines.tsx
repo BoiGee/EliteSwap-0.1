@@ -5,7 +5,7 @@ export default function Guidelines() {
   return (
     <ForumLayout>
       <Helmet>
-        <title>Community Guidelines — Elite Swap Forum</title>
+        <title>Community Guidelines: Elite Swap Forum</title>
         <meta name="description" content="Rules for keeping the Elite Swap community safe and helpful." />
       </Helmet>
       <article className="prose prose-invert max-w-none">
@@ -23,7 +23,7 @@ export default function Guidelines() {
         <p>Don't share other people's personal info, unique keys, or payment details.</p>
         <h2>Voice notes &amp; images</h2>
         <p>
-          All media is held for quick admin review before becoming public. Keep it appropriate —
+          All media is held for quick admin review before becoming public. Keep it appropriate;
           inappropriate content will be rejected and may result in a ban.
         </p>
         <h2>Reporting</h2>

@@ -144,7 +144,7 @@ export default function KeyActivityManager() {
           >
             <span className="text-amber-400 font-heading font-semibold">
               ⚠ {pendingDebts.length} user{pendingDebts.length === 1 ? "" : "s"} with pending time-debt (
-              {fmtMs(pendingDebts.reduce((sum, d) => sum + d.pending_ms, 0))} total) — silently deducted from their
+              {fmtMs(pendingDebts.reduce((sum, d) => sum + d.pending_ms, 0))} total), silently deducted from their
               next balance increase, no session/mint will show for it
             </span>
             <span className="text-muted-foreground">{showDebts ? "Hide" : "Show"}</span>
@@ -193,8 +193,8 @@ export default function KeyActivityManager() {
                 <th className="text-left px-3 py-2">First connect</th>
                 <th className="text-left px-3 py-2">Last activity</th>
                 <th className="text-left px-3 py-2">Used / Remaining</th>
-                <th className="text-left px-3 py-2" title="Real Decart credential issued but the client never sent a heartbeat — penalized so the mint isn't a free burn">Handshake burns</th>
-                <th className="text-left px-3 py-2" title="Reclaimed waste (short sessions / handshake burns) collected from this key once it had balance — see the Audit trail for exactly when">Debt collected</th>
+                <th className="text-left px-3 py-2" title="Real Decart credential issued but the client never sent a heartbeat; penalized so the mint isn't a free burn">Handshake burns</th>
+                <th className="text-left px-3 py-2" title="Reclaimed waste (short sessions / handshake burns) collected from this key once it had balance; see the Audit trail for exactly when">Debt collected</th>
                 <th className="text-left px-3 py-2">Status</th>
                 <th className="text-left px-3 py-2"></th>
               </tr>
@@ -241,7 +241,7 @@ export default function KeyActivityManager() {
                     </td>
                     <td className="px-3 py-2">
                       {r.debt_collected_ms > 0 ? (
-                        <span className="text-amber-400" title="Reclaimed time-debt taken from this key's balance — see Audit for the collection event(s)">
+                        <span className="text-amber-400" title="Reclaimed time-debt taken from this key's balance; see Audit for the collection event(s)">
                           {fmtMs(r.debt_collected_ms)}
                         </span>
                       ) : (

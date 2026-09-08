@@ -88,7 +88,7 @@ export class DecartStudioEngine {
   public async submit(request: DecartStudioRequest): Promise<DecartStudioResponse> {
     const mode = this.normalizeMode(request.mode || this.mode);
     // Enforced here too, not just at the call sites that currently guard
-    // before calling submit() — this is idempotent (a already-guarded
+    // before calling submit(); this is idempotent (a already-guarded
     // prompt passes through unchanged), so it's a safety net for any future
     // caller that forgets to pre-guard, not a behavior change today.
     const prompt = buildPromptWithIdentityGuard(request.prompt);

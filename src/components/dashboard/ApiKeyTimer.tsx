@@ -22,8 +22,8 @@ const formatCountdown = (ms: number) => {
 
 /**
  * Shows time remaining on a user's API key. Uses `performance.now()` (monotonic)
- * instead of `Date.now()` (wall clock) so device clock skew — a phone/PC set an
- * hour fast or slow — no longer inflates or shrinks the displayed duration.
+ * instead of `Date.now()` (wall clock) so device clock skew (a phone/PC set an
+ * hour fast or slow) no longer inflates or shrinks the displayed duration.
  *
  * Server-side, the 2s heartbeat keeps `remainingMs` fresh during live sessions,
  * so we simply re-anchor whenever the prop changes.
@@ -75,7 +75,7 @@ export function ApiKeyTimer({ remainingMs, activeSessionStartedAt, expiresAt, is
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold ${tone}`}
       title={
         hasLiveSession
-          ? "Studio session in progress — time is ticking down live"
+          ? "Studio session in progress: time is ticking down live"
           : "Remaining time on this unique key"
       }
     >

@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -264,7 +263,7 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
           setSelectedConv(created.id);
         } else if (error) {
           // Lost a race against the "one open conversation per user"
-          // constraint — another insert landed first, so pick that up
+          // constraint; another insert landed first, so pick that up
           // instead of surfacing a spurious failure.
           const { data: fallback } = await findThread();
           if (fallback) setSelectedConv(fallback.id);
@@ -407,7 +406,7 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
       scrollToBottom();
     }
     // Auto-bump status to open when admin replies to a pending or closed
-    // conv — closed matters too now that admins can message a user with a
+    // conv; closed matters too now that admins can message a user with a
     // past resolved thread: the user's widget only surfaces open/pending
     // conversations, so a reply left on a closed one would otherwise be
     // invisible to them.

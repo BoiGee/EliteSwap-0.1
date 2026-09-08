@@ -1,6 +1,6 @@
 // Scheduled (cron) reconciler for $10 trial purchases.
 // Neither remaining payment method (USDT, manual Mobile Money) can be
-// auto-verified here — USDT confirmation happens in verify-trial-payment via
+// auto-verified here; USDT confirmation happens in verify-trial-payment via
 // on-chain lookup, and manual MoMo always requires an admin's manual
 // confirm/reject. This sweep instead: (1) expires ancient pending purchases
 // (>24h) so the user's 2-attempt cap recovers, and (2) nudges users who
@@ -35,10 +35,10 @@ Deno.serve(async (req) => {
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  // Expire ancient pending purchases (>24h) — USDT and manual MoMo (plus any
+  // Expire ancient pending purchases (>24h): USDT and manual MoMo (plus any
   // lingering legacy 'paystack' rows). Excludes rows flagged
   // needs_admin_review: those require an admin's manual confirm/reject and
-  // must never be silently auto-failed by this sweep — that would bypass the
+  // must never be silently auto-failed by this sweep; that would bypass the
   // same "admin must confirm" policy the main crypto-payment flow enforces
   // for the identical scenario.
   const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
         category: "billing",
         kind: "trial_txid_reminder",
         severity: "warning",
-        title: "Finish your trial — paste your USDT transaction hash",
+        title: "Finish your trial: paste your USDT transaction hash",
         body: "We haven't received the transaction hash for your $10 trial. Open the trial dialog and paste your TXID so we can auto-confirm it.",
         href: `/dashboard?resume_trial=${p.id}`,
         target_kind: "trial_purchase",
@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
         category: "billing",
         kind: "trial_momo_reference_reminder",
         severity: "warning",
-        title: "Finish your trial — paste your Mobile Money transaction ID",
+        title: "Finish your trial: paste your Mobile Money transaction ID",
         body: "We haven't received the transaction ID for your $10 trial. Open the trial dialog and paste it so we can review your payment.",
         href: `/dashboard?resume_trial=${p.id}`,
         target_kind: "trial_purchase",

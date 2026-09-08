@@ -14,11 +14,11 @@ export default function Landing() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
       <Helmet>
-        <title>EliteSwap — Realtime AI Face &amp; Character Swap</title>
-        <meta name="description" content="Transform yourself into any character live with EliteSwap — realtime AI face swap for OBS Studio, low-latency and webcam-driven." />
+        <title>EliteSwap: Realtime AI Face &amp; Character Swap</title>
+        <meta name="description" content="Transform yourself into any character live with EliteSwap, a realtime AI face swap for OBS Studio, low-latency and webcam-driven." />
         <link rel="canonical" href="https://eliteswap.online/" />
-        <meta property="og:title" content="EliteSwap — Realtime AI Face &amp; Character Swap" />
-        <meta property="og:description" content="Realtime AI face and character swap for streamers — OBS Studio compatible." />
+        <meta property="og:title" content="EliteSwap: Realtime AI Face &amp; Character Swap" />
+        <meta property="og:description" content="Realtime AI face and character swap for streamers, OBS Studio compatible." />
         <meta property="og:url" content="https://eliteswap.online/" />
       </Helmet>
       {/* Background effects */}
@@ -56,7 +56,7 @@ export default function Landing() {
             </h1>
 
             <p className="text-lg text-muted-foreground font-body max-w-md mx-auto">
-              Swap your face and character live, streamed directly into OBS — no render queue, no cutoffs.
+              Swap your face and character live, streamed directly into OBS; no render queue, no cutoffs.
             </p>
           </div>
 
@@ -70,7 +70,7 @@ export default function Landing() {
                 onClick={() => navigate("/auth?redirect=trial")}
                 className="w-full font-heading font-semibold text-base py-6"
               >
-                Start $10 Trial — 4 min
+                Start $10 Trial (4 min)
               </Button>
               <Button
                 onClick={() => navigate("/auth")}

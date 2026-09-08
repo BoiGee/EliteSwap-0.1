@@ -327,12 +327,12 @@ export default function TimeLedgerManager() {
             sub={`${credits(t.used_ms_7d, cps)} credits`}
           />
           <KpiCard
-            label="Paid — Alloc / Used / Rem"
+            label="Paid: Alloc / Used / Rem"
             main={fmtDuration(t.remaining_ms_paid)}
             sub={`${fmtDuration(t.allocated_ms_paid)} / ${fmtDuration(t.used_ms_paid)}`}
           />
           <KpiCard
-            label="Trial — Alloc / Used / Rem"
+            label="Trial: Alloc / Used / Rem"
             main={fmtDuration(t.remaining_ms_trial)}
             sub={`${fmtDuration(t.allocated_ms_trial)} / ${fmtDuration(t.used_ms_trial)}`}
           />

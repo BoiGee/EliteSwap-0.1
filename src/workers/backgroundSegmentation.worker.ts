@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // Off-main-thread person segmentation for the custom studio background
 // feature. Runs MediaPipe's ImageSegmenter (selfie multiclass model) on the
-// CPU delegate — no GPU dependency — so this never competes with (or
+// CPU delegate (no GPU dependency), so this never competes with (or
 // requires) the device's discrete/integrated graphics, and never blocks the
 // main thread's video rendering or UI.
 //
@@ -76,7 +76,7 @@ self.onmessage = async (e: MessageEvent<BackgroundSegmentationMessage>) => {
         result.close();
         throw new Error("no confidence mask returned");
       }
-      // Copy out of the MPMask before it's released — getAsFloat32Array()
+      // Copy out of the MPMask before it's released: getAsFloat32Array()
       // ties its lifetime to the result object.
       const src = confidence.getAsFloat32Array();
       const mask = new Float32Array(src.length);

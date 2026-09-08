@@ -1,3 +1,3 @@
-# Welcome to your Lovable project
+# EliteSwap
 
 TODO: Document your project here

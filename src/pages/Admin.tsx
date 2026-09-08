@@ -88,7 +88,7 @@ type Tab = "analytics" | "payments" | "users" | "paid_users" | "api_keys" | "key
 
 export default function Admin() {
   const { user, signOut } = useAuth();
-  const { isAdmin, isModerator, isSecAdmin, isStaff, canManagePayments, canManageDiscounts, loading: adminLoading } = useAdmin();
+  const { isAdmin, isSecAdmin, isStaff, canManagePayments, canManageDiscounts, loading: adminLoading } = useAdmin();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -146,8 +146,8 @@ export default function Admin() {
 
   // Keep the Overview tab's stats live: fetchAll() above only runs once on
   // mount (plus after the admin's own mutations), so without this, a
-  // signup, a new payment, or a key getting deactivated on exhaustion —
-  // none of which involve the admin doing anything — would never show up
+  // signup, a new payment, or a key getting deactivated on exhaustion
+  // (none of which involve the admin doing anything) would never show up
   // until something else happened to trigger a refetch. That includes the
   // sidebar's pending-payments badge, which exists specifically to draw
   // attention to a payment the admin hasn't seen yet.
@@ -156,13 +156,13 @@ export default function Admin() {
   // makes it a single point of failure: a network blip, laptop sleep, a
   // corporate firewall killing an idle WebSocket, or any other silent
   // disconnect leaves the channel dead with no visible error, and the
-  // Overview numbers freeze right where they were — which is exactly what
+  // Overview numbers freeze right where they were, which is exactly what
   // was reported ("Total Users count got stuck again"). None of those
   // failure modes are things we can reliably prevent client-side, so instead
   // of chasing the specific transient cause, this now has two independent
   // fallbacks that don't depend on the realtime channel staying healthy:
   // a periodic poll, and a refetch whenever the tab becomes visible again
-  // (the single most common real-world trigger — an admin returning to a
+  // (the single most common real-world trigger: an admin returning to a
   // tab they left open). Between the three, the numbers can be stale for
   // at most ~60s even if realtime never delivers another event.
   useEffect(() => {
@@ -185,7 +185,7 @@ export default function Admin() {
       .subscribe((status) => {
         if (cleanedUp) return;
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn(`[admin-overview-live] channel ${status.toLowerCase()} — falling back to a manual refetch`);
+          console.warn(`[admin-overview-live] channel ${status.toLowerCase()}, falling back to a manual refetch`);
           fetchAll();
         }
       });
@@ -193,7 +193,7 @@ export default function Admin() {
     // Fallback 1: periodic poll, independent of realtime health entirely.
     const pollInterval = setInterval(fetchAll, 60000);
 
-    // Fallback 2: refetch the moment the admin comes back to this tab —
+    // Fallback 2: refetch the moment the admin comes back to this tab;
     // catches "left it open for hours" immediately instead of waiting for
     // the next poll tick.
     const onVisible = () => {
@@ -325,7 +325,7 @@ export default function Admin() {
     if (canManageDiscounts || isSecAdmin) allowed.add("discounts");
     if (isSecAdmin) allowed.add("audit");
     // $10 Trials matches admin_manage_trial_purchase()'s own authorization
-    // exactly (admin OR sec_admin — verified against the live function) —
+    // exactly (admin OR sec_admin, verified against the live function),
     // not canManagePayments, which that RPC doesn't recognize at all.
     if (isSecAdmin) allowed.add("trials");
     // Finance + Time Ledger are admin-only. Never surface them to sec_admin or moderator.

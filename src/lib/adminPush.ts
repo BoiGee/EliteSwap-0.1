@@ -1,13 +1,13 @@
 // Client helpers for registering the admin service worker and Web Push subscription.
 import { supabase } from "@/integrations/supabase/client";
 
-// Regenerated 2026-08-12 — the previous key here didn't match the server-side
+// Regenerated 2026-08-12: the previous key here didn't match the server-side
 // VAPID_PRIVATE_KEY edge function secret (most likely a leftover from the
 // platform migration), which made every push send fail with Apple's push
 // service returning 400 VapidPkHashMismatch for every single subscriber.
 // This constant and the VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY secrets used by
 // the send-admin-push edge function must always be the two halves of the
-// same key pair — changing one without the other silently breaks every
+// same key pair; changing one without the other silently breaks every
 // existing subscription the same way.
 export const VAPID_PUBLIC_KEY =
   "BIa4WWh6M-JkB5xAEm3mpthm079Z7_sd5AK2xxKRr_sGFpInu-ZfEoxCxZ3-92Ngjzbe9JU8OMEO8mDOKfJWINw";

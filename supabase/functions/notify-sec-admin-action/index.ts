@@ -3,7 +3,7 @@
 // in-app bell too. Called from the `log_admin_action` DB function via pg_net
 // whenever the actor is a sec_admin (and not also an admin).
 //
-// Service-role only — rejects anything else so users can't spam admin devices.
+// Service-role only: rejects anything else so users can't spam admin devices.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 

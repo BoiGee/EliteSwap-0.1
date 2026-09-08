@@ -23,7 +23,7 @@ export default function ForumCategory() {
   return (
     <ForumLayout>
       <Helmet>
-        <title>{cat?.name ?? "Forum"} — Elite Swap Community</title>
+        <title>{cat?.name ?? "Forum"}: Elite Swap Community</title>
         <meta name="description" content={cat?.description ?? "Elite Swap community forum"} />
       </Helmet>
       <div className="mb-4 flex items-start justify-between gap-3">

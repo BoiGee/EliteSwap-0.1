@@ -5,7 +5,6 @@ import { CharacterPresets } from "./CharacterPresets";
 import { CryptoPayment } from "./CryptoPayment";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
@@ -23,13 +22,12 @@ import { PhotoTipsPopover } from "./studio/PhotoTipsPopover";
 import { StudioBackgroundPanel } from "./studio/StudioBackgroundPanel";
 import { useBackgroundCompositor, type BackgroundConfig } from "@/hooks/useBackgroundCompositor";
 
-// Feature flag — flip to false if thresholds prove too strict in production.
+// Feature flag; flip to false if thresholds prove too strict in production.
 const REFERENCE_GATE_ENABLED = true;
 
 export function DeepfakeStudio() {
   const [apiKey, setApiKey] = useState("");
-  
-  const didPrefillKeyRef = useRef(false);
+
   const [showPayment, setShowPayment] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
@@ -38,8 +36,8 @@ export function DeepfakeStudio() {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   // Custom studio background (Professional/Enterprise only). planTier is
-  // looked up for whichever key is currently in the input — not the
-  // account overall — so a Basic key never surfaces the feature even if
+  // looked up for whichever key is currently in the input, not the
+  // account overall, so a Basic key never surfaces the feature even if
   // the same account also owns a Pro key. The compositor hook is a true
   // no-op (no canvas, no worker) whenever backgroundConfig is null, which
   // covers every session for every user who isn't using this feature.
@@ -70,7 +68,7 @@ export function DeepfakeStudio() {
   // They read this on every frame to know whether to crop to portrait.
   const orientationRef = useRef<Orientation>("landscape");
   useEffect(() => { orientationRef.current = orientation; }, [orientation]);
-  // Notifier registries — each long-lived broadcast effect (broker + P2P)
+  // Notifier registries: each long-lived broadcast effect (broker + P2P)
   // installs a callback here so it gets pinged when the user flips orientation
   // mid-broadcast. Avoids re-running the effect (which would reset transport).
   const orientationListenersRef = useRef<Set<() => void>>(new Set());
@@ -146,7 +144,7 @@ export function DeepfakeStudio() {
           console.warn("[Studio] heartbeat error:", error.message);
           try { await supabase.auth.getSession(); } catch { /* noop */ }
         } else if (data === false && !cancelled) {
-          console.warn("[Studio] heartbeat returned false — session no longer live");
+          console.warn("[Studio] heartbeat returned false, session no longer live");
         }
       } catch (e) {
         console.warn("[Studio] heartbeat threw:", e);
@@ -171,7 +169,6 @@ export function DeepfakeStudio() {
   const lastDisconnectAtRef = useRef<number>(0);
   const { toast } = useToast();
   const { user } = useAuth();
-  const location = useLocation();
   const [showReviewPrompt, setShowReviewPrompt] = useState(false);
   const debugMode =
     typeof window !== "undefined" &&
@@ -285,7 +282,7 @@ export function DeepfakeStudio() {
     return () => clearTimeout(timer);
   }, [user]);
 
-  // Auto-fill of the access key has been removed by request — every user must
+  // Auto-fill of the access key has been removed by request; every user must
   // paste their key manually each time they launch the studio.
 
   // Called by <StudioCountdown> when the timer reaches zero. Hard-stops the
@@ -305,9 +302,9 @@ export function DeepfakeStudio() {
     handleDisconnectRef.current();
   }, [isFreeTrial, toast, apiKey]);
 
-  // Broadcast output frames to OBS via Supabase Realtime — presence-gated.
+  // Broadcast output frames to OBS via Supabase Realtime; presence-gated.
   // Strategy:
-  //   1. Spin up the encoder Worker (always — it does both H.264 and JPEG).
+  //   1. Spin up the encoder Worker (always; it does both H.264 and JPEG).
   //   2. Wait for the OBS viewer to advertise its decoder capability via
   //      presence (`{ h264: true }` for Chromium with WebCodecs).
   //   3. Init the worker in the matching mode.
@@ -325,7 +322,7 @@ export function DeepfakeStudio() {
       },
     });
 
-    // Always try to spin up the worker — it handles both codecs.
+    // Always try to spin up the worker; it handles both codecs.
     let worker: Worker | null = null;
     let canUseWorker = false;
     try {
@@ -343,7 +340,7 @@ export function DeepfakeStudio() {
     // Feature-detect Chromium MediaStreamTrackProcessor for direct VideoFrame piping.
     const MSTP = (window as any).MediaStreamTrackProcessor;
     const useTrackProcessor = canUseWorker && typeof MSTP === "function";
-    // Sender-side WebCodecs availability — without VideoEncoder we can't do H.264.
+    // Sender-side WebCodecs availability; without VideoEncoder we can't do H.264.
     const senderCanH264 = typeof (globalThis as any).VideoEncoder === "function";
 
     // Lazy <video> for the bitmap fallback (Safari/Firefox).
@@ -370,14 +367,14 @@ export function DeepfakeStudio() {
     const MAX_IN_FLIGHT = 2;
     let viewerCount = 0;
     let nextId = 1;
-    // Codec state — flips from "jpeg" to "h264" once the worker confirms ready.
+    // Codec state: flips from "jpeg" to "h264" once the worker confirms ready.
     let codec: "h264" | "jpeg" = "jpeg";
-    // Telemetry — rolling EMA of encoder latency reported by the worker.
+    // Telemetry: rolling EMA of encoder latency reported by the worker.
     let latencyEma = 30;
     // Periodic keyframe scheduler so newly-arrived OBS viewers can decode quickly.
     let lastKeyframeAt = 0;
     const KEYFRAME_INTERVAL_MS = 2000;
-    // Adaptive bitrate state — only used in H.264 mode.
+    // Adaptive bitrate state; only used in H.264 mode.
     let saturationStreak = 0;
     let bitrateKbps = 1500;
 
@@ -496,7 +493,7 @@ export function DeepfakeStudio() {
               setObsBitrateKbps(bitrateKbps);
             }
           }
-          // Broadcast. Keep the JSON small — single-letter keys.
+          // Broadcast. Keep the JSON small, using single-letter keys.
           if (!running) return;
           channel
             .send({
@@ -519,7 +516,6 @@ export function DeepfakeStudio() {
     // ---- Path A: Chromium fast path via MediaStreamTrackProcessor ----
     let reader: ReadableStreamDefaultReader<VideoFrame> | null = null;
     let mstpFellBack = false;
-    let blackStreak = 0;
     // N2: when broker viewers all leave (e.g. they all upgraded to P2P),
     // pause the MSTP read loop instead of pulling and closing every frame.
     // recomputeCodec resolves this promise the moment a broker viewer reappears.
@@ -587,7 +583,7 @@ export function DeepfakeStudio() {
             },
             [outFrame as unknown as Transferable],
           );
-          // Drain telemetry roughly via worker replies — handled in onmessage.
+          // Drain telemetry roughly via worker replies; handled in onmessage.
           // We only check for the black-frame fallback when the JPEG path
           // surfaces it; with H.264, drawImage is bypassed entirely.
         }
@@ -668,7 +664,7 @@ export function DeepfakeStudio() {
                 [bitmap],
               );
             } else {
-              // No worker at all — main-thread JPEG via 2D ctx.
+              // No worker at all; main-thread JPEG via 2D ctx.
               if (!fallbackCtx || !fallbackCanvas) {
                 inFlight = Math.max(0, inFlight - 1);
                 return;
@@ -722,7 +718,7 @@ export function DeepfakeStudio() {
       >;
       const flat = Object.values(state).flat();
       // Plan M: viewers being served via P2P don't count toward the broker
-      // viewer set — they receive bytes via DataChannel directly.
+      // viewer set; they receive bytes via DataChannel directly.
       const p2pServed = new Set<string>();
       for (const entry of flat) {
         if (entry?.role === "studio-p2p" && Array.isArray(entry.servingViewers)) {
@@ -802,13 +798,13 @@ export function DeepfakeStudio() {
   }, [remoteStream, obsEnabled, debugMode]);
 
   // ===========================================================================
-  // P2P transport (Plan M+N) — direct WebRTC DataChannel for video bytes.
+  // P2P transport (Plan M+N): direct WebRTC DataChannel for video bytes.
   //
   // Architecture (post-Plan-N):
   //   • One MediaStreamTrackProcessor reader for the whole studio.
   //   • One VideoEncoder for the whole studio. Output is fanned out to every
   //     open peer's DataChannel as the same ArrayBuffer (no re-encode per peer).
-  //   • One RTCPeerConnection per viewer (mandatory — DataChannels can't be
+  //   • One RTCPeerConnection per viewer (mandatory; DataChannels can't be
   //     shared across PCs).
   //   • One pre-warmed RTCPeerConnection that starts ICE gathering the moment
   //     `obsEnabled` flips on, so the first viewer's first frame arrives ~200ms
@@ -841,7 +837,7 @@ export function DeepfakeStudio() {
     const hasMSTP = typeof MSTP === "function";
     const hasEncoder = typeof (globalThis as any).VideoEncoder === "function";
     if (!hasMSTP || !hasEncoder) {
-      if (debugMode) console.log("[p2p] skipping — sender lacks MSTP/VideoEncoder");
+      if (debugMode) console.log("[p2p] skipping: sender lacks MSTP/VideoEncoder");
       return;
     }
 
@@ -1011,7 +1007,7 @@ export function DeepfakeStudio() {
                   dc.send(wire);
                   if (isKey) peer.awaitingKeyframe = false;
                 } catch {
-                  // Send failed — request a keyframe for next round.
+                  // Send failed; request a keyframe for next round.
                   peer.awaitingKeyframe = true;
                   forceKeyframePending = true;
                 }
@@ -1236,7 +1232,7 @@ export function DeepfakeStudio() {
         };
         peers.set(viewerId, peer);
 
-        // 3-second open timeout — if the channel isn't open by then, give up
+        // 3-second open timeout; if the channel isn't open by then, give up
         // and let this viewer fall through to the broker path.
         peer.timeoutHandle = setTimeout(() => {
           if (!peer.opened) {
@@ -1376,7 +1372,6 @@ export function DeepfakeStudio() {
     startPreviewLoop,
     disconnect,
     setImage,
-    setPrompt,
     applyStudioRequest,
   } = useDecartRealtime();
 
@@ -1536,13 +1531,13 @@ export function DeepfakeStudio() {
       await new Promise((r) => setTimeout(r, 1200 - sinceDisconnect));
     }
 
-    // PHASE 1 + 1.5 — single server chokepoint. `mint_studio_credentials`
+    // PHASE 1 + 1.5: single server chokepoint. `mint_studio_credentials`
     // runs the ownership / expiry / trial / active-lock checks, records the
     // Decart connect attempt in Key Activity, and only then hands back the
     // Decart credential for this one connect. The user's studio access key
-    // is never sent to Decart directly by the client — the mapping lives
+    // is never sent to Decart directly by the client; the mapping lives
     // server-side in api_key_secrets, which the browser cannot read.
-    // Retried once transparently if we hit `already_active_elsewhere` — a
+    // Retried once transparently if we hit `already_active_elsewhere`; a
     // previous same-account session usually clears within a few seconds after
     // disconnect in the same tab.
     let decartKey: string = "";
@@ -1612,7 +1607,7 @@ export function DeepfakeStudio() {
             setTimerAnchor(null);
           }
           // Heartbeat lifecycle is owned by the top-level effect keyed on
-          // sessionIdState — setSession() above triggers it automatically.
+          // sessionIdState; setSession() above triggers it automatically.
 
 
         }
@@ -1638,7 +1633,7 @@ export function DeepfakeStudio() {
       } catch (e: any) {
         const raw0 = (e?.message || e?.error?.message || e?.toString?.() || "") + " " + (e?.name || "");
         const isTimeout = /timed out|timeout/i.test(raw0);
-        // One silent retry on a first-attempt timeout — rapid reconnects can
+        // One silent retry on a first-attempt timeout; rapid reconnects can
         // race the SDK's initial signaling. Fully tear down before retrying.
         if (isTimeout && connectAttempt === 0) {
           connectAttempt++;
@@ -1670,7 +1665,7 @@ export function DeepfakeStudio() {
           } catch { /* noop */ }
           continue;
         }
-        // Non-retryable error — run the full mapping and bail.
+        // Non-retryable error; run the full mapping and bail.
         {
       const raw = e?.message || e?.error?.message || e?.toString?.() || "";
       const name: string = e?.name || e?.error?.name || "";
@@ -1684,7 +1679,7 @@ export function DeepfakeStudio() {
         lower.includes("exhaust");
 
       // Release the session lock and snapshot any handshake seconds Decart
-      // already billed — pass the real session id so pause charges wall-clock.
+      // already billed; pass the real session id so pause charges wall-clock.
       if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
       try { await supabase.rpc("pause_studio_session", { p_key: trimmedKey, p_session_id: sessionIdRef.current } as any); } catch { /* noop */ }
       setSession(null);
@@ -1702,7 +1697,6 @@ export function DeepfakeStudio() {
 
       let title = "Connection failed";
       let description = "Studio couldn't start right now. Please try again in a moment.";
-      const fallbackHint = lower.includes("preserve reference face identity") ? "" : "";
 
       if (name === "OverconstrainedError" || lower.includes("overconstrained")) {
         title = "Camera doesn't support this resolution";
@@ -1752,7 +1746,7 @@ export function DeepfakeStudio() {
             const fps = frames / Math.max(elapsed, 0.001);
             if (fps < 18) {
               try {
-                // Lucy 2.5 native tick is 20 fps — asking for 24 ideal
+                // Lucy 2.5 native tick is 20 fps; asking for 24 ideal
                 // just wastes capture cycles the encoder then drops.
                 // Drop resolution only; keep fps aligned to the model.
                 await vTrack.applyConstraints({
@@ -1770,7 +1764,7 @@ export function DeepfakeStudio() {
       }
     }
     setIsStarted(true);
-    // Track studio connect — fire-and-forget so it never blocks UI
+    // Track studio connect; fire-and-forget so it never blocks UI
     void supabase.auth.getUser().then(({ data }) => {
       if (!data.user) return;
       void supabase.from("user_activity_logs").insert([{
@@ -1790,7 +1784,7 @@ export function DeepfakeStudio() {
   }, [apiKey, autoStartPending, handleConnect, isStarted]);
 
   const handleDisconnect = useCallback(async () => {
-    // Track studio disconnect — fire-and-forget
+    // Track studio disconnect; fire-and-forget
     void supabase.auth.getUser().then(({ data }) => {
       if (!data.user) return;
       void supabase.from("user_activity_logs").insert([{
@@ -1827,14 +1821,14 @@ export function DeepfakeStudio() {
   // side. If the user closes the tab without clicking Disconnect, our normal
   // pauseTimer path is aborted by the browser. pagehide (below) covers a
   // clean close/navigate immediately. A true crash (power loss, force-kill,
-  // OS crash — no pagehide fires) instead falls to the server-side reaper,
+  // OS crash, no pagehide fires) instead falls to the server-side reaper,
   // which closes the session once `hard_stale_ms` (studio_pricing_config,
-  // 90s by default as of the 2026-07-16 tuning pass — check the live value
+  // 90s by default as of the 2026-07-16 tuning pass; check the live value
   // in the admin Pricing panel, not just this comment) has elapsed since the
   // last heartbeat. That's up to `hard_stale_ms` of unbilled-to-user burn
-  // per crash, not 15-20s — size expectations off the config, not this note.
+  // per crash, not 15-20s; size expectations off the config, not this note.
   // We use fetch(..., { keepalive: true }) to fire pause_studio_session
-  // synchronously at pagehide/visibilitychange-hidden — keepalive fetches
+  // synchronously at pagehide/visibilitychange-hidden; keepalive fetches
   // are allowed to complete after the document is gone.
   useEffect(() => {
     const readJwt = (): { anon: string; jwt: string } | null => {
@@ -1865,7 +1859,7 @@ export function DeepfakeStudio() {
         setSession(null);
       } catch { /* noop */ }
     };
-    // On tab hidden (mobile app-switch, permission prompt, PiP), we USED to pause —
+    // On tab hidden (mobile app-switch, permission prompt, PiP), we USED to pause;
     // that killed legitimate sessions and left Decart burning. Instead, fire a
     // keepalive heartbeat so the server-side reaper's poll-and-debit keeps the
     // ledger correct without terminating the live WebRTC connection.
@@ -1899,7 +1893,7 @@ export function DeepfakeStudio() {
   }, []);
 
   // True unmount safety net. pagehide (above) only fires on an actual
-  // document unload (tab close, reload, real navigation) — it does NOT fire
+  // document unload (tab close, reload, real navigation); it does NOT fire
   // when the user leaves /studio via an in-app route change, since the
   // document never unloads. Without this, navigating away mid-session while
   // still connected left the camera light on and the mic capturing
@@ -1918,7 +1912,7 @@ export function DeepfakeStudio() {
 
 
   // Merge optional hair/outfit hints into a prompt. The identity-lock suffix
-  // is added later inside useDecartRealtime — this only inserts user-supplied
+  // is added later inside useDecartRealtime; this only inserts user-supplied
   // reinforcement so the model has explicit textual context.
   const buildPrompt = useCallback((base: string): string => {
     const parts: string[] = [base.trim()];
@@ -1945,7 +1939,7 @@ export function DeepfakeStudio() {
       console.warn("[studio] studio request fallback", result.error);
     }
 
-    toast({ title: "Character updated!", description: referenceImage ? "Face swap applied — your motion drives the reference image." : "Transformation is being applied..." });
+    toast({ title: "Character updated!", description: referenceImage ? "Face swap applied. Your motion drives the reference image." : "Transformation is being applied..." });
   }, [applyStudioRequest, referenceImage, toast, buildPrompt, studioMode]);
 
   const handleCustomPrompt = useCallback(async () => {
@@ -1993,11 +1987,11 @@ export function DeepfakeStudio() {
             });
           }
         } catch {
-          // Fall through with the original file — enhancement is best-effort.
+          // Fall through with the original file; enhancement is best-effort.
           file = picked;
         }
       } catch {
-        // Scoring failure shouldn't block upload — proceed with original file.
+        // Scoring failure shouldn't block upload; proceed with original file.
         file = picked;
       }
     }
@@ -2073,7 +2067,7 @@ export function DeepfakeStudio() {
 
   const obsUrl = `${window.location.origin}/obs-output?key=${encodeURIComponent(apiKey)}`;
 
-  // Auto-enable the broadcast effect — many users copy the URL into OBS
+  // Auto-enable the broadcast effect; many users copy the URL into OBS
   // without realizing they also need to flip the toggle on. Persists per-key.
   const ensureObsEnabled = useCallback(() => {
     if (!obsEnabled) {
@@ -2097,7 +2091,7 @@ export function DeepfakeStudio() {
           <div className="space-y-3">
             <h1 className="text-5xl font-heading font-bold text-primary">Elite Swap</h1>
             <p className="text-muted-foreground font-body">
-              Enter the studio first — you'll connect to Elite Swap when you're ready.
+              Enter the studio first; you'll connect to Elite Swap when you're ready.
             </p>
           </div>
 
@@ -2223,7 +2217,7 @@ export function DeepfakeStudio() {
               <Smartphone className="w-4 h-4" />
             </button>
           </div>
-          {/* Lite mode toggle — auto-on for weak hardware */}
+          {/* Lite mode toggle: auto-on for weak hardware */}
           <button
             onClick={toggleLiteMode}
             className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-heading transition-colors ${
@@ -2231,7 +2225,7 @@ export function DeepfakeStudio() {
                 ? "border-primary/40 bg-primary/15 text-primary"
                 : "border-border text-muted-foreground hover:text-foreground"
             }`}
-            title={liteMode ? "Lite mode ON — slightly lower resolution for stability, full frame rate preserved for lip sync. Turn off if your lip sync looks soft." : "Lite mode OFF — full resolution and frame rate"}
+            title={liteMode ? "Lite mode ON: slightly lower resolution for stability, full frame rate preserved for lip sync. Turn off if your lip sync looks soft." : "Lite mode OFF: full resolution and frame rate"}
             aria-pressed={liteMode}
           >
             <Zap className="w-3.5 h-3.5" />
@@ -2302,7 +2296,7 @@ export function DeepfakeStudio() {
 
         {/* Controls sidebar */}
         <div className="w-full lg:w-80 space-y-4" style={{ contain: "layout paint" }}>
-          {/* Custom Background — Professional/Enterprise only, gated on the
+          {/* Custom Background: Professional/Enterprise only, gated on the
               key actually in use, not just the account. */}
           {canUseCustomBackground && (
             <StudioBackgroundPanel onActiveChange={setBackgroundConfig} />
@@ -2315,7 +2309,7 @@ export function DeepfakeStudio() {
             </h2>
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                Upload a face image — your webcam motion will drive it in realtime.
+                Upload a face image; your webcam motion will drive it in realtime.
               </p>
               <PhotoTipsPopover />
             </div>
@@ -2461,7 +2455,7 @@ export function DeepfakeStudio() {
                 </button>
               </div>
             </div>
-            {/* Live broadcast telemetry — transport, codec, latency, bitrate */}
+            {/* Live broadcast telemetry: transport, codec, latency, bitrate */}
             {obsEnabled && obsViewerCount > 0 && (obsCodec || obsTransport) && (
               <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground flex-wrap">
                 {obsTransport && (

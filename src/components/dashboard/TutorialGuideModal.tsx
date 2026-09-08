@@ -29,33 +29,33 @@ const STEPS: Step[] = [
   },
   {
     icon: KeyRound,
-    title: "Step 1 — Find your unique key",
+    title: "Step 1: Find your unique key",
     body: "On this page, open the \"Unique Keys\" tab (step 2 of the Get Started card). Once your trial or plan is active, your key appears there.",
   },
   {
     icon: Copy,
-    title: "Step 2 — Copy your key",
-    body: "Next to your key, hit the \"Copy\" button. You'll paste this into the studio in a moment — keep it handy.",
+    title: "Step 2: Copy your key",
+    body: "Next to your key, hit the \"Copy\" button. You'll paste this into the studio in a moment; keep it handy.",
   },
   {
     icon: Rocket,
-    title: "Step 3 — Launch the studio",
+    title: "Step 3: Launch the studio",
     body: "Switch to the \"Launch Studio\" tab (step 3) and click \"Launch Elite Swap Studio\". This opens the studio in a new screen.",
   },
   {
     icon: ClipboardPaste,
-    title: "Step 4 — Paste your key",
+    title: "Step 4: Paste your key",
     body: "In the studio, paste your key into the \"Studio Access Key\" field and click \"Enter Studio →\".",
   },
   {
     icon: Camera,
-    title: "Step 5 — Get ready",
+    title: "Step 5: Get ready",
     body: "Allow camera and microphone access when your browser asks. Then pick a character preset or upload your own reference photo.",
   },
   {
     icon: PartyPopper,
-    title: "Step 6 — Start your session",
-    body: "Hit connect and you're live! Your timer only counts down while you're connected — disconnect any time and your remaining minutes are still waiting for you.",
+    title: "Step 6: Start your session",
+    body: "Hit connect and you're live! Your timer only counts down while you're connected; disconnect any time and your remaining minutes are still waiting for you.",
   },
 ];
 

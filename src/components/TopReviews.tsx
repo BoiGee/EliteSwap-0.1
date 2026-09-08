@@ -95,7 +95,7 @@ export function TopReviews() {
                 <p className="text-xs text-foreground/80 line-clamp-4 flex-1">"{r.remark}"</p>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-heading">
-                    — {r.public_name || "Anonymous"}
+                    By {r.public_name || "Anonymous"}
                   </p>
                   <p className="text-[10px] text-muted-foreground font-heading">
                     {new Date(r.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}

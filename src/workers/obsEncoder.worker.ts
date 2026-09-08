@@ -2,9 +2,9 @@
 // Off-main-thread OBS broadcast encoder.
 //
 // Two paths, picked per session by the main thread:
-//   • Path A — WebCodecs H.264 (Chromium/Edge): hardware encode, ~3 ms/frame,
+//   • Path A: WebCodecs H.264 (Chromium/Edge), hardware encode, ~3 ms/frame,
 //     inter-frame compression, sub-100 ms latency end-to-end.
-//   • Path B — JPEG (everywhere else): per-frame baseline, retained as a
+//   • Path B: JPEG (everywhere else), per-frame baseline, retained as a
 //     universal fallback for Safari/Firefox + any browser without VideoEncoder.
 //
 // Both paths produce a base64 string (Realtime broadcast is JSON-only on the
@@ -90,7 +90,7 @@ const jpegAlpha = 0.2;
 // Black-frame guard state: a black frame (camera covered, permission
 // dropped) is a persistent condition, not a per-frame flicker, so checking
 // it a few times a second is plenty responsive. Every getImageData() call
-// forces a synchronous GPU->CPU readback stall — doing 9 of them on every
+// forces a synchronous GPU->CPU readback stall, and doing 9 of them on every
 // single frame was a real, avoidable cost exactly on the low-end-hardware
 // path (JPEG fallback) that can least afford it.
 let lastBlackFrameCheckAt = 0;
@@ -123,7 +123,7 @@ const encodeJpeg = async (msg: EncodeMsg): Promise<EncodeReply> => {
       throw new Error("no bitmap or frame");
     }
 
-    // Black-frame guard, throttled — see BLACK_FRAME_CHECK_INTERVAL_MS above.
+    // Black-frame guard, throttled; see BLACK_FRAME_CHECK_INTERVAL_MS above.
     let bright = lastBlackFrameBright;
     if (t0 - lastBlackFrameCheckAt >= BLACK_FRAME_CHECK_INTERVAL_MS) {
       bright = 0;
@@ -202,7 +202,7 @@ const setupH264 = async (init: InitMsg) => {
 
   // Probe support before constructing.
   const config: VideoEncoderConfig = {
-    codec: "avc1.42E01F", // H.264 Baseline 3.1 — universally decodable
+    codec: "avc1.42E01F", // H.264 Baseline 3.1, universally decodable
     width: h264Width,
     height: h264Height,
     bitrate: h264Bitrate,
@@ -274,7 +274,7 @@ const encodeH264 = async (msg: EncodeMsg) => {
   const { id, bitmap, frame, ts, keyFrame } = msg;
   const t0 = performance.now();
   if (!h264Encoder || h264Encoder.state !== "configured") {
-    // Encoder not ready — drop with an error reply so the main thread
+    // Encoder not ready: drop with an error reply so the main thread
     // releases its in-flight slot.
     try { bitmap?.close(); } catch {}
     try { frame?.close(); } catch {}
@@ -367,7 +367,7 @@ self.onmessage = async (e: MessageEvent<IncomingMsg>) => {
   }
 
   if (msg.kind === "reconfigure") {
-    // Orientation flip mid-broadcast — rebuild the encoder at the new size.
+    // Orientation flip mid-broadcast: rebuild the encoder at the new size.
     // Reset the avcC cache so the next keyframe carries a fresh decoder
     // description (the receiver re-inits its decoder when width/height change).
     try { h264Encoder?.close(); } catch {}
@@ -388,7 +388,7 @@ self.onmessage = async (e: MessageEvent<IncomingMsg>) => {
         console.warn("[obsEncoder] reconfigure failed:", err);
       }
     } else {
-      // JPEG path — the next encode just uses the new srcWidth/srcHeight from
+      // JPEG path: the next encode just uses the new srcWidth/srcHeight from
       // the main thread, but emit a ready ping so telemetry stays accurate.
       post({ kind: "ready", codec: "jpeg", width: msg.width, height: msg.height });
     }

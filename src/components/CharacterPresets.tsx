@@ -8,7 +8,7 @@ interface CharacterPreset {
 }
 
 // Emoji here are the actual content (the visual identifier for each preset),
-// not decoration — kept deliberately, unlike the decorative emoji removed
+// not decoration, kept deliberately, unlike the decorative emoji removed
 // elsewhere in the redesign.
 const PRESETS: CharacterPreset[] = [
   { id: "superhero", name: "Superhero", prompt: "Transform the person into a superhero with a cape and mask, comic book style", emoji: "🦸" },

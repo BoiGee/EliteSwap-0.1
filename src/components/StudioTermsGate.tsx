@@ -37,7 +37,7 @@ export default function StudioTermsGate({ children }: { children: React.ReactNod
         if (cancelled) return;
         if (error) {
           console.warn("StudioTermsGate: profile fetch error", error);
-          setNeedsAgreement(false); // fail open — audit log remains source of truth
+          setNeedsAgreement(false); // fail open; audit log remains source of truth
           return;
         }
         const accepted = !!data?.terms_accepted_at && data?.terms_version === TERMS_VERSION;

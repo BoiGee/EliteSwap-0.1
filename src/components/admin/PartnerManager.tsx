@@ -127,7 +127,7 @@ export default function PartnerManager({ profiles }: Props) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
       return;
     }
-    toast({ title: `Updated to ${next}% — applies to new payments only ✅` });
+    toast({ title: `Updated to ${next}%, applies to new payments only ✅` });
     setPctDraft((s) => { const n = { ...s }; delete n[p.id]; return n; });
     loadPartners();
   };
@@ -147,7 +147,7 @@ export default function PartnerManager({ profiles }: Props) {
       .eq("id", p.id);
     setSavingOverride((s) => ({ ...s, [p.id]: false }));
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-    toast({ title: `Override updated to ${next}% — applies to new payments only ✅` });
+    toast({ title: `Override updated to ${next}%, applies to new payments only ✅` });
     setOverridePctDraft((s) => { const n = { ...s }; delete n[p.id]; return n; });
     loadPartners();
   };
@@ -575,7 +575,7 @@ export default function PartnerManager({ profiles }: Props) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
-                      <SelectItem value="__none__">— None (top-level) —</SelectItem>
+                      <SelectItem value="__none__">None (top-level)</SelectItem>
                       {partners.filter((pp) => pp.id !== p.id).map((pp) => (
                         <SelectItem key={pp.id} value={pp.id}>
                           {pp.code}{pp.display_name ? ` · ${pp.display_name}` : ""}

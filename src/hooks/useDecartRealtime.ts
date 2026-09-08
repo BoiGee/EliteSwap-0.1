@@ -31,7 +31,7 @@ export function useDecartRealtime() {
   // Guards every real Decart preview submit (loop ticks AND ad-hoc
   // applyStudioRequest calls) so at most one is ever in flight. Without this,
   // a slow/hung response (up to the 15s submit timeout) let the 2s tick
-  // interval stack multiple concurrent — and separately billed — Decart
+  // interval stack multiple concurrent (and separately billed) Decart
   // requests on top of each other.
   const previewBusyRef = useRef(false);
   const previewInputVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -247,7 +247,7 @@ export function useDecartRealtime() {
     let startupError: string | null = null;
 
     const tick = async (): Promise<boolean> => {
-      // Skip (don't queue) if a submit is already in flight — the loop's job
+      // Skip (don't queue) if a submit is already in flight; the loop's job
       // is a fresh frame every interval, not a backlog of stale requests
       // firing back-to-back once a slow response finally clears.
       if (previewBusyRef.current) return false;
@@ -267,7 +267,7 @@ export function useDecartRealtime() {
 
         if (isOfflineFallback(result)) {
           // Fallback output is still a tracked, usable preview result (no
-          // real key/capacity available) — surface it instead of treating
+          // real key/capacity available); surface it instead of treating
           // it as a hard failure that blocks the loop from ever starting.
           const backendNote = String(
             result?.error ||
@@ -368,7 +368,7 @@ export function useDecartRealtime() {
         canvas.width = nativeW;
         canvas.height = nativeH;
         const ctx = canvas.getContext("2d");
-        // Draw at 2fps (not 60) — captureStream just needs *some* activity to
+        // Draw at 2fps (not 60); captureStream just needs *some* activity to
         // keep the track alive; we don't ship these frames anywhere.
         let animating = true;
         const drawFrame = () => {
@@ -390,11 +390,11 @@ export function useDecartRealtime() {
       } else {
         // Three-rung capture ladder. Lite is auto-selected on weak hardware
         // (see DeepfakeStudio liteMode detection); ?hi=1 forces full quality.
-        // ALL rungs use `ideal`-only for w/h — no `max` — so cameras that
+        // ALL rungs use `ideal`-only for w/h (no `max`), so cameras that
         // don't expose the exact requested mode negotiate the closest one
         // instead of throwing OverconstrainedError (the #1 connect failure
         // on cheap USB webcams and 4:3-only integrated cams).
-        // The `advanced: [{ frameRate }]` hint is removed — it's a hard
+        // The `advanced: [{ frameRate }]` hint is removed; it's a hard
         // override on Safari + some Android Chromium and also throws
         // OverconstrainedError. `frameRate.ideal` alone is enough for the
         // browser to prefer the target fps.
@@ -416,7 +416,7 @@ export function useDecartRealtime() {
               height: { ideal: 360 },
             }
           : {
-              // Mid-tier default: 960×540 @ 24fps — comfortably under model
+              // Mid-tier default: 960×540 @ 24fps, comfortably under model
               // native so browser downscale is a no-op, and paced under 30fps
               // to keep encoder budget headroom.
               frameRate: { ideal: 24, max: nativeFps },
@@ -424,7 +424,7 @@ export function useDecartRealtime() {
               height: { ideal: 540 },
             };
         stream = await navigator.mediaDevices.getUserMedia({
-          // Lipsync accuracy depends on the model reading raw vocal timing —
+          // Lipsync accuracy depends on the model reading raw vocal timing;
           // noiseSuppression/autoGainControl are both known to smear or gate
           // transients (the exact cues that drive mouth-shape timing).
           // echoCancellation stays on: it targets acoustic feedback, not
@@ -439,14 +439,14 @@ export function useDecartRealtime() {
       const client = createDecartClient({ apiKey });
       clientRef.current = client;
 
-      // Hard 12s timeout on connect — a hung WebRTC handshake otherwise
+      // Hard 12s timeout on connect; a hung WebRTC handshake otherwise
       // spins forever and users just see "Loading" with no recourse.
       const connectPromise = client.realtime.connect(stream, {
         model,
         // Pin explicitly instead of leaving it to Decart's default: h264 has
         // near-universal hardware decode support (lower, more consistent
         // decode latency than vp9 on weak/mobile hardware), and 720p matches
-        // our own capture ceiling in every quality tier — requesting 1080p
+        // our own capture ceiling in every quality tier; requesting 1080p
         // here would just add encode/decode work with nothing upstream ever
         // sending more than 720p worth of detail.
         preferredVideoCodec: "h264",
@@ -463,7 +463,7 @@ export function useDecartRealtime() {
       });
       const realtimeClient = await Promise.race([
         connectPromise,
-        // 20s (was 12s). Cold-start Decart handshake completes in 2–4s; the
+        // 20s (was 12s). Cold-start Decart handshake completes in 2-4s; the
         // extra headroom covers the case where a previous PeerConnection is
         // still closing (rapid disconnect → reconnect) and the browser
         // serializes the new SDP/ICE round-trip behind it.
@@ -591,7 +591,7 @@ export function useDecartRealtime() {
       // authenticates as the same minted Decart credential the loop is
       // using. A fresh engine built from "elite-decart-studio-config" (never
       // written anywhere) or VITE_DECART_API_KEY (never set) always resolved
-      // to an empty key — every preset/prompt/image action in preview mode
+      // to an empty key; every preset/prompt/image action in preview mode
       // silently no-op'd into the offline fallback instead of really applying.
       const engine = previewEngineRef.current
         ?? new DecartStudioEngine({ apiKey: previewApiKeyRef.current, mode, enableFallback: true });
@@ -612,7 +612,7 @@ export function useDecartRealtime() {
           console.warn("[Preview] Draw failed:", drawErr);
         }
       } else if (mode === "preview") {
-        // No renderable frame came back — most commonly a missing/invalid API
+        // No renderable frame came back; most commonly a missing/invalid API
         // key routing us into the engine's offline fallback. Still push a
         // status frame to the output panel instead of leaving it blank.
         const backendNote = String(

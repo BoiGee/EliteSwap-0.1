@@ -50,7 +50,7 @@ export default function Pricing() {
   return (
     <div className="min-h-screen flex flex-col items-center relative overflow-hidden">
       <Helmet>
-        <title>EliteSwap Pricing — Plans for Realtime AI Face Swap</title>
+        <title>EliteSwap Pricing: Plans for Realtime AI Face Swap</title>
         <meta name="description" content="Compare EliteSwap plans and pick the realtime AI face & character swap subscription that fits your streaming setup." />
         <link rel="canonical" href="https://eliteswap.online/pricing" />
         <meta property="og:title" content="EliteSwap Pricing" />

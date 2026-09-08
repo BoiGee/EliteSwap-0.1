@@ -9,7 +9,7 @@ export type AdminPaymentEvent =
 export interface AdminAlertPayload {
   paymentId: string;
   eventType: AdminPaymentEvent;
-  // Other fields are accepted for backward compatibility but ignored —
+  // Other fields are accepted for backward compatibility but ignored;
   // the server re-derives them from the trusted payment row.
   userEmail?: string | null;
   userDisplayName?: string | null;
@@ -20,7 +20,7 @@ export interface AdminAlertPayload {
   reference?: string | null;
   discountCode?: string | null;
   // Set when the caller is about to send its own richer user-facing email
-  // directly (e.g. an admin-composed note) — skips only the server's
+  // directly (e.g. an admin-composed note); skips only the server's
   // generic user-email fallback; the admin push notification is unaffected.
   skipUserEmail?: boolean;
 }

@@ -125,7 +125,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
         </p>
       )}
 
-      {/* Free trial removed — paid $10 trial lives in TrialPurchaseCard above this section */}
+      {/* Free trial removed; paid $10 trial lives in TrialPurchaseCard above this section */}
 
       <div className={`grid gap-4 ${plans.length === 1 ? "" : plans.length === 2 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-3"}`}>
         {plans.map((plan, i) => {
@@ -180,7 +180,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                   {planDiscount && (
                     <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-center">
                       <p className="text-xs font-heading font-semibold text-emerald-400">
-                        ✓ {planDiscount.code} applied — you pay ${planDiscount.final_usd.toFixed(2)}
+                        ✓ {planDiscount.code} applied: you pay ${planDiscount.final_usd.toFixed(2)}
                       </p>
                       <p className="text-[10px] text-emerald-400/80 mt-0.5">
                         Saved ${planDiscount.discount_usd.toFixed(2)} ({planDiscount.percent_off}% off)
@@ -206,7 +206,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                         : "bg-muted/50 text-foreground hover:bg-muted"
                     }`}
                   >
-                    Pay with Crypto — ${finalUsdForButton.toFixed(2)}
+                    Pay with Crypto: ${finalUsdForButton.toFixed(2)}
                   </Button>
                 </div>
               )}

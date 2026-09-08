@@ -223,7 +223,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                           {p.payment_method === "crypto" && p.tx_hash && isOffchainRef(p.currency, p.tx_hash) && (
                             <div className="mt-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-2 space-y-1">
                               <p className="text-[11px] text-yellow-400 font-heading">
-                                Likely a Binance internal transfer — verify on the merchant Binance account.
+                                Likely a Binance internal transfer; verify on the merchant Binance account.
                               </p>
                               <a
                                 href={binanceDepositUrl(p.tx_hash)}

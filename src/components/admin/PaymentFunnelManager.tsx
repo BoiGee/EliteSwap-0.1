@@ -19,7 +19,7 @@ interface ConfirmedPayment {
   user_id: string;
 }
 
-// Stage 7 is intentionally absent — verified against the DB trigger
+// Stage 7 is intentionally absent: verified against the DB trigger
 // (tg_update_payment_funnel_stage) that it's never assigned to any user;
 // rendering it would just be a permanently-empty, unlabeled chart row.
 const STAGE_ORDER = [0, 1, 2, 3, 4, 5, 6, 8] as const;
@@ -37,7 +37,7 @@ export default function PaymentFunnelManager() {
 
   const fetchData = async () => {
     setLoading(true);
-    // profiles has 1800+ rows — well past PostgREST's default 1000-row cap,
+    // profiles has 1800+ rows, well past PostgREST's default 1000-row cap,
     // so this must be paginated explicitly. Verified live: the previous
     // unpaginated query already undercounted "All users" by ~800, and was
     // one data-shape change away from silently corrupting the funnel-stage

@@ -38,10 +38,10 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
   // The service-role key or the (public) anon key are pre-authorized: this
-  // endpoint is write-only self-healing — it copies the live service
+  // endpoint is write-only self-healing: it copies the live service
   // credential into the vault and returns nothing sensitive, so allowing the
   // platform/cron to repair itself even when the stored key is already
-  // broken is safe. An empty/missing bearer is NOT pre-authorized — it must
+  // broken is safe. An empty/missing bearer is NOT pre-authorized; it must
   // fall through to the admin-JWT check below like any other caller.
   const isPreAuthorized = timingSafeEqual(bearer, SERVICE) || timingSafeEqual(bearer, ANON);
   if (!isPreAuthorized) {
@@ -64,6 +64,6 @@ Deno.serve(async (req) => {
   }
 
   // Smoke-test the round trip: ask the DB to call send-admin-push with the
-  // freshly stored credential path (no devices needed — we only check auth).
+  // freshly stored credential path (no devices needed, we only check auth).
   return json({ ok: true, synced: true });
 });

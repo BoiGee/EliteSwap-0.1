@@ -32,7 +32,7 @@ export default function ReportDialog({
           body: { event: "forum_report", reportId: inserted.id },
         }).catch(() => {});
       }
-      toast.success("Thanks — a moderator will review this."); setOpen(false); setDetails("");
+      toast.success("Thanks, a moderator will review this."); setOpen(false); setDetails("");
     }
   }
 

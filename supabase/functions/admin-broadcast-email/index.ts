@@ -260,7 +260,7 @@ Deno.serve(async (req) => {
     })
   }
 
-  // 1. Auth — must be admin
+  // 1. Auth: must be admin
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -287,7 +287,7 @@ Deno.serve(async (req) => {
     .eq('role', 'admin')
     .maybeSingle()
   if (!roleRow) {
-    return new Response(JSON.stringify({ error: 'Forbidden — admin only' }), {
+    return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), {
       status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
@@ -378,7 +378,7 @@ Deno.serve(async (req) => {
     }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 
-  // Suppression — chunk to avoid URL length blow-ups on big sends.
+  // Suppression: chunk to avoid URL length blow-ups on big sends.
   const emails = recipients.map((r) => r.email!.toLowerCase().trim())
   const suppressedSet = new Set<string>()
   for (let i = 0; i < emails.length; i += 500) {
@@ -407,7 +407,7 @@ Deno.serve(async (req) => {
     sendable: sendable.length,
   })
 
-  // PREVIEW — return full recipient list for UI
+  // PREVIEW: return full recipient list for UI
   if (action === 'preview') {
     return new Response(JSON.stringify({
       total: recipients.length,
@@ -417,7 +417,7 @@ Deno.serve(async (req) => {
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 
-  // Safeguards (skip for fire_scheduled — already vetted at schedule time)
+  // Safeguards (skip for fire_scheduled, already vetted at schedule time)
   if (action !== 'fire_scheduled') {
     // Require explicit confirm for "all" or for very large sends
     if ((recipientMode === 'all' || sendable.length >= ALL_USERS_CONFIRM_THRESHOLD) && !confirmAll) {
@@ -428,7 +428,7 @@ Deno.serve(async (req) => {
       }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Cooldown — only enforced for immediate sends
+    // Cooldown: only enforced for immediate sends
     if (action === 'send' && !overrideCooldown) {
       const { data: cd } = await admin.rpc('broadcast_cooldown_remaining_seconds')
       const remaining = typeof cd === 'number' ? cd : 0
@@ -442,7 +442,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // SCHEDULE — store broadcast row + recipients, return
+  // SCHEDULE: store broadcast row + recipients, return
   if (action === 'schedule') {
     if (!scheduledForRaw) {
       return new Response(JSON.stringify({ error: 'scheduledFor required (ISO timestamp)' }), {
@@ -531,7 +531,7 @@ Deno.serve(async (req) => {
   const CONCURRENCY = 8
   const LARGE_JOB_THRESHOLD = 200
 
-  // Build the actual send worker — runs against `sendable` with bounded concurrency.
+  // Build the actual send worker: runs against `sendable` with bounded concurrency.
   async function runSendLoop(): Promise<{ enqueued: number; failed: number; fatalError: string | null }> {
     let enqueued = 0
     let failed = 0

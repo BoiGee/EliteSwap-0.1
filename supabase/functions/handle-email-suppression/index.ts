@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     metadata: body?.metadata ?? null,
   })
 
-  // Ignore unique-violation (already suppressed) — anything else is a real error.
+  // Ignore unique-violation (already suppressed); anything else is a real error.
   if (error && !String(error.message).toLowerCase().includes('duplicate')) {
     console.error('Failed to record suppression', { error, email })
     return new Response(JSON.stringify({ error: 'Failed to record suppression' }), {

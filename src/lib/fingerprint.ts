@@ -23,7 +23,7 @@ const getOrCreateFallbackId = (): string => {
   } catch {
     /* ignore */
   }
-  // Stable random fallback ID — 32 hex chars, prefixed for visibility.
+  // Stable random fallback ID: 32 hex chars, prefixed for visibility.
   let id = "fb_";
   try {
     const bytes = new Uint8Array(16);
@@ -74,10 +74,10 @@ export async function getDeviceFingerprint(): Promise<string> {
       }
       return visitorId;
     }
-    // empty/short — fall through to fallback
+    // empty/short; fall through to fallback
     return getOrCreateFallbackId();
   } catch (err) {
-    // Timed out, blocked, or threw — use stable fallback so the caller can proceed.
+    // Timed out, blocked, or threw; use stable fallback so the caller can proceed.
     console.warn("[fingerprint] using fallback id:", (err as Error)?.message);
     return getOrCreateFallbackId();
   }

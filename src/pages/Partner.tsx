@@ -202,7 +202,7 @@ export default function Partner() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Or share your code: <span className="font-mono font-semibold text-primary">{partner.code}</span> — users can enter it at signup or in their dashboard.
+            Or share your code: <span className="font-mono font-semibold text-primary">{partner.code}</span>; users can enter it at signup or in their dashboard.
           </p>
         </div>
 
@@ -219,7 +219,7 @@ export default function Partner() {
         <div className="glass border border-border rounded-xl p-4 space-y-3">
           <h3 className="font-heading font-semibold text-foreground">Your referrals</h3>
           {referrals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No referrals yet — share your link to get started.</p>
+            <p className="text-sm text-muted-foreground">No referrals yet, share your link to get started.</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>

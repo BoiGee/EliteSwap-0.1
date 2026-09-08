@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-// The real SDK's client.process() hits Decart's live API — for the timeout
+// The real SDK's client.process() hits Decart's live API, so for the timeout
 // test below we need full control over whether/when that call resolves.
 const { processMock } = vi.hoisted(() => ({ processMock: vi.fn() }));
 vi.mock("@decartai/sdk", () => ({

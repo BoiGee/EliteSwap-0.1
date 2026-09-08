@@ -381,7 +381,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
     // Routed through admin_issue_api_key rather than a raw insert: leaving
     // "Custom secret" blank used to fall through to api_keys.key's own
     // column default (a 64-char hex string) instead of the 11-char format
-    // every other key on the platform uses — this RPC always generates a
+    // every other key on the platform uses; this RPC always generates a
     // real short key when no custom secret is supplied, and audit-logs the
     // grant since it bypasses payment entirely.
     const { error } = await supabase.rpc("admin_issue_api_key" as any, {
@@ -512,7 +512,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       console.error("[UserManager.updatePaymentStatus]", error);
       toast({
         title: "Error",
-        description: `${getSafeErrorMessage(error.code)} — ${error.message}`,
+        description: `${getSafeErrorMessage(error.code)}: ${error.message}`,
         variant: "destructive",
       });
     } else {
@@ -570,7 +570,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       console.error("[UserManager.createPaymentForUser]", error);
       toast({
         title: "Error",
-        description: `${getSafeErrorMessage(error.code)} — ${error.message}`,
+        description: `${getSafeErrorMessage(error.code)}: ${error.message}`,
         variant: "destructive",
       });
     } else {
@@ -989,7 +989,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                             onChange={(e) => setPartnerSelections({ ...partnerSelections, [p.user_id]: e.target.value })}
                             className="bg-muted/30 border border-border rounded-lg px-2 py-1 text-xs font-heading text-foreground h-8 min-w-[200px]"
                           >
-                            <option value="__none__">— No partner —</option>
+                            <option value="__none__">No partner</option>
                             {partnersList.map((pt) => (
                               <option key={pt.id} value={pt.id}>
                                 {pt.code}{pt.display_name ? ` · ${pt.display_name}` : ""}

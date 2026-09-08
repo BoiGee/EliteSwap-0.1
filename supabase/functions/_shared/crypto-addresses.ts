@@ -1,5 +1,5 @@
 // Mirror of deposit wallet info shown in src/components/CryptoPayment.tsx.
-// Kept in sync manually — keep both in lockstep when addresses rotate.
+// Kept in sync manually; keep both in lockstep when addresses rotate.
 
 export type PayCurrency = "BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20";
 

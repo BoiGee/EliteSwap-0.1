@@ -78,7 +78,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
     setVerifyMsg(null);
     setConfirmClose(false);
     if (data.payment_method === "momo_manual") {
-      // Momo details are a fixed constant on the server — refetch via the
+      // Momo details are a fixed constant on the server; refetch via the
       // same reuse-a-fresh-pending-row path startMomo already uses, instead
       // of duplicating the number/network/name here.
       await startMomo();
@@ -211,14 +211,14 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
         return;
       }
       if (manual.kind === "momo") {
-        // Manual MoMo never auto-confirms — every submission is routed to admin review.
+        // Manual MoMo never auto-confirms; every submission is routed to admin review.
         setPendingBadge(false);
-        setVerifyMsg("Reference saved ✓ — we'll manually verify your Mobile Money payment, usually within a few hours. You can close this window.");
+        setVerifyMsg("Reference saved ✓. We'll manually verify your Mobile Money payment, usually within a few hours. You can close this window.");
         return;
       }
       if (data?.hash_saved) {
         setPendingBadge(false); // hash is now on record; auto-confirm will finish it
-        setVerifyMsg("Hash saved ✓ — we'll auto-confirm within a couple of minutes once the network indexes it. You can close this window.");
+        setVerifyMsg("Hash saved ✓. We'll auto-confirm within a couple of minutes once the network indexes it. You can close this window.");
       } else {
         setVerifyMsg(`Not confirmed yet (${data?.reason || "pending"}). Try again in 30 seconds.`);
       }
@@ -264,7 +264,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
   const handleManualOpenChange = (v: boolean) => {
     if (v) return;
     if (mustKeepOpen) {
-      // Intercept close — show inline confirm instead of closing.
+      // Intercept close; show inline confirm instead of closing.
       setConfirmClose(true);
       return;
     }
@@ -304,7 +304,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
             onClick={() => (pendingBadge ? resumePending() : setOpen("choose"))}
             className="font-heading font-semibold text-xs"
           >
-            {pendingBadge ? "Finish trial — paste reference" : `Start Trial — ${trialDisplay}`}
+            {pendingBadge ? "Finish trial: paste reference" : `Start Trial: ${trialDisplay}`}
           </Button>
         </div>
       </div>
@@ -338,7 +338,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
             <div className="rounded-lg border border-border p-3 space-y-2">
               <span className="font-heading font-semibold text-sm">Mobile Money (GHS {TRIAL_GHS})</span>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                Manual transfer — we'll show you the number to send to. After sending, paste your transaction ID here. No transaction ID = no trial.
+                Manual transfer: we'll show you the number to send to. After sending, paste your transaction ID here. No transaction ID = no trial.
               </p>
               <Button size="sm" className="w-full" disabled={busy} onClick={startMomo}>
                 {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Pay via Mobile Money"}
@@ -423,7 +423,7 @@ export default function TrialPurchaseCard({ onTrialActivated, remaining }: Props
                 <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 space-y-2">
                   <p className="text-xs font-heading font-semibold">You haven't submitted a reference yet.</p>
                   <p className="text-[11px] text-muted-foreground">
-                    If you already sent the payment, paste the {manual.kind === "momo" ? "transaction ID" : "TXID"} above so we can confirm it. Otherwise cancel this purchase — no charge on our side.
+                    If you already sent the payment, paste the {manual.kind === "momo" ? "transaction ID" : "TXID"} above so we can confirm it. Otherwise cancel this purchase; no charge on our side.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="flex-1" onClick={() => setConfirmClose(false)}>

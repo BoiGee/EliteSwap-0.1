@@ -33,8 +33,8 @@ const PaymentUnderpaidEmail = ({
   const greet = displayName ? `Hi ${displayName},` : 'Hi there,'
   const shortfallLabel = fmt(shortfallUsd)
   return (
-    <BrandFrame preview={`Your payment is ${shortfallLabel} short — top up to unlock your key`}>
-      <Heading style={h1}>Almost there — your payment is a little short</Heading>
+    <BrandFrame preview={`Your payment is ${shortfallLabel} short: top up to unlock your key`}>
+      <Heading style={h1}>Almost there: your payment is a little short</Heading>
       <Text style={text}>{greet}</Text>
       <Text style={text}>
         We received your crypto transaction, but the amount is below what's needed to
@@ -88,7 +88,7 @@ export const template = {
       ? `Action needed: top up your EliteSwap payment (${s} short)`
       : 'Action needed: top up your EliteSwap payment'
   },
-  displayName: 'Payment Underpaid — Top Up',
+  displayName: 'Payment Underpaid: Top Up',
   previewData: {
     displayName: 'Alex',
     currency: 'USDT-TRC20',

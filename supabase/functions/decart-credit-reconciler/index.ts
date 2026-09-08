@@ -7,7 +7,7 @@
 //   inferred_untracked = max(0, wall_ms - tracked_billed_ms) plus a small
 //                        constant per session for the Decart teardown tail we
 //                        can't measure directly (2s per session that ended in
-//                        the window — conservative upper bound).
+//                        the window; conservative upper bound).
 //
 // Written to public.decart_reconciliation. Admin-only read via RLS.
 // No secrets required. Uses SERVICE_ROLE.
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
     sessionsInWindow += 1;
     wall += winEnd - winStart;
     // Only sessions that ENDED inside this window contribute a full
-    // duration_ms once — otherwise we'd double-count on later runs.
+    // duration_ms once; otherwise we'd double-count on later runs.
     if (
       r.ended_at &&
       new Date(r.ended_at as string).getTime() <= periodEnd.getTime() &&

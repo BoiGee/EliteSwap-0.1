@@ -286,7 +286,7 @@ export default function MailerManager({ profiles }: Props) {
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <Label className="font-heading text-sm">Body — Markdown ({body.length}/{BODY_MAX})</Label>
+                    <Label className="font-heading text-sm">Body (Markdown) ({body.length}/{BODY_MAX})</Label>
                     <div className="flex gap-1 flex-wrap">
                       {VARIABLES.map((v) => (
                         <button key={v.token} type="button" onClick={() => insertToken(v.token)}
@@ -352,7 +352,7 @@ export default function MailerManager({ profiles }: Props) {
               </div>
             </div>
 
-            {/* RIGHT — live preview */}
+            {/* RIGHT: live preview */}
             <div className="space-y-3">
               <Label className="font-heading text-sm text-muted-foreground">Live preview (tokens shown raw)</Label>
               <MailerPreview subject={subject} body={body} ctaLabel={ctaLabel} ctaUrl={ctaUrl} />

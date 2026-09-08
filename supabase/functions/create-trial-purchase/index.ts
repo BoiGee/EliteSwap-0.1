@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Manual Mobile Money (GHS) — fixed amount, provided number, user pastes
+    // Manual Mobile Money (GHS): fixed amount, provided number, user pastes
     // the transaction ID after sending. No automatic verification exists for
     // this path; every purchase is confirmed by an admin (needs_admin_review
     // gets set in verify-trial-payment once the reference is submitted).

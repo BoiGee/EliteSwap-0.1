@@ -87,7 +87,7 @@ export default function TrialPurchaseManager() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   // Live refresh: paid trial confirmations happen via webhook/cron with zero
-  // admin action, so without this the tab would sit stale until reopened —
+  // admin action, so without this the tab would sit stale until reopened;
   // same class of gap fixed on the Overview tab.
   useEffect(() => {
     const channel = supabase
@@ -276,8 +276,8 @@ export default function TrialPurchaseManager() {
             <SelectItem value="date_asc">Oldest first</SelectItem>
             <SelectItem value="amount_desc">Amount ↓</SelectItem>
             <SelectItem value="amount_asc">Amount ↑</SelectItem>
-            <SelectItem value="email_asc">Email A–Z</SelectItem>
-            <SelectItem value="email_desc">Email Z–A</SelectItem>
+            <SelectItem value="email_asc">Email A-Z</SelectItem>
+            <SelectItem value="email_desc">Email Z-A</SelectItem>
             <SelectItem value="status">Status</SelectItem>
             <SelectItem value="method">Method</SelectItem>
           </SelectContent>

@@ -39,7 +39,7 @@ export function ReviewPromptModal({
           <DialogDescription>
             {showingForm
               ? "Your review goes live on the homepage."
-              : "Drop a quick rating — it goes live on the homepage and helps others discover us."}
+              : "Drop a quick rating; it goes live on the homepage and helps others discover us."}
           </DialogDescription>
         </DialogHeader>
 

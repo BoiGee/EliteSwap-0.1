@@ -1,7 +1,7 @@
 // Authenticated wrapper that lets end-users trigger a Web Push to admins for
 // a small whitelist of user-generated events (support messages, forum reports).
 // The caller must be signed in. All payload text is derived server-side from
-// the caller's own row and a fixed title map — the client cannot inject
+// the caller's own row and a fixed title map; the client cannot inject
 // arbitrary push copy.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
       if (!rep || rep.reporter_id !== callerId) {
         return json({ ok: true, skipped: "not_reporter" });
       }
-      pushBody = `${who} reported a ${rep.target_kind} — ${rep.reason}`;
+      pushBody = `${who} reported a ${rep.target_kind}: ${rep.reason}`;
       tag = `report-${rep.id}`;
     }
     url = "/admin?tab=forum";
@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
       }
       const snippet = (rev.remark ?? "").slice(0, 80);
       const name = rev.display_name || who;
-      pushBody = `⭐${rev.rating} — ${name}${snippet ? `: ${snippet}` : ""}`;
+      pushBody = `⭐${rev.rating}, ${name}${snippet ? `: ${snippet}` : ""}`;
       tag = `review-${rev.id}`;
     }
     url = "/admin?tab=reviews";

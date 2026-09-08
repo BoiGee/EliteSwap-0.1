@@ -43,46 +43,46 @@ interface Preset {
 const PRESETS: Preset[] = [
   {
     id: "stuck_at_pricing",
-    label: "Browsed pricing — never picked a plan",
+    label: "Browsed pricing: never picked a plan",
     forStages: [1],
     headline: "Still weighing your EliteSwap options?",
-    body: "I noticed you checked out our plans but didn't pick one. Most folks land on the Pro plan — it's the best value if you want unlimited realtime swaps. Happy to answer any questions before you upgrade.",
+    body: "I noticed you checked out our plans but didn't pick one. Most folks land on the Pro plan; it's the best value if you want unlimited realtime swaps. Happy to answer any questions before you upgrade.",
     ctaLabel: "See Plans",
-    adminNote: "Reply to this email if you'd like a quick walkthrough — we'll personally help you choose.",
+    adminNote: "Reply to this email if you'd like a quick walkthrough; we'll personally help you choose.",
   },
   {
     id: "stuck_at_method",
-    label: "Picked a plan — no payment method chosen",
+    label: "Picked a plan: no payment method chosen",
     forStages: [2, 3],
     headline: "One click away from unlocking EliteSwap",
-    body: "You picked your plan — nice choice. The last step is just sending your crypto payment (BTC, BNB, or USDT on BEP-20 / TRC20) to the displayed wallet and pasting the transaction hash. It takes less than 60 seconds.",
+    body: "You picked your plan, nice choice. The last step is just sending your crypto payment (BTC, BNB, or USDT on BEP-20 / TRC20) to the displayed wallet and pasting the transaction hash. It takes less than 60 seconds.",
     ctaLabel: "Finish Checkout",
   },
   {
     id: "crypto_qr_no_hash",
-    label: "Saw crypto QR — never submitted hash",
+    label: "Saw crypto QR: never submitted hash",
     forStages: [4, 5],
     headline: "Did your crypto payment go through?",
-    body: "We saw you opened the crypto payment screen but haven't submitted a transaction hash yet. If you sent the funds, just paste the hash in your dashboard and we'll confirm within minutes. If something went wrong, reply to this email and we'll sort it out — no pressure.",
+    body: "We saw you opened the crypto payment screen but haven't submitted a transaction hash yet. If you sent the funds, just paste the hash in your dashboard and we'll confirm within minutes. If something went wrong, reply to this email and we'll sort it out, no pressure.",
     ctaLabel: "Submit My Tx Hash",
     adminNote: "Common fixes: make sure you sent on the correct network (BTC mainnet, BNB BEP-20, USDT BEP-20, or USDT TRC20) and sent the exact amount shown.",
   },
   {
     id: "tx_submitted_waiting",
-    label: "Submitted hash — checking on them",
+    label: "Submitted hash: checking on them",
     forStages: [6],
     headline: "Your payment is being verified",
-    body: "Just a heads up — we received your transaction hash and our team is verifying it on-chain. You should be activated within the next few hours. If you don't see your unique key by tomorrow, reply to this email and we'll dig in.",
+    body: "Just a heads up, we received your transaction hash and our team is verifying it on-chain. You should be activated within the next few hours. If you don't see your unique key by tomorrow, reply to this email and we'll dig in.",
     ctaLabel: "Open Dashboard",
   },
   {
     id: "soft_offer",
-    label: "Sweetener — 10% discount nudge",
+    label: "Sweetener: 10% discount nudge",
     forStages: [1, 2, 3, 4, 5],
     headline: "A small thank-you to finish your upgrade",
-    body: "We'd love to have you onboard. Use the code below at checkout for 10% off your first plan — valid for the next 7 days. No strings attached.",
+    body: "We'd love to have you onboard. Use the code below at checkout for 10% off your first plan, valid for the next 7 days. No strings attached.",
     ctaLabel: "Claim 10% Off",
-    adminNote: "Code: WELCOME10 — 10% off any plan, expires in 7 days.",
+    adminNote: "Code: WELCOME10, 10% off any plan, expires in 7 days.",
   },
 ];
 
@@ -153,7 +153,7 @@ export default function PaymentNudgeDialog({ target, open, onOpenChange, onSent 
     setAdminNote(preset.adminNote || "");
   };
 
-  // Per-preset cooldown — only for the currently selected preset
+  // Per-preset cooldown, only for the currently selected preset
   const presetCooldownRemaining = useMemo(() => {
     if (!presetId) return 0;
     const last = history.find((h) => h.preset_id === presetId);
@@ -209,7 +209,7 @@ export default function PaymentNudgeDialog({ target, open, onOpenChange, onSent 
       if (error) throw error;
 
       // Log this nudge (per-preset audit) and stamp profiles.last_payment_nudge_sent_at
-      // through one RPC — profiles' UPDATE RLS is admin-only and a guard trigger
+      // through one RPC: profiles' UPDATE RLS is admin-only and a guard trigger
       // separately protects this exact field, so a direct client update from a
       // sec_admin (who this tab is fully visible to) would silently no-op with
       // no error. The RPC is scoped to can_manage_payments(), matching the tab.
@@ -257,7 +257,7 @@ export default function PaymentNudgeDialog({ target, open, onOpenChange, onSent 
                 key={pid}
                 className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/30 font-heading"
               >
-                {PRESET_BY_ID[pid]?.label.split(" — ")[0] || pid} ×{count}
+                {PRESET_BY_ID[pid]?.label.split(": ")[0] || pid} ×{count}
               </span>
             ))}
           </div>
@@ -271,7 +271,7 @@ export default function PaymentNudgeDialog({ target, open, onOpenChange, onSent 
             </p>
             {history.slice(0, 8).map((h) => (
               <div key={h.id} className="text-[11px] flex items-center gap-2 px-1">
-                <span className="text-primary font-mono">{PRESET_BY_ID[h.preset_id]?.label.split(" — ")[0] || h.preset_id}</span>
+                <span className="text-primary font-mono">{PRESET_BY_ID[h.preset_id]?.label.split(": ")[0] || h.preset_id}</span>
                 <span className="text-muted-foreground truncate flex-1">{h.headline_snippet || h.subject}</span>
                 <span className="text-muted-foreground text-[10px] shrink-0">{relativeTime(h.sent_at)}</span>
               </div>
@@ -332,7 +332,7 @@ export default function PaymentNudgeDialog({ target, open, onOpenChange, onSent 
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={5}
-              placeholder="The main message — be conversational, not salesy"
+              placeholder="The main message; be conversational, not salesy"
               maxLength={1000}
             />
           </div>

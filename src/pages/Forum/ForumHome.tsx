@@ -15,7 +15,7 @@ export default function ForumHome() {
   return (
     <ForumLayout>
       <Helmet>
-        <title>Community Forum — Elite Swap</title>
+        <title>Community Forum: Elite Swap</title>
         <meta name="description" content="Share tips, workarounds, and help fellow creators in the Elite Swap community forum." />
         <link rel="canonical" href="https://eliteswap.online/forum" />
       </Helmet>
@@ -51,7 +51,7 @@ export default function ForumHome() {
         <h2 className="text-xl font-heading font-bold mb-3">Recent activity</h2>
         <div className="space-y-2">
           {threads?.length === 0 && (
-            <p className="text-sm text-muted-foreground">No threads yet — start the conversation!</p>
+            <p className="text-sm text-muted-foreground">No threads yet, start the conversation!</p>
           )}
           {threads?.map((t) => (
             <Link key={t.id} to={`/forum/t/${t.id}`}>

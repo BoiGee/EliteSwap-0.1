@@ -122,7 +122,7 @@ export function VideoDisplay({
             </div>
           </div>
         )}
-        {/* Per-frame scanline overlay removed — it forced the compositor to
+        {/* Per-frame scanline overlay removed because it forced the compositor to
             re-rasterize the video texture every frame on iGPUs. */}
         {isOutput && onToggleExpand && (
           <button

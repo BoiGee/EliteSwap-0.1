@@ -7,7 +7,7 @@
  *   1. Coordinated ACROSS TABS via a BroadcastChannel + navigator.locks
  *      leader election, so only ONE tab actually hits the network per
  *      refresh cycle. Follower tabs receive the leader's response and
- *      synthesize a local Response — no extra network calls.
+ *      synthesize a local Response, no extra network calls.
  *
  *   2. Deduplicated WITHIN a tab via an in-flight promise cache.
  *
@@ -139,7 +139,7 @@ export function installAuthRetry() {
   };
   const circuitOpen = () => Date.now() < circuitOpenUntil;
 
-  // Synthetic 429 response when the circuit is open — the Supabase client
+  // Synthetic 429 response when the circuit is open; the Supabase client
   // will treat this like a normal rate-limit and just keep the current
   // session; it won't sign the user out.
   const synth429 = (): Response =>
@@ -229,7 +229,7 @@ export function installAuthRetry() {
           // itself using its own storage state via the Supabase client.
           // Practical approach: if we have no in-flight refresh, just
           // reply with a synthetic 200-empty and let the follower's
-          // supabase client fall back to reading storage — actually we
+          // supabase client fall back to reading storage; actually we
           // must return a real token. So we defer: the leader itself
           // will run a refresh on its own timer shortly. To bridge, we
           // wait briefly for an in-flight one, else reply with 202.
@@ -244,7 +244,7 @@ export function installAuthRetry() {
               contentType: result.contentType,
             } satisfies CoordMessage);
           }
-          // If nothing is in flight, we don't fabricate a response —
+          // If nothing is in flight, we don't fabricate a response;
           // the follower will time out and fall back to its own network
           // call. That's rare because refreshes are near-simultaneous
           // across tabs (all triggered by the same expiring token).
@@ -278,7 +278,7 @@ export function installAuthRetry() {
 
       const timer = setTimeout(() => {
         pendingFollower.delete(requestId);
-        // Timed out waiting for leader — return a synthetic 429 rather
+        // Timed out waiting for leader; return a synthetic 429 rather
         // than firing our own network request, to protect the shared
         // rate limit budget. The Supabase client will retry later.
         resolve(synth429());

@@ -2,7 +2,7 @@
 // threaded WASM segmenter (background replacement without a physical green
 // screen) can use SharedArrayBuffer. GitHub Pages has no way to send the
 // required COOP/COEP response headers itself, so public/sw.js injects them
-// client-side — but a page is only ever isolated from the load *after* its
+// client-side, but a page is only ever isolated from the load *after* its
 // controlling service worker activated, never the load that registered it.
 // That's why this reloads exactly once: without it, the worker would install
 // successfully and still report crossOriginIsolated === false forever.
@@ -16,7 +16,7 @@ export function ensureStudioCrossOriginIsolation(): void {
   if (!("serviceWorker" in navigator)) return;
   if (isPreviewOrDev()) return;
   // localStorage (not sessionStorage) so this is shared across every tab in
-  // the browser, not just the current one — once any tab has done the
+  // the browser, not just the current one; once any tab has done the
   // isolation-bootstrap reload, the service worker is active for the whole
   // origin and later tabs should already load pre-isolated. Worst case if a
   // later tab genuinely isn't isolated (e.g. its navigation raced SW

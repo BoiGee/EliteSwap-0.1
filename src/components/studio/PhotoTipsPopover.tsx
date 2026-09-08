@@ -3,10 +3,10 @@ import { Info } from "lucide-react";
 
 export const PHOTO_TIPS: string[] = [
   "Use a well-lit, front-facing solo photo.",
-  "At least 512×512 pixels — larger is better.",
+  "At least 512×512 pixels; larger is better.",
   "Face clearly visible, not cropped by the edge.",
   "No sunglasses, masks, or heavy occlusions.",
-  "Sharp focus — avoid motion blur.",
+  "Sharp focus, avoid motion blur.",
 ];
 
 export function PhotoTipsList() {

@@ -59,7 +59,7 @@ export default function ResetPassword() {
       </Helmet>
       <main className="w-full max-w-md space-y-8 text-center">
         <div className="space-y-3">
-          <h1 className="text-5xl font-heading font-bold gradient-text cursor-pointer" onClick={() => navigate("/")}>Elite Swap — Reset Password</h1>
+          <h1 className="text-5xl font-heading font-bold gradient-text cursor-pointer" onClick={() => navigate("/")}>Elite Swap: Reset Password</h1>
 
           <p className="text-muted-foreground font-body">Set a new password</p>
         </div>

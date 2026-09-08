@@ -46,7 +46,7 @@ const PaymentRejectedEmail = ({
       <Text style={text}>What you can do next:</Text>
       <Text style={textListItem}>• Try a different payment method (we accept crypto and card / mobile money)</Text>
       <Text style={textListItem}>• Double-check the transaction reference and re-submit</Text>
-      <Text style={textListItem}>• Reach out — we'll personally help you get sorted</Text>
+      <Text style={textListItem}>• Reach out, and we'll personally help you get sorted</Text>
 
       <BrandCta href={retryUrl || 'https://eliteswap.online/pricing'}>Try Again</BrandCta>
 

@@ -3,7 +3,7 @@
 // ($10 trials) so both flows apply the exact same heuristic and neither can
 // drift out of sync with the other or with the admin UI's display copy
 // (src/components/admin/PaymentManager.tsx mirrors this on the client side
-// purely for the "Binance off-chain" badge — it never gates confirmation).
+// purely for the "Binance off-chain" badge; it never gates confirmation).
 //
 // Detects references that can never appear on a public blockchain:
 //   - Binance internal transfers between two Binance accounts

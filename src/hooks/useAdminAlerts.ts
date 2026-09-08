@@ -125,7 +125,7 @@ export function useAdminAlerts(enabled: boolean) {
         { event: "INSERT", schema: "public", table: "payment_verification_attempts" },
         (p: any) => {
           if (p.new?.reason === "user_notified_underpaid") {
-            fire("payment", "Payment underpaid — needs review", `payment ${p.new?.payment_id ?? ""}`);
+            fire("payment", "Payment underpaid: needs review", `payment ${p.new?.payment_id ?? ""}`);
           }
         },
       )

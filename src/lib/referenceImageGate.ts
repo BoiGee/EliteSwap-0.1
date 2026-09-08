@@ -5,7 +5,7 @@
  * photo and classifies it as `pass`, `marginal`, or `blocked`. The studio uses
  * the classification to either upload as-is, silently enhance, or refuse.
  *
- * Nothing here runs during streaming — the live video pipeline is untouched.
+ * Nothing here runs during streaming; the live video pipeline is untouched.
  */
 
 export type BlockCode =
@@ -28,7 +28,7 @@ export type ImageScore = {
   reason?: string;
 };
 
-// Thresholds — tuned starting values, safe to tweak without touching call sites.
+// Thresholds: tuned starting values, safe to tweak without touching call sites.
 export const THRESH = {
   minLongEdge: 256,
   idealLongEdge: 1024,
@@ -39,11 +39,11 @@ export const THRESH = {
 } as const;
 
 const REASONS: Record<BlockCode, string> = {
-  too_small: `Image too small — please use a photo at least ${THRESH.minLongEdge}×${THRESH.minLongEdge}.`,
-  no_face: "No face detected — please use a clear, front-facing photo.",
-  multiple_faces: "Multiple faces detected — please use a solo photo.",
-  too_blurry: "Image is too blurry — please use a sharper photo.",
-  decode_failed: "Could not read this image — please try a different file.",
+  too_small: `Image too small, please use a photo at least ${THRESH.minLongEdge}×${THRESH.minLongEdge}.`,
+  no_face: "No face detected, please use a clear, front-facing photo.",
+  multiple_faces: "Multiple faces detected, please use a solo photo.",
+  too_blurry: "Image is too blurry, please use a sharper photo.",
+  decode_failed: "Could not read this image, please try a different file.",
 };
 
 /** Laplacian variance on a downsampled grayscale copy. Higher = sharper. */
@@ -120,7 +120,7 @@ async function detectFaces(bitmap: ImageBitmap): Promise<{
         width: best.boundingBox.width,
         height: best.boundingBox.height,
       },
-      confidence: 1, // FaceDetector doesn't expose a score — treat detection as confident.
+      confidence: 1, // FaceDetector doesn't expose a score; treat detection as confident.
       available: true,
     };
   } catch {

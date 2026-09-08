@@ -38,7 +38,7 @@ const TrialActivatedEmail = ({
       </Section>
 
       <BrandNote title="Heads up">
-        Your timer only starts when you open the studio and begin your session — so set up your camera, lighting, and character first, then dive in.
+        Your timer only starts when you open the studio and begin your session, so set up your camera, lighting, and character first, then dive in.
       </BrandNote>
 
       <BrandCta href={studioUrl || 'https://eliteswap.online/studio'}>Open the Studio</BrandCta>

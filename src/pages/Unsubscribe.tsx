@@ -57,7 +57,7 @@ export default function Unsubscribe() {
         <meta name="robots" content="noindex" />
       </Helmet>
       <main className="glass neon-border rounded-2xl p-8 max-w-md w-full text-center space-y-4">
-        <h1 className="text-2xl font-heading font-bold gradient-text">Elite Swap — Email Preferences</h1>
+        <h1 className="text-2xl font-heading font-bold gradient-text">Elite Swap: Email Preferences</h1>
         <h2 className="text-lg font-heading font-semibold text-foreground">Manage your subscription</h2>
 
 

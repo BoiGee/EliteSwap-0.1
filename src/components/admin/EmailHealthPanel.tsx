@@ -38,26 +38,26 @@ export default function EmailHealthPanel() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Delivery pipeline status — nothing else in the admin dashboard surfaces this, so check here first if users report missing emails.
+          Delivery pipeline status; nothing else in the admin dashboard surfaces this, so check here first if users report missing emails.
         </p>
         <Button variant="outline" size="sm" onClick={load} disabled={loading} className="font-heading text-xs">{loading ? "…" : "Refresh"}</Button>
       </div>
 
       {health && queueError && (
         <div className="glass border border-destructive/50 rounded-xl p-3 text-xs font-heading text-destructive">
-          ⚠️ pgmq unavailable — the email queue infrastructure itself is missing. No emails can send until this is restored.
+          ⚠️ pgmq unavailable: the email queue infrastructure itself is missing. No emails can send until this is restored.
         </div>
       )}
 
       {health && !queueError && dlqDepth > 0 && (
         <div className="glass border border-amber-500/50 rounded-xl p-3 text-xs font-heading text-amber-400">
-          ⚠️ {dlqDepth} message{dlqDepth === 1 ? "" : "s"} in the dead-letter queue — exhausted retries and need manual attention.
+          ⚠️ {dlqDepth} message{dlqDepth === 1 ? "" : "s"} in the dead-letter queue: exhausted retries and need manual attention.
         </div>
       )}
 
       {health && health.rate_limited_until && new Date(health.rate_limited_until) > new Date() && (
         <div className="glass border border-amber-500/50 rounded-xl p-3 text-xs font-heading text-amber-400">
-          ⚠️ Rate-limited by Resend until {fmt(health.rate_limited_until)} — sends are paused until then.
+          ⚠️ Rate-limited by Resend until {fmt(health.rate_limited_until)}; sends are paused until then.
         </div>
       )}
 

@@ -207,7 +207,7 @@ export default function UserDetailDrawer({ userId, onClose }: Props) {
             </Section>
 
             <Section title="Attribution & referrals">
-              <Field label="Referring partner" value={data.partner ? `${data.partner.code}${data.partner.display_name ? ` — ${data.partner.display_name}` : ""}` : "—"} />
+              <Field label="Referring partner" value={data.partner ? `${data.partner.code}${data.partner.display_name ? ` (${data.partner.display_name})` : ""}` : "—"} />
               <Field label="Source" value={data.partner?.source ?? "—"} />
               <Field label="Attributed at" value={fmtDate(data.partner?.attributed_at)} />
               <Field label="Free trial used" value={data.freeTrial ? `Yes (session #${data.freeTrial.session_number}, ${fmtDate(data.freeTrial.created_at)})` : "No"} />
@@ -251,7 +251,7 @@ export default function UserDetailDrawer({ userId, onClose }: Props) {
                 ))}
                 {data.termsAcceptances.length === 0 && (
                   <div className="text-xs text-muted-foreground">
-                    No recorded acceptances yet{p?.terms_accepted_at ? " (legacy acceptance — only profile timestamp on file)" : ""}.
+                    No recorded acceptances yet{p?.terms_accepted_at ? " (legacy acceptance, only profile timestamp on file)" : ""}.
                   </div>
                 )}
               </div>

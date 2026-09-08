@@ -45,8 +45,8 @@ export default function Reviews() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
       <Helmet>
-        <title>EliteSwap Reviews — Ratings &amp; User Feedback</title>
-        <meta name="description" content={avg !== null ? `EliteSwap has ${avg.toFixed(1)}★ across ${reviews.length} reviews — read what streamers and creators say.` : "Read reviews from EliteSwap users and share your own."} />
+        <title>EliteSwap Reviews: Ratings &amp; User Feedback</title>
+        <meta name="description" content={avg !== null ? `EliteSwap has ${avg.toFixed(1)}★ across ${reviews.length} reviews, read what streamers and creators say.` : "Read reviews from EliteSwap users and share your own."} />
         <link rel="canonical" href="https://eliteswap.online/reviews" />
         <meta property="og:title" content="EliteSwap Reviews" />
         <meta property="og:description" content="What streamers and creators say about EliteSwap." />
@@ -135,7 +135,7 @@ export default function Reviews() {
               <p className="text-center text-muted-foreground text-sm py-12">Loading reviews...</p>
             ) : reviews.length === 0 ? (
               <p className="text-center text-muted-foreground text-sm py-12">
-                No reviews yet — be the first!
+                No reviews yet, be the first!
               </p>
             ) : (
               <div className="space-y-3">

@@ -90,8 +90,8 @@ export default function BroadcastHistory() {
       .select("id, email, display_name, suppressed, send_status, error_message")
       .eq("broadcast_id", id)
       .order("send_status");
-    // Guard against a slower earlier request landing after a newer one —
-    // e.g. clicking two different rows in quick succession — which would
+    // Guard against a slower earlier request landing after a newer one
+    // (e.g. clicking two different rows in quick succession), which would
     // otherwise overwrite the currently-open broadcast's list with a
     // stale one for whichever row was clicked first.
     if (openRequestId.current === id) {
@@ -119,7 +119,7 @@ export default function BroadcastHistory() {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-heading font-bold text-foreground">Broadcast history</h3>
-          <p className="text-xs text-muted-foreground">Audit every blast — counts, status, and per-recipient outcomes.</p>
+          <p className="text-xs text-muted-foreground">Audit every blast: counts, status, and per-recipient outcomes.</p>
         </div>
         <Button variant="outline" size="sm" onClick={fetchRows} disabled={loading} className="font-heading text-xs">
           <RefreshCw className={`w-3 h-3 mr-1 ${loading ? "animate-spin" : ""}`} /> Refresh

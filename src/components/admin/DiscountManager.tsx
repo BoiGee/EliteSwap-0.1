@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
@@ -63,7 +62,7 @@ export default function DiscountManager({ emailForUser }: { emailForUser: (id: s
   const { toast } = useToast();
 
   // Redemptions are fetched per-code, on demand, rather than one shared
-  // list capped at 200 rows total — a single popular code could otherwise
+  // list capped at 200 rows total, since a single popular code could otherwise
   // push another code's redemptions out of view entirely, or silently
   // truncate its own history. discount_codes.times_redeemed (an atomic
   // counter, not derived from this list) is always the accurate count.

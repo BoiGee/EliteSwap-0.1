@@ -198,18 +198,6 @@ export default function ForumManager() {
     loadReports();
   }
 
-  async function applySanction(userId: string, type: "warn" | "mute" | "ban", reason: string, durationHours: number | null) {
-    const { error } = await supabase.rpc("mod_apply_sanction", {
-      p_user_id: userId,
-      p_type: type,
-      p_reason: reason.trim() || null,
-      p_duration_hours: durationHours,
-    });
-    if (error) { toast.error(error.message); return false; }
-    toast.success(`${type[0].toUpperCase()}${type.slice(1)} applied`);
-    return true;
-  }
-
   async function liftSanction(s: SanctionRow) {
     if (s._legacy) {
       const { error } = await supabase.from("forum_user_stats").update({

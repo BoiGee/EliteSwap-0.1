@@ -21,19 +21,19 @@ const APPROVE_PRESETS: { id: string; label: string; note: string }[] = [
     id: "default",
     label: "Standard welcome",
     note:
-      "Thanks for upgrading to EliteSwap — your account is fully unlocked and ready to go. Jump back in any time and reach out if you'd like a hand getting the most out of it. Welcome aboard!",
+      "Thanks for upgrading to EliteSwap; your account is fully unlocked and ready to go. Jump back in any time and reach out if you'd like a hand getting the most out of it. Welcome aboard!",
   },
   {
     id: "fast",
     label: "Quick & friendly",
     note:
-      "Payment confirmed — you're in! Your full access is active right now. Enjoy EliteSwap, and reply to this email any time if you need a hand.",
+      "Payment confirmed, you're in! Your full access is active right now. Enjoy EliteSwap, and reply to this email any time if you need a hand.",
   },
   {
     id: "vip",
     label: "VIP / high-value",
     note:
-      "Thanks so much for upgrading — really appreciate you choosing EliteSwap. Your account is fully unlocked. If you'd ever like a quick walkthrough of the advanced features, just reply to this email and we'll set it up personally.",
+      "Thanks so much for upgrading; really appreciate you choosing EliteSwap. Your account is fully unlocked. If you'd ever like a quick walkthrough of the advanced features, just reply to this email and we'll set it up personally.",
   },
 ];
 
@@ -42,31 +42,31 @@ const REJECT_PRESETS: { id: string; label: string; note: string }[] = [
     id: "general",
     label: "General (safe default)",
     note:
-      "Thanks for trying to upgrade your EliteSwap account — we really appreciate it. We weren't able to verify this particular payment, but no funds are stuck and your account is safe. The fastest fix is to retry with a different method (card and mobile money confirm instantly), or reply to this email with your transaction reference and a team member will personally unlock your access today. We're not going anywhere — let's get you in.",
+      "Thanks for trying to upgrade your EliteSwap account; we really appreciate it. We weren't able to verify this particular payment, but no funds are stuck and your account is safe. The fastest fix is to retry with a different method (card and mobile money confirm instantly), or reply to this email with your transaction reference and a team member will personally unlock your access today. We're not going anywhere, let's get you in.",
   },
   {
     id: "tx_invalid",
     label: "Crypto: tx hash invalid / not found",
     note:
-      "Thanks for upgrading! We checked the blockchain but couldn't find the transaction hash you sent — it may have been mistyped or the transfer didn't go through. Just resend with the correct hash and we'll unlock your account within minutes. If you'd rather pay by card or mobile money, that works instantly too.",
+      "Thanks for upgrading! We checked the blockchain but couldn't find the transaction hash you sent; it may have been mistyped or the transfer didn't go through. Just resend with the correct hash and we'll unlock your account within minutes. If you'd rather pay by card or mobile money, that works instantly too.",
   },
   {
     id: "wrong_amount",
     label: "Crypto: wrong amount sent",
     note:
-      "Thanks for your payment! The amount we received doesn't match the plan price, so we couldn't auto-activate your account. Reply to this email with your transaction hash and we'll sort it out manually today — no need to send anything extra.",
+      "Thanks for your payment! The amount we received doesn't match the plan price, so we couldn't auto-activate your account. Reply to this email with your transaction hash and we'll sort it out manually today; no need to send anything extra.",
   },
   {
     id: "tx_dropped",
     label: "Crypto: transaction never confirmed",
     note:
-      "Your transaction never confirmed on the network — this happens occasionally with low gas fees. No funds have been deducted from you. Try again with the same or a different method and you'll be up and running in a couple of minutes.",
+      "Your transaction never confirmed on the network; this happens occasionally with low gas fees. No funds have been deducted from you. Try again with the same or a different method and you'll be up and running in a couple of minutes.",
   },
   {
     id: "duplicate",
     label: "Suspected duplicate payment",
     note:
-      "Looks like this payment may be a duplicate of one we already processed — we don't want to charge you twice! Reply here and we'll double-check your account status right away.",
+      "Looks like this payment may be a duplicate of one we already processed; we don't want to charge you twice! Reply here and we'll double-check your account status right away.",
   },
 ];
 
@@ -182,7 +182,7 @@ export default function PaymentActionDialog({
     }
     setSaving(true);
     // 1. Update status through the guarded backend path so partner earnings can always resolve.
-    // p_suppress_notify: true — this dialog always sends its own richer
+    // p_suppress_notify: true; this dialog always sends its own richer
     // email below (step 2), so the generic DB-trigger fallback would
     // otherwise race it for the same customer send.
     const { error: updateError } = await supabase.rpc("admin_set_payment_status" as any, {
@@ -199,7 +199,7 @@ export default function PaymentActionDialog({
     }
 
     // 1b. Fire-and-forget admin alert (separate from the user-facing email).
-    // skipUserEmail: true — step 2 below is this dialog's own richer send.
+    // skipUserEmail: true; step 2 below is this dialog's own richer send.
     notifyAdminPaymentEvent({
       paymentId: payment.id,
       eventType: isApprove ? "admin_confirmed" : "admin_rejected",
@@ -251,7 +251,7 @@ export default function PaymentActionDialog({
   };
 
   const placeholder = isApprove
-    ? "e.g. Thanks for your purchase — your account is fully unlocked. Enjoy EliteSwap!"
+    ? "e.g. Thanks for your purchase; your account is fully unlocked. Enjoy EliteSwap!"
     : "e.g. We could not verify the transaction reference. Please re-send with the correct hash, or try a different payment method.";
 
   return (
@@ -322,7 +322,7 @@ export default function PaymentActionDialog({
                   <SelectContent>
                     {plans.map((p) => (
                       <SelectItem key={p.id} value={p.id} className="text-sm">
-                        {p.name} — ${Number(p.price_usd).toFixed(2)}
+                        {p.name}: ${Number(p.price_usd).toFixed(2)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -371,7 +371,7 @@ export default function PaymentActionDialog({
 
             <div>
               <Label className="text-xs text-muted-foreground font-heading mb-1 block">
-                Note ({note.length}/{NOTE_MAX}) — fully editable
+                Note ({note.length}/{NOTE_MAX}), fully editable
               </Label>
               <Textarea
                 value={note}

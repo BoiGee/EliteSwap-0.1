@@ -23,7 +23,7 @@ const PaymentApprovedEmail = ({
       <Heading style={h1}>Payment confirmed ✅</Heading>
       <Text style={text}>{greet}</Text>
       <Text style={text}>
-        Great news — we've received and confirmed your payment. Your EliteSwap access is now <strong>active</strong>.
+        Great news, we've received and confirmed your payment. Your EliteSwap access is now <strong>active</strong>.
       </Text>
 
       <Section style={detailBox}>
@@ -52,7 +52,7 @@ const PaymentApprovedEmail = ({
       <BrandCta href={dashboardUrl || 'https://eliteswap.online/dashboard'}>Open Dashboard</BrandCta>
 
       <Text style={textMuted}>
-        Need help? Reply to this email or reach us at support@eliteswap.online — we're happy to help.
+        Need help? Reply to this email or reach us at support@eliteswap.online; we're happy to help.
       </Text>
     </BrandFrame>
   )
@@ -68,7 +68,7 @@ export const template = {
     planName: 'Pro Monthly',
     paymentMethod: 'Crypto',
     reference: '0xabc123def456...',
-    adminNote: 'Thanks for upgrading — your account is fully unlocked.',
+    adminNote: 'Thanks for upgrading; your account is fully unlocked.',
   },
 } satisfies TemplateEntry
 

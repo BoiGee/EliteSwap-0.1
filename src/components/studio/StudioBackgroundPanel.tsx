@@ -21,7 +21,7 @@ interface BackgroundRow {
 }
 
 interface Props {
-  /** Called whenever the active background/mode changes — null when off. */
+  /** Called whenever the active background/mode changes; null when off. */
   onActiveChange: (config: BackgroundConfig | null) => void;
 }
 
@@ -56,14 +56,14 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       setThumbUrls(urls);
       const active = list.find((r) => r.is_active);
       // Only pay the cross-origin-isolation setup (service worker + a
-      // one-time reload) for accounts actually using AI mode — every other
+      // one-time reload) for accounts actually using AI mode; every other
       // /studio visit, including chroma-key users, stays exactly as fast as
       // before. useBackgroundCompositor falls back to a safe passthrough if
       // segmentation never becomes ready on a given device/browser anyway,
       // so this is never worse than the old chromakey-only behavior even
       // where isolation doesn't take.
       if (active?.mode === "segmentation") ensureStudioCrossOriginIsolation();
-      // Each row's own stored mode — segmentation (AI, no physical screen
+      // Each row's own stored mode: segmentation (AI, no physical screen
       // needed) now works via crossOriginIsolation.ts's service-worker-based
       // COOP/COEP injection (GitHub Pages itself still can't send those
       // headers).

@@ -105,7 +105,7 @@ async function sendTrialEmails(admin: any, purchase: any, userEmail: string | nu
     purchase.payment_method === "momo_manual"
       ? "Mobile Money (manual, GHS)"
       : purchase.payment_method === "paystack"
-      ? "Card or Mobile Money (GHS) — legacy"
+      ? "Card or Mobile Money (GHS), legacy"
       : purchase.usdt_network === "USDT-TRC20" ? "USDT (TRC-20)" : "USDT (BEP-20)";
   const ref = purchase.provider_reference || purchase.id;
   // User confirmation
@@ -130,7 +130,7 @@ async function sendTrialEmails(admin: any, purchase: any, userEmail: string | nu
       console.error("[verify-trial-payment] user email failed", e);
     }
   }
-  // Admin push notification (fire-and-forget) — mirrors the payments push path.
+  // Admin push notification (fire-and-forget), mirrors the payments push path.
   try {
     const who = userEmail || displayName || "a user";
     await admin.functions.invoke("send-admin-push", {
@@ -209,7 +209,7 @@ Deno.serve(async (req) => {
           .is("provider_reference", null);
       }
 
-      // Off-chain (Binance internal transfer) short-circuit — mirrors the
+      // Off-chain (Binance internal transfer) short-circuit, mirrors the
       // main crypto-payment verifier. Merchant USDT addresses are Binance
       // deposit addresses; a Binance-to-Binance internal transfer never hits
       // a public chain, so no explorer will ever find this "hash". Detect it
