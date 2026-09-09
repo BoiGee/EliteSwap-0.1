@@ -1,6 +1,7 @@
-// Cancel a user's own pending USDT trial purchase (they never paid).
-// Marks status='failed' so it frees the "resume pending" UX and doesn't
-// count as a confirmed use toward the 2-trial cap.
+// Cancel a user's own pending USDT or manual-MoMo trial purchase (they
+// never paid, or never sent the transfer). Marks status='failed' so it
+// frees the "resume pending" UX and doesn't count as a confirmed use
+// toward the 2-trial cap.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -40,7 +41,7 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
-    // Only allow cancelling own pending USDT purchase with no tx hash submitted yet.
+    // Only allow cancelling own pending USDT/MoMo purchase with no reference submitted yet.
     const { data: row, error: rErr } = await admin
       .from("trial_purchases")
       .select("id,user_id,status,payment_method,provider_reference,assigned_key_id")
@@ -51,8 +52,10 @@ Deno.serve(async (req) => {
     if (!row) return json({ code: "NOT_FOUND", message: "Purchase not found" }, 404);
     if (row.user_id !== userId) return json({ code: "FORBIDDEN", message: "Not your purchase" }, 403);
     if (row.status !== "pending") return json({ code: "INVALID_STATE", message: `Cannot cancel a ${row.status} purchase` }, 409);
-    if (row.payment_method !== "usdt") return json({ code: "INVALID_METHOD", message: "Only USDT purchases can be self-cancelled" }, 409);
-    if (row.provider_reference) return json({ code: "TXID_SUBMITTED", message: "A transaction hash was already submitted, contact support instead" }, 409);
+    if (row.payment_method !== "usdt" && row.payment_method !== "momo_manual") {
+      return json({ code: "INVALID_METHOD", message: "Only USDT or Mobile Money purchases can be self-cancelled" }, 409);
+    }
+    if (row.provider_reference) return json({ code: "TXID_SUBMITTED", message: "A transaction reference was already submitted, contact support instead" }, 409);
     if (row.assigned_key_id) return json({ code: "ALREADY_FULFILLED", message: "Already fulfilled" }, 409);
 
     const { error: uErr } = await admin
