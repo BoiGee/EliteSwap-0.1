@@ -482,6 +482,20 @@ export function useDecartRealtime() {
         setError(message);
       });
 
+      // New in SDK 0.2.x: fires when the server ends the session on its own
+      // terms (no reconnect coming). The old SDK we ran before had no such
+      // signal at all -- a server-side session end just left the connection
+      // looking "connected" with a dead output track and nothing to catch
+      // it, which is exactly how a silent black-screen bug with zero error
+      // could happen. Treat it as a hard disconnect so the UI reflects
+      // reality instead of sitting on a stale "connected" state.
+      realtimeClient.on("sessionEnded", (payload: { reason?: string }) => {
+        console.warn("[useDecartRealtime] session ended by server:", payload?.reason);
+        setError(payload?.reason ? `Studio session ended: ${payload.reason}` : "Studio session ended. Please reconnect.");
+        setConnectionState("disconnected");
+        realtimeClientRef.current = null;
+      });
+
       realtimeClientRef.current = realtimeClient;
       setConnectionState("connected");
 

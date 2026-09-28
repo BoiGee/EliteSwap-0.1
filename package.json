@@ -13,7 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@decartai/sdk": "0.1.13",
+    "@decartai/sdk": "0.2.3",
     "@fingerprintjs/fingerprintjs": "^5.2.0",
     "@hookform/resolvers": "^3.10.0",
     "@mediapipe/tasks-vision": "^1.0.1",
