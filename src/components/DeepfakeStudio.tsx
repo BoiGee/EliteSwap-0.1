@@ -15,6 +15,7 @@ import { StudioDiagnostics, type DiagnosticsState } from "./StudioDiagnostics";
 import { StudioCountdown } from "./StudioCountdown";
 import { scoreImage } from "@/lib/referenceImageGate";
 import { enhanceImage } from "@/lib/referenceImageEnhance";
+import { isOutputStuckBlank } from "@/lib/detectBlankOutput";
 import { buildPromptWithIdentityGuard } from "@/lib/lucyPromptGuard";
 import { DecartStudioEngine } from "@/lib/decartStudioEngine";
 import { ReferenceBlockedDialog } from "./studio/ReferenceBlockedDialog";
@@ -1961,6 +1962,26 @@ export function DeepfakeStudio() {
     toast({ title: "Prompt applied!" });
   }, [applyStudioRequest, customPrompt, referenceImage, toast, buildPrompt, studioMode]);
 
+  // Decart's setImage() can resolve successfully while the actual output
+  // track silently stalls on a black frame (no SDK-level error fires, so
+  // there's nothing else to catch this). Only meaningful in live mode --
+  // preview mode already has its own "no renderable frame" status-message
+  // fallback in applyStudioRequest. Fire-and-forget from the caller; this
+  // only flips appliedReferenceRef back to null (allowing a retry) and
+  // surfaces a toast if the check actually confirms a stall.
+  const verifyReferenceApplied = useCallback(async (file: File) => {
+    if (studioMode !== "live" || !remoteStream) return;
+    const stuck = await isOutputStuckBlank(remoteStream);
+    if (stuck && appliedReferenceRef.current === file) {
+      appliedReferenceRef.current = null;
+      toast({
+        title: "Face swap output looks blank",
+        description: "The reference didn't seem to apply. Try re-uploading the photo, or reconnect if it persists.",
+        variant: "destructive",
+      });
+    }
+  }, [studioMode, remoteStream, toast]);
+
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target;
     const picked = input.files?.[0];
@@ -2011,10 +2032,11 @@ export function DeepfakeStudio() {
       });
       appliedReferenceRef.current = file;
       toast({ title: "Face swap active!", description: "Your webcam motion now drives the reference face in realtime." });
+      void verifyReferenceApplied(file);
     } else {
       toast({ title: "Reference ready", description: "It will apply automatically as soon as you connect." });
     }
-  }, [toast, connectionState, setImage, buildPrompt]);
+  }, [toast, connectionState, setImage, buildPrompt, verifyReferenceApplied]);
 
   const handleClearImage = useCallback(async () => {
     setReferenceImage(null);
@@ -2052,12 +2074,13 @@ export function DeepfakeStudio() {
           mode: studioMode,
         });
         toast({ title: "Face swap active!", description: "Your webcam motion now drives the reference face in realtime." });
+        void verifyReferenceApplied(file);
       } catch (err) {
         console.warn("[studio] auto-apply reference failed", err);
         appliedReferenceRef.current = null;
       }
     })();
-  }, [applyStudioRequest, isConnected, referenceImage, toast, buildPrompt, studioMode]);
+  }, [applyStudioRequest, isConnected, referenceImage, toast, buildPrompt, studioMode, verifyReferenceApplied]);
 
 
   // Keep connection state in diagnostics HUD when ?debug=1
