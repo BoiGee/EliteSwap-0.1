@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { useAdmin } from "@/hooks/useAdmin";
+import { DATE_PRESETS, computeDateRange, fetchAllRows } from "@/lib/adminData";
 
 const fmtUsd = (n: number | null | undefined) =>
   `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -20,18 +21,6 @@ const ADMIN_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 const localDay = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-// PostgREST caps every response at 1,000 rows (this project's max_rows) whatever .limit() asks for.
-async function fetchAllRows<T>(build: () => any, pageSize = 1000): Promise<{ data: T[]; error: any }> {
-  const out: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await build().range(from, from + pageSize - 1);
-    if (error) return { data: out, error };
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < pageSize) return { data: out, error: null };
-  }
-}
 
 const toCSV = (rows: Record<string, unknown>[]): string => {
   if (rows.length === 0) return "";
@@ -125,39 +114,6 @@ interface ExpenseRow {
   created_at: string;
 }
 
-const presets: { label: string; days: number | "all" | "ytd" | "mtd" | "last" }[] = [
-  { label: "All time", days: "all" },
-  { label: "YTD", days: "ytd" },
-  { label: "This month", days: "mtd" },
-  { label: "Last 30d", days: 30 },
-  { label: "Last 90d", days: 90 },
-  { label: "Last month", days: "last" },
-];
-
-function computeRange(preset: string, customFrom: string, customTo: string): { from: string | null; to: string | null } {
-  const now = new Date();
-  if (preset === "all") return { from: null, to: null };
-  if (preset === "ytd") return { from: new Date(now.getFullYear(), 0, 1).toISOString(), to: null };
-  if (preset === "mtd") return { from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), to: null };
-  if (preset === "last") {
-    const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const to = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { from: from.toISOString(), to: to.toISOString() };
-  }
-  if (preset === "custom") {
-    return {
-      from: customFrom ? new Date(customFrom).toISOString() : null,
-      to: customTo ? new Date(customTo + "T23:59:59").toISOString() : null,
-    };
-  }
-  const n = Number(preset);
-  if (Number.isFinite(n)) {
-    const from = new Date(now.getTime() - n * 86400_000);
-    return { from: from.toISOString(), to: null };
-  }
-  return { from: null, to: null };
-}
-
 export default function FinanceManager() {
   const { toast } = useToast();
   const { isAdmin, loading: rolesLoading } = useAdmin();
@@ -191,7 +147,7 @@ export default function FinanceManager() {
   const [expForm, setExpForm] = useState({ occurred_on: "", category_id: "", amount_usd: "", vendor: "", note: "" });
   const [newCategory, setNewCategory] = useState("");
 
-  const range = useMemo(() => computeRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
+  const range = useMemo(() => computeDateRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
   const loadSeq = useRef(0);
   const loadAll = useCallback(async () => {
@@ -453,7 +409,7 @@ export default function FinanceManager() {
           <Select value={preset} onValueChange={setPreset}>
             <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {presets.map((p) => <SelectItem key={String(p.days)} value={String(p.days)}>{p.label}</SelectItem>)}
+              {DATE_PRESETS.map((p) => <SelectItem key={String(p.days)} value={String(p.days)}>{p.label}</SelectItem>)}
               <SelectItem value="custom">Custom…</SelectItem>
             </SelectContent>
           </Select>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAdmin } from "@/hooks/useAdmin";
+import { DATE_PRESETS, computeDateRange, fetchAllRows } from "@/lib/adminData";
 
 const fmtUsd = (n: number | null | undefined) =>
   `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -29,6 +30,15 @@ const download = (filename: string, content: string) => {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+};
+
+const waitedFor = (iso: string) => {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return days < 14 ? `${days}d` : `${Math.floor(days / 7)}w`;
 };
 
 interface TrialRow {
@@ -61,44 +71,83 @@ export default function TrialPurchaseManager() {
   const [loading, setLoading] = useState(false);
   const [trialBusy, setTrialBusy] = useState<string | null>(null);
 
+  const [preset, setPreset] = useState<string>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [trialMethod, setTrialMethod] = useState<string>("all");
   const [trialStatus, setTrialStatus] = useState<string>("all");
   const [trialKey, setTrialKey] = useState<string>("all");
   const [trialSearch, setTrialSearch] = useState("");
   const [trialSort, setTrialSort] = useState<string>("date_desc");
 
+  const range = useMemo(() => computeDateRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
+
+  const loadSeq = useRef(0);
   const loadAll = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     const [tri, prof] = await Promise.all([
-      supabase.from("trial_purchases" as any)
-        .select("id,user_id,payment_method,amount_usd,amount_local,currency,status,provider_reference,usdt_network,assigned_key_id,confirmed_at,created_at,needs_admin_review")
-        .order("created_at", { ascending: false })
-        .limit(5000),
-      supabase.from("profiles").select("user_id,email,display_name").limit(10000),
+      fetchAllRows<TrialRow>(() =>
+        supabase.from("trial_purchases" as any)
+          .select("id,user_id,payment_method,amount_usd,amount_local,currency,status,provider_reference,usdt_network,assigned_key_id,confirmed_at,created_at,needs_admin_review")
+          .order("created_at", { ascending: false })
+          .order("id")),
+      fetchAllRows<{ user_id: string; email: string | null; display_name: string | null }>(() =>
+        supabase.from("profiles").select("user_id,email,display_name").order("user_id")),
     ]);
-    if (tri.data) setTrials(tri.data as any);
-    if (prof.data) {
-      setProfiles(Object.fromEntries(prof.data.map((p: any) => [p.user_id, p.email ?? ""])));
-      setProfileNames(Object.fromEntries(prof.data.map((p: any) => [p.user_id, p.display_name ?? ""])));
+    if (seq !== loadSeq.current) return;
+    if (!tri.error) setTrials(tri.data);
+    if (!prof.error) {
+      setProfiles(Object.fromEntries(prof.data.map((p) => [p.user_id, p.email ?? ""])));
+      setProfileNames(Object.fromEntries(prof.data.map((p) => [p.user_id, p.display_name ?? ""])));
+    }
+    const firstError = tri.error || prof.error;
+    if (firstError) {
+      toast({ title: "Trials didn't fully load", description: firstError.message ?? String(firstError), variant: "destructive" });
     }
     setLoading(false);
-  }, []);
+  }, [toast]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
-
-  // Live refresh: paid trial confirmations happen via webhook/cron with zero
-  // admin action, so without this the tab would sit stale until reopened;
-  // same class of gap fixed on the Overview tab.
   useEffect(() => {
+    if (canManage) loadAll();
+  }, [canManage, loadAll]);
+
+  // Live: confirmations arrive via the checkout verifier, the cron and other admins, often several
+  // rows in one batch, so reloads are throttled rather than run once per changed row.
+  const loadAllRef = useRef(loadAll);
+  loadAllRef.current = loadAll;
+  useEffect(() => {
+    if (!canManage) return;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        loadAllRef.current();
+      }, 1500);
+    };
     const channel = supabase
       .channel("admin-trial-purchases-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "trial_purchases" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "trial_purchases" }, schedule)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [loadAll]);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadAllRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      if (pending) clearTimeout(pending);
+      document.removeEventListener("visibilitychange", onVisible);
+      supabase.removeChannel(channel);
+    };
+  }, [canManage]);
 
   const filteredTrials = useMemo(() => {
+    const fromMs = range.from ? new Date(range.from).getTime() : null;
+    const toMs = range.to ? new Date(range.to).getTime() : null;
+    const dateOf = (t: TrialRow) => new Date(t.confirmed_at || t.created_at).getTime();
     const list = trials.filter((t) => {
+      if (fromMs !== null && dateOf(t) < fromMs) return false;
+      if (toMs !== null && dateOf(t) >= toMs) return false;
       if (trialStatus !== "all" && t.status !== trialStatus) return false;
       if (trialMethod !== "all" && t.payment_method !== trialMethod) return false;
       if (trialKey === "assigned" && !t.assigned_key_id) return false;
@@ -119,7 +168,6 @@ export default function TrialPurchaseManager() {
       }
       return true;
     });
-    const dateOf = (t: TrialRow) => new Date(t.confirmed_at || t.created_at).getTime();
     const emailOf = (t: TrialRow) => (profiles[t.user_id] || profileNames[t.user_id] || "").toLowerCase();
     list.sort((a, b) => {
       switch (trialSort) {
@@ -135,13 +183,15 @@ export default function TrialPurchaseManager() {
       }
     });
     return list;
-  }, [trials, trialStatus, trialMethod, trialKey, trialSearch, trialSort, profiles, profileNames]);
+  }, [trials, range, trialStatus, trialMethod, trialKey, trialSearch, trialSort, profiles, profileNames]);
 
   const trialStats = useMemo(() => {
     const confirmed = filteredTrials.filter((t) => t.status === "confirmed");
     const usdt = confirmed.filter((t) => t.payment_method === "usdt");
     const ps = confirmed.filter((t) => t.payment_method === "paystack" || t.payment_method === "momo_manual");
     const sum = (arr: TrialRow[]) => arr.reduce((s, t) => s + Number(t.amount_usd || 0), 0);
+    const review = filteredTrials.filter((t) => t.needs_admin_review);
+    const oldestReview = review.reduce<string | null>((o, t) => (!o || t.created_at < o ? t.created_at : o), null);
     return {
       total_usd: sum(confirmed),
       total_count: confirmed.length,
@@ -151,7 +201,8 @@ export default function TrialPurchaseManager() {
       paystack_count: ps.length,
       assigned_count: confirmed.filter((t) => !!t.assigned_key_id).length,
       pending_count: filteredTrials.filter((t) => t.status === "pending").length,
-      needs_review_count: filteredTrials.filter((t) => t.needs_admin_review).length,
+      needs_review_count: review.length,
+      oldest_review: oldestReview,
     };
   }, [filteredTrials]);
 
@@ -161,7 +212,10 @@ export default function TrialPurchaseManager() {
     label: string,
   ) => {
     if (!canManage) return;
-    if (!window.confirm(`${label} this $10 trial purchase?`)) return;
+    const extra = action === "reset_pending"
+      ? "\n\nIts payment reference is kept: a USDT hash is re-checked on-chain within 2 minutes, a Mobile Money reference goes back to the review queue."
+      : action === "confirm" ? "\n\nThe customer gets their key now and a confirmation email within 2 minutes." : "";
+    if (!window.confirm(`${label} this $10 trial purchase?${extra}`)) return;
     setTrialBusy(purchaseId);
     try {
       const { data, error } = await supabase.rpc("admin_manage_trial_purchase" as any, {
@@ -169,7 +223,17 @@ export default function TrialPurchaseManager() {
         p_action: action,
       });
       if (error) throw error;
-      toast({ title: `Trial ${label.toLowerCase()}ed`, description: JSON.stringify(data) });
+      const d = (data ?? {}) as { assigned?: boolean; api_key_preview?: string | null; note?: string };
+      if (action === "confirm" && d.assigned === false) {
+        toast({ title: "Confirmed, but no key was issued", description: "Use \"Assign key\" on this row to retry.", variant: "destructive" });
+      } else {
+        const description =
+          action === "confirm"
+            ? d.note === "key already assigned" ? "It already had a key." : `Key issued${d.api_key_preview ? ` (${d.api_key_preview})` : ""}. The customer is emailed within 2 minutes.`
+            : action === "reject" ? "Marked as failed."
+            : "Back to pending; its reference will be re-checked.";
+        toast({ title: `Trial ${label.toLowerCase()}ed`, description });
+      }
       await loadAll();
     } catch (e: any) {
       toast({ title: "Action failed", description: e?.message || String(e), variant: "destructive" });
@@ -215,7 +279,22 @@ export default function TrialPurchaseManager() {
             Tracked separately from the main Revenue / Net revenue figures on the Finance tab.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadAll} disabled={loading} className="font-heading">{loading ? "…" : "Refresh"}</Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={preset} onValueChange={setPreset}>
+            <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {DATE_PRESETS.map((p) => <SelectItem key={String(p.days)} value={String(p.days)}>{p.label}</SelectItem>)}
+              <SelectItem value="custom">Custom…</SelectItem>
+            </SelectContent>
+          </Select>
+          {preset === "custom" && (
+            <>
+              <Input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="w-[150px]" />
+              <Input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="w-[150px]" />
+            </>
+          )}
+          <Button variant="outline" size="sm" onClick={loadAll} disabled={loading} className="font-heading">{loading ? "…" : "Refresh"}</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -226,7 +305,11 @@ export default function TrialPurchaseManager() {
           { label: "Momo/Card revenue", value: `${fmtUsd(trialStats.paystack_usd)} (${trialStats.paystack_count})`, icon: "💳" },
           { label: "Keys auto-assigned", value: String(trialStats.assigned_count), icon: "🔑" },
           { label: "Pending trials", value: String(trialStats.pending_count), icon: "⏳" },
-          { label: "Needs manual review", value: String(trialStats.needs_review_count), icon: "🟡" },
+          {
+            label: trialStats.oldest_review ? `Needs manual review · oldest ${waitedFor(trialStats.oldest_review)}` : "Needs manual review",
+            value: String(trialStats.needs_review_count),
+            icon: "🟡",
+          },
         ].map((s) => (
           <div key={s.label} className="glass neon-border rounded-xl p-4 space-y-1">
             <div className="text-xl">{s.icon}</div>
@@ -353,7 +436,12 @@ export default function TrialPurchaseManager() {
                   </TableCell>
                   <TableCell className="text-xs">
                     <div className="flex flex-col gap-1 items-start">
-                      <span>{t.status}</span>
+                      <span>
+                        {t.status}
+                        {t.status === "pending" && (
+                          <span className="text-muted-foreground"> · waiting {waitedFor(t.created_at)}</span>
+                        )}
+                      </span>
                       {t.needs_admin_review && (
                         <Badge
                           variant="outline"
