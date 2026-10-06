@@ -168,11 +168,33 @@ export default function PartnerManager({ profiles }: Props) {
     loadPartners();
   };
 
+  // Payouts are recorded against one of two separate balances. Recording more than a balance
+  // holds is how a partner ends up "overpaid" in one ledger while still owed in the other
+  // (ONIONROUTER, 2026: regular commission recorded as override payouts), so it needs an
+  // explicit confirmation. A double click no longer records the payout twice.
+  const [payoutSaving, setPayoutSaving] = useState<Record<string, boolean>>({});
+  const confirmAgainstBalance = (amt: number, owed: number | undefined, ledger: string, other: string) => {
+    const balance = Number(owed ?? 0);
+    if (amt <= balance + 0.005) return true;
+    return confirm(
+      `This ${ledger} payout ($${amt.toFixed(2)}) is more than the $${Math.max(0, balance).toFixed(2)} ${ledger} balance owed.
+
+` +
+      `If this money was for ${other}, cancel and record it there instead.
+
+Record it anyway?`,
+    );
+  };
+
   const recordOverridePayout = async (partnerId: string) => {
     const amt = Number(overrideAmount[partnerId]);
     if (!Number.isFinite(amt) || amt <= 0) {
       toast({ title: "Enter a valid amount", variant: "destructive" }); return;
     }
+    if (payoutSaving[`o:${partnerId}`]) return;
+    const partner = partners.find((p) => p.id === partnerId);
+    if (!confirmAgainstBalance(amt, partner?.override?.override_balance_usd, "override", "regular commission")) return;
+    setPayoutSaving((s) => ({ ...s, [`o:${partnerId}`]: true }));
     const { data: { user: caller } } = await supabase.auth.getUser();
     const { error } = await supabase.from("partner_override_payouts" as any).insert({
       partner_id: partnerId,
@@ -180,6 +202,7 @@ export default function PartnerManager({ profiles }: Props) {
       note: overrideNote[partnerId]?.trim() || null,
       created_by: caller?.id ?? null,
     } as any);
+    setPayoutSaving((s) => ({ ...s, [`o:${partnerId}`]: false }));
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
     setOverrideAmount((s) => ({ ...s, [partnerId]: "" }));
     setOverrideNote((s) => ({ ...s, [partnerId]: "" }));
@@ -217,10 +240,16 @@ export default function PartnerManager({ profiles }: Props) {
 
   const loadPartners = useCallback(async () => {
     setLoading(true);
-    const { data: rows } = await supabase
+    const { data: rows, error: partnersErr } = await supabase
       .from("partners" as any)
       .select("*")
       .order("created_at", { ascending: false });
+    if (partnersErr) {
+      // Keep what's on screen rather than replacing it with an empty list.
+      toast({ title: "Partners didn't load", description: partnersErr.message, variant: "destructive" });
+      setLoading(false);
+      return;
+    }
     const list = (rows ?? []) as unknown as PartnerRow[];
     const [withStats, payRes, opRes] = await Promise.all([
       Promise.all(
@@ -256,7 +285,7 @@ export default function PartnerManager({ profiles }: Props) {
     setPayoutsByPartner(groupBy((payRes.data as any[]) ?? []));
     setOverridePayoutsByPartner(groupBy((opRes.data as any[]) ?? []));
     setLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     loadPartners();
@@ -314,6 +343,10 @@ export default function PartnerManager({ profiles }: Props) {
       toast({ title: "Enter a valid amount", variant: "destructive" });
       return;
     }
+    if (payoutSaving[`c:${partnerId}`]) return;
+    const partner = partners.find((p) => p.id === partnerId);
+    if (!confirmAgainstBalance(amt, partner?.stats?.balance_owed_usd, "commission", "override earnings")) return;
+    setPayoutSaving((s) => ({ ...s, [`c:${partnerId}`]: true }));
     const { data: { user: caller } } = await supabase.auth.getUser();
     const { error } = await supabase.from("partner_payouts" as any).insert({
       partner_id: partnerId,
@@ -321,6 +354,7 @@ export default function PartnerManager({ profiles }: Props) {
       note: payoutNote[partnerId]?.trim() || null,
       created_by: caller?.id ?? null,
     } as any);
+    setPayoutSaving((s) => ({ ...s, [`c:${partnerId}`]: false }));
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
       return;
@@ -518,7 +552,7 @@ export default function PartnerManager({ profiles }: Props) {
                 onChange={(e) => setPayoutNote((s) => ({ ...s, [p.id]: e.target.value }))}
                 className="bg-muted/30 border-border flex-1"
               />
-              <Button onClick={() => recordPayout(p.id)} className="font-heading">Record payout</Button>
+              <Button onClick={() => recordPayout(p.id)} disabled={!!payoutSaving[`c:${p.id}`]} className="font-heading">Record payout</Button>
             </div>
 
             {(payoutsByPartner[p.id]?.length ?? 0) > 0 && (
@@ -630,7 +664,7 @@ export default function PartnerManager({ profiles }: Props) {
                   onChange={(e) => setOverrideNote((s) => ({ ...s, [p.id]: e.target.value }))}
                   className="bg-muted/30 border-border flex-1"
                 />
-                <Button onClick={() => recordOverridePayout(p.id)} variant="outline" className="font-heading">
+                <Button onClick={() => recordOverridePayout(p.id)} disabled={!!payoutSaving[`o:${p.id}`]} variant="outline" className="font-heading">
                   Record override payout
                 </Button>
               </div>

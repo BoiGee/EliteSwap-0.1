@@ -77,7 +77,9 @@ export default function DiscountManager({ emailForUser }: { emailForUser: (id: s
     ]);
     if (c.data) setCodes(c.data as unknown as DiscountCode[]);
     if (p.data) setPlans(p.data as Plan[]);
-  }, []);
+    const err = c.error ?? p.error;
+    if (err) toast({ title: "Discount codes didn't load", description: err.message, variant: "destructive" });
+  }, [toast]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

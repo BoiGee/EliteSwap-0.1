@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,14 +111,20 @@ export default function TimeLedgerManager() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const fetchData = async () => {
-    setLoading(true);
+  const lastErrorRef = useRef<string | null>(null);
+  const fetchData = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     const { data: rpc, error } = await supabase.rpc("admin_time_ledger" as any);
-    setLoading(false);
+    if (!opts?.silent) setLoading(false);
     if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      // Auto-refresh failures toast once, not on every tick.
+      if (!opts?.silent || lastErrorRef.current !== error.message) {
+        toast({ title: "Time ledger didn't load", description: error.message, variant: "destructive" });
+      }
+      lastErrorRef.current = error.message;
       return;
     }
+    lastErrorRef.current = null;
     setData(rpc as unknown as Ledger);
   };
 
@@ -129,7 +135,10 @@ export default function TimeLedgerManager() {
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const t = setInterval(fetchData, 5000);
+    // The ledger is ~350 KB per call; refresh every 15s and only while this tab is visible.
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") fetchData({ silent: true });
+    }, 15000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh]);
@@ -283,7 +292,7 @@ export default function TimeLedgerManager() {
             <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
           </div>
           <Button variant="outline" size="sm" onClick={exportCsv} className="font-heading text-xs">Export CSV</Button>
-          <Button size="sm" onClick={fetchData} disabled={loading} className="font-heading text-xs">
+          <Button size="sm" onClick={() => fetchData()} disabled={loading} className="font-heading text-xs">
             {loading ? "Loading…" : "Refresh"}
           </Button>
         </div>

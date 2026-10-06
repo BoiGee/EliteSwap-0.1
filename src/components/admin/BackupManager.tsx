@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { readFunctionError } from "@/lib/adminData";
 
 interface BackupRun {
   id: string;
@@ -106,7 +107,7 @@ export default function BackupManager() {
       const { data, error } = await supabase.functions.invoke("daily-db-backup", {
         body: { trigger: "manual" },
       });
-      if (error) throw error;
+      if (error) throw new Error((await readFunctionError(error)).message);
       toast({
         title: (data as any)?.queued ? "Backup started 🚀" : "Backup complete ✅",
         description: (data as any)?.queued
@@ -132,15 +133,26 @@ export default function BackupManager() {
   // trusting whatever was signed at creation time.
   const download = async (run: BackupRun) => {
     setSigning(run.id);
+    // Open the tab during the click itself: browsers block window.open() once it's behind an
+    // await, which made "Download" silently do nothing. The tab is pointed at the link once
+    // it's signed. (No "noopener" here, or the handle would be null.)
+    const tab = window.open("", "_blank");
     try {
       const { data, error } = await supabase.functions.invoke("daily-db-backup", {
         body: { mode: "resign", run_id: run.id },
       });
       if (error || !(data as any)?.download_url) {
-        throw new Error((data as any)?.error ?? error?.message ?? "Could not sign a download link");
+        throw new Error(error ? (await readFunctionError(error)).message : (data as any)?.error ?? "Could not sign a download link");
       }
-      window.open((data as any).download_url as string, "_blank", "noopener,noreferrer");
+      const url = (data as any).download_url as string;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
     } catch (e: any) {
+      tab?.close();
       toast({ title: "Download failed", description: e?.message ?? "Unknown error", variant: "destructive" });
     } finally {
       setSigning(null);

@@ -241,29 +241,41 @@ export default function LiveConnectionsManager() {
     fetchActiveKeys();
     fetchHistory();
 
-    // Realtime: react instantly to session start / heartbeat / end and to
-    // key changes that affect remaining time.
-    const channel = supabase
-      .channel("admin-live-connections")
-      .on("postgres_changes", { event: "*", schema: "public", table: "studio_sessions" }, () => {
-        fetchLive();
-        fetchHistory();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "api_keys" }, () => {
+    // Realtime: api_keys changes (session start/end stamps, remaining time) refresh the live
+    // lists. studio_sessions isn't in the realtime publication (a heartbeat per active session
+    // every few seconds), so sessions are polled. Bursts are throttled to one refetch a second.
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleKeyRefresh = () => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        if (!alive) return;
         fetchLive();
         fetchActiveKeys();
         fetchRecent();
-      })
+      }, 1000);
+    };
+    const channel = supabase
+      .channel("admin-live-connections")
+      .on("postgres_changes", { event: "*", schema: "public", table: "api_keys" }, scheduleKeyRefresh)
       .subscribe();
 
-    // Safety-net polling in case the realtime socket drops.
-    const a = setInterval(fetchLive, 5000);
-    const b = setInterval(fetchRecent, 15000);
-    const d = setInterval(fetchActiveKeys, 10000);
-    const e = setInterval(fetchHistory, 30000);
+    // Polling, paused while the browser tab is hidden.
+    const whenVisible = (fn: () => void) => () => { if (document.visibilityState === "visible") fn(); };
+    const a = setInterval(whenVisible(fetchLive), 5000);
+    const b = setInterval(whenVisible(fetchRecent), 15000);
+    const d = setInterval(whenVisible(fetchActiveKeys), 10000);
+    const e = setInterval(whenVisible(fetchHistory), 30000);
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      fetchLive(); fetchRecent(); fetchActiveKeys(); fetchHistory();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     const c = setInterval(() => setTick((t) => t + 1), 1000);
     return () => {
       alive = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      document.removeEventListener("visibilitychange", onVisible);
       supabase.removeChannel(channel);
       clearInterval(a);
       clearInterval(b);
@@ -284,14 +296,21 @@ export default function LiveConnectionsManager() {
     const missing = Array.from(ids).filter((id) => !(id in emails));
     if (missing.length === 0) return;
     (async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("user_id, email")
-        .in("user_id", missing);
-      if (!data) return;
+      // Chunked: a few hundred UUIDs in one .in() overflows the request URL.
+      const data: any[] = [];
+      for (let i = 0; i < missing.length; i += 150) {
+        const { data: chunk, error } = await supabase
+          .from("profiles")
+          .select("user_id, email")
+          .in("user_id", missing.slice(i, i + 150));
+        if (error) console.error("[LiveConnections] email lookup error", error);
+        data.push(...(chunk ?? []));
+      }
+      // Every looked-up id gets an entry (email or short id), so a failed lookup isn't retried
+      // on every refresh.
       setEmails((prev) => {
         const next = { ...prev };
-        (data as any[]).forEach((p) => {
+        data.forEach((p) => {
           next[p.user_id] = p.email ?? p.user_id.slice(0, 8);
         });
         missing.forEach((id) => {
@@ -377,6 +396,9 @@ export default function LiveConnectionsManager() {
   const deactivateKey = async (row: ActiveKeyRow) => {
     if (!confirm(`Deactivate ${row.label ?? "this key"} for ${emails[row.user_id] ?? row.user_id.slice(0, 8)}? They will lose access immediately.`)) return;
     try {
+      // End the running session through the normal path first, so it's billed and logged
+      // instead of being left open until the reaper finds it.
+      if (row.active_session_id) await closeViaRpc(row.id, "force_release");
       const update: any = {
         is_active: false,
         active_session_id: null,
@@ -392,16 +414,10 @@ export default function LiveConnectionsManager() {
     }
   };
 
-  // Auto-release orphaned sessions (calls the RPC so it gets logged)
-  useEffect(() => {
-    live.forEach((r) => {
-      const st = statusOf(r);
-      if (st.label === "Orphaned" && !releasingRef.current.has(r.id)) {
-        releaseRow(r, { silent: true, reason: "orphaned_auto" });
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, tick]);
+  // Orphaned sessions are closed server-side by the reap-orphaned-studio-sessions cron (every
+  // 2 seconds). This view used to also close them itself, from the admin's own clock: before
+  // the server-time sync landed, a computer clock running 90s+ fast closed real users' live
+  // sessions. "Force release" stays available as a manual action.
 
   // ---- History view (filter + sort + paginate) ----
   const historyView = useMemo(() => {

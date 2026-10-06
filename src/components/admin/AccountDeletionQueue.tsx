@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { readFunctionError } from "@/lib/adminData";
 
 interface Row {
   id: string;
@@ -19,25 +20,40 @@ export default function AccountDeletionQueue() {
   const { toast } = useToast();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("account_deletion_requests" as any)
       .select("*")
       .order("requested_at", { ascending: false });
-    setRows((data as any) ?? []);
+    if (error) toast({ title: "Deletion queue didn't load", description: error.message, variant: "destructive" });
+    else setRows((data as any) ?? []);
     setLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => { load(); }, [load]);
 
+  // New requests arrive live (account_deletion_requests is in the realtime publication).
+  useEffect(() => {
+    const ch = supabase
+      .channel("admin-deletion-queue")
+      .on("postgres_changes", { event: "*", schema: "public", table: "account_deletion_requests" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [load]);
+
   const cancel = async (userId: string) => {
+    if (busy) return;
+    setBusy(userId);
     const { data, error } = await supabase.functions.invoke("cancel-account-deletion", {
       body: { target_user_id: userId },
     });
+    setBusy(null);
     if (error || (data as any)?.code) {
-      toast({ title: "Error", description: (data as any)?.message ?? error?.message, variant: "destructive" });
+      const message = error ? (await readFunctionError(error)).message : (data as any)?.message ?? (data as any)?.code;
+      toast({ title: "Couldn't cancel deletion", description: message, variant: "destructive" });
     } else {
       toast({ title: "Deletion cancelled ✅" });
       load();
@@ -45,12 +61,16 @@ export default function AccountDeletionQueue() {
   };
 
   const purgeNow = async (userId: string) => {
+    if (busy) return;
     if (!confirm("Permanently wipe this user RIGHT NOW? This cannot be undone.")) return;
+    setBusy(userId);
     const { data, error } = await supabase.functions.invoke("purge-deleted-accounts", {
       body: { target_user_id: userId },
     });
+    setBusy(null);
     if (error || (data as any)?.code) {
-      toast({ title: "Error", description: (data as any)?.message ?? error?.message, variant: "destructive" });
+      const message = error ? (await readFunctionError(error)).message : (data as any)?.message ?? (data as any)?.code;
+      toast({ title: "Purge failed", description: message, variant: "destructive" });
     } else {
       toast({ title: `Purged ${(data as any)?.purged ?? 0} account(s)` });
       load();
@@ -96,10 +116,10 @@ export default function AccountDeletionQueue() {
               <span className={`text-xs font-heading px-2 py-0.5 rounded-full ${s.cls}`}>{s.label}</span>
               {isActive && (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => cancel(r.user_id)} className="font-heading text-xs">
+                  <Button size="sm" variant="outline" onClick={() => cancel(r.user_id)} disabled={busy === r.user_id} className="font-heading text-xs">
                     Cancel
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => purgeNow(r.user_id)}
+                  <Button size="sm" variant="outline" onClick={() => purgeNow(r.user_id)} disabled={busy === r.user_id}
                     className="font-heading text-xs border-destructive/40 text-destructive hover:bg-destructive/10">
                     Purge now
                   </Button>

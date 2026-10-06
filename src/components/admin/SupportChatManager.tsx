@@ -380,8 +380,8 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
     content?: string,
     fileData?: { url: string; name: string; type: string; size: number },
   ) => {
-    if (!selectedConv || !user) return;
-    if (!content && !fileData) return;
+    if (!selectedConv || !user) return false;
+    if (!content && !fileData) return false;
 
     setSending(true);
     const { data, error } = await supabase
@@ -399,7 +399,9 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
       .select()
       .single();
     if (error) {
-      toast({ title: "Failed to send", variant: "destructive" });
+      toast({ title: "Failed to send", description: error.message, variant: "destructive" });
+      setSending(false);
+      return false;
     } else if (data) {
       const sent = data as Message;
       setMessages((prev) => (prev.some((existing) => existing.id === sent.id) ? prev : [...prev, sent]));
@@ -416,12 +418,15 @@ export default function SupportChatManager({ profiles, userRoles = [] }: { profi
     }
     setSending(false);
     setTimeout(() => inputRef.current?.focus(), 30);
+    return true;
   };
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    sendMessage(input.trim());
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
     setInput("");
+    // Put the text back if it didn't send, instead of losing the reply.
+    if (!(await sendMessage(text))) setInput((cur) => cur || text);
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {

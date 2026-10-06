@@ -182,18 +182,25 @@ export default function ForumManager() {
   }
 
   async function resolveReport(r: ReportRow, action: "hide" | "delete" | "dismiss") {
-    if (action === "hide") {
+    // The report is only closed once the hide/delete really happened; before, a failed (or
+    // RLS-blocked, zero-row) update still marked it "actioned" with the post left up.
+    if (action === "hide" || action === "delete") {
       const table = r.target_kind === "thread" ? "forum_threads" : "forum_replies";
-      await supabase.from(table).update({ hidden_at: new Date().toISOString(), hidden_reason: "admin: report actioned" }).eq("id", r.target_id);
-    } else if (action === "delete") {
-      const table = r.target_kind === "thread" ? "forum_threads" : "forum_replies";
-      await supabase.from(table).delete().eq("id", r.target_id);
+      const res = action === "hide"
+        ? await supabase.from(table).update({ hidden_at: new Date().toISOString(), hidden_reason: "admin: report actioned" }).eq("id", r.target_id).select("id")
+        : await supabase.from(table).delete().eq("id", r.target_id).select("id");
+      if (res.error) { toast.error(res.error.message); return; }
+      if (!res.data?.length) {
+        toast.error(action === "hide" ? "Couldn't hide it: the post wasn't found or you lack permission." : "Couldn't delete it: the post wasn't found or you lack permission.");
+        return;
+      }
     }
-    await supabase.from("forum_reports").update({
+    const { error: reportErr } = await supabase.from("forum_reports").update({
       status: action === "dismiss" ? "dismissed" : "actioned",
       handled_at: new Date().toISOString(),
       handled_by: user?.id ?? null,
     }).eq("id", r.id);
+    if (reportErr) { toast.error(reportErr.message); return; }
     toast.success("Report handled");
     loadReports();
   }

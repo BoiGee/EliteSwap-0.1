@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
@@ -16,6 +17,8 @@ interface Payment {
   status: string;
   created_at: string;
   updated_at?: string;
+  discount_code?: string | null;
+  discount_amount_usd?: number | null;
 }
 
 interface Profile {
@@ -36,6 +39,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogAction, setDialogAction] = useState<"confirmed" | "rejected" | null>(null);
   const [dialogPayment, setDialogPayment] = useState<Payment | null>(null);
+  const [search, setSearch] = useState("");
 
   const openDialog = (p: Payment, action: "confirmed" | "rejected") => {
     setDialogPayment(p);
@@ -43,15 +47,23 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
     setDialogOpen(true);
   };
 
-  const profileFor = (uid: string | null) => (uid ? profiles.find((p) => p.user_id === uid) : null) ?? null;
+  const profileById = useMemo(() => new Map(profiles.map((p) => [p.user_id, p])), [profiles]);
+  const profileFor = (uid: string | null) => (uid ? profileById.get(uid) : null) ?? null;
 
   const emailForUser = (userId: string | null) =>
-    (userId && profiles.find((p) => p.user_id === userId)?.email) ?? (userId ? userId.slice(0, 8) : "deleted account");
+    (userId && profileById.get(userId)?.email) ?? (userId ? userId.slice(0, 8) : "deleted account");
 
   const displayNameForUser = (userId: string | null) =>
-    (userId && profiles.find((p) => p.user_id === userId)?.display_name) ?? "—";
+    (userId && profileById.get(userId)?.display_name) ?? "—";
 
-  const filtered = filter === "all" ? payments : payments.filter((p) => p.status === filter);
+  const q = search.trim().toLowerCase();
+  const filtered = payments.filter((p) => {
+    if (filter !== "all" && p.status !== filter) return false;
+    if (!q) return true;
+    const prof = p.user_id ? profileById.get(p.user_id) : null;
+    return [prof?.email, prof?.display_name, p.tx_hash, p.id, p.user_id, p.discount_code]
+      .some((v) => (v ?? "").toLowerCase().includes(q));
+  });
 
   const statusBadge = (status: string) => {
     const cls =
@@ -82,9 +94,9 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
   const binanceDepositUrl = (hash: string) =>
     `https://www.binance.com/en/my/wallet/history/deposit-crypto?search=${encodeURIComponent(hash)}`;
 
-  const totalUsd = payments
-    .filter((p) => p.status === "confirmed" && p.amount_usd)
-    .reduce((sum, p) => sum + (p.amount_usd ?? 0), 0);
+  const confirmed = payments.filter((p) => p.status === "confirmed");
+  const totalUsd = confirmed.reduce((sum, p) => sum + Number(p.amount_usd ?? 0), 0);
+  const missingAmount = confirmed.filter((p) => p.amount_usd == null).length;
 
   return (
     <div className="space-y-4">
@@ -92,6 +104,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
         <h2 className="text-2xl font-heading font-bold text-foreground">Manage Payments</h2>
         <div className="text-xs text-muted-foreground font-heading">
           Total confirmed: <span className="text-primary font-semibold">${totalUsd.toFixed(2)}</span>
+          {missingAmount > 0 && <span className="text-yellow-500"> ({missingAmount} with no amount, not counted)</span>}
         </div>
       </div>
 
@@ -114,6 +127,8 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
         })}
       </div>
 
+      <Input placeholder="Search email, name, tx hash, payment ID, discount code…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-md h-9 text-sm" />
+
       {/* Table */}
       <div className="glass rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -131,9 +146,8 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
           </TableHeader>
           <TableBody>
             {filtered.map((p) => (
-              <>
+              <Fragment key={p.id}>
                 <TableRow
-                  key={p.id}
                   className="border-border cursor-pointer hover:bg-muted/30"
                   onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                 >
@@ -142,7 +156,8 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                   </TableCell>
                   <TableCell className="font-heading font-semibold text-xs">{p.currency}</TableCell>
                   <TableCell className="font-mono text-xs">
-                    {p.amount_usd != null ? `$${p.amount_usd.toFixed(2)}` : "—"}
+                    {p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : "—"}
+                    {p.discount_code && <div className="text-[10px] text-muted-foreground">{p.discount_code}{p.discount_amount_usd ? ` −$${Number(p.discount_amount_usd).toFixed(2)}` : ""}</div>}
                   </TableCell>
                   <TableCell className="font-mono text-xs max-w-[140px] truncate">
                     {p.tx_hash ?? "—"}
@@ -188,7 +203,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
 
                 {/* Expanded detail row */}
                 {expandedId === p.id && (
-                  <TableRow key={`${p.id}-detail`} className="border-border bg-muted/10">
+                  <TableRow className="border-border bg-muted/10">
                     <TableCell colSpan={7}>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 py-2 text-xs">
                         <div>
@@ -214,7 +229,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                         <div>
                           <span className="text-muted-foreground font-heading block">Amount (USD)</span>
                           <span className="text-foreground font-semibold">
-                            {p.amount_usd != null ? `$${p.amount_usd.toFixed(2)}` : "Not set"}
+                            {p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : "Not set"}
                           </span>
                         </div>
                         <div className="col-span-2 md:col-span-3">
@@ -255,12 +270,12 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                     </TableCell>
                   </TableRow>
                 )}
-              </>
+              </Fragment>
             ))}
             {filtered.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
-                  No payments found.
+                  {q ? "No payments match this search." : "No payments found."}
                 </TableCell>
               </TableRow>
             )}

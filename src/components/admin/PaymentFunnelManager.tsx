@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { fetchAllRows } from "@/lib/adminData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FUNNEL_STAGE_LABELS } from "@/lib/paymentFunnel";
@@ -34,6 +36,7 @@ export default function PaymentFunnelManager() {
   const [nudgeOpen, setNudgeOpen] = useState(false);
 
   const [nudgeCountByUser, setNudgeCountByUser] = useState<Record<string, number>>({});
+  const { toast } = useToast();
 
   const fetchData = async () => {
     setLoading(true);
@@ -58,21 +61,29 @@ export default function PaymentFunnelManager() {
       }
       return out;
     };
-    const [pRows, payRes, nudgeRes] = await Promise.all([
-      fetchAllProfiles(),
-      supabase.from("payments").select("user_id").eq("status", "confirmed"),
-      supabase.from("payment_nudge_history").select("user_id"),
-    ]);
-    setProfiles(pRows);
-    if (payRes.data) setConfirmedUserIds(new Set((payRes.data as ConfirmedPayment[]).map((p) => p.user_id)));
-    if (nudgeRes.data) {
+    try {
+      // Payments and nudges are paginated too: past 1,000 rows each, buyers would start showing
+      // as "abandoned" and nudge counts would undercount.
+      const [pRows, payRes, nudgeRes] = await Promise.all([
+        fetchAllProfiles(),
+        fetchAllRows<ConfirmedPayment>(() => supabase.from("payments").select("user_id").eq("status", "confirmed").order("id")),
+        fetchAllRows<{ user_id: string }>(() => supabase.from("payment_nudge_history").select("user_id").order("id")),
+      ]);
+      if (payRes.error) throw payRes.error;
+      if (nudgeRes.error) throw nudgeRes.error;
+      setProfiles(pRows);
+      setConfirmedUserIds(new Set(payRes.data.map((p) => p.user_id)));
       const counts: Record<string, number> = {};
-      for (const row of nudgeRes.data as { user_id: string }[]) {
+      for (const row of nudgeRes.data) {
         counts[row.user_id] = (counts[row.user_id] || 0) + 1;
       }
       setNudgeCountByUser(counts);
+    } catch (e: any) {
+      // Previously an error here left the tab stuck on "Loading..." with nothing shown.
+      toast({ title: "Funnel didn't load", description: e?.message ?? String(e), variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {

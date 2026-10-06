@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import UserDetailDrawer from "./UserDetailDrawer";
 import KeySessionDetailDialog from "./KeySessionDetailDialog";
@@ -76,30 +77,45 @@ export default function KeyActivityManager() {
   const [openKeyDetail, setOpenKeyDetail] = useState<string | null>(null);
   const [pendingDebts, setPendingDebts] = useState<PendingDebt[]>([]);
   const [showDebts, setShowDebts] = useState(false);
+  const { toast } = useToast();
+  const loadSeq = useRef(0);
 
   const fetchRows = useCallback(async (opts?: { silent?: boolean }) => {
+    const seq = ++loadSeq.current;
     if (!opts?.silent) setLoading(true);
     const [{ data, error }, debtRes] = await Promise.all([
       supabase.rpc("admin_list_key_activity" as any, { p_days: days, p_filter: filter }),
       supabase.rpc("admin_list_pending_time_debts" as any),
     ]);
+    // A slower, older request (e.g. from before a filter change) must not overwrite newer rows.
+    if (seq !== loadSeq.current) return;
     if (!opts?.silent) setLoading(false);
     if (!error && data) setRows(data as Row[]);
     if (!debtRes.error && debtRes.data) setPendingDebts(debtRes.data as PendingDebt[]);
-  }, [days, filter]);
+    const err = error ?? debtRes.error;
+    if (err && !opts?.silent) toast({ title: "Key activity didn't load", description: err.message, variant: "destructive" });
+  }, [days, filter, toast]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
   // Live refresh: poll every 15s + react to studio_sessions/api_keys changes
   // so the admin view stays in sync without a manual reload.
   useEffect(() => {
-    const poll = setInterval(() => { fetchRows({ silent: true }); }, 15000);
+    const poll = setInterval(() => {
+      if (document.visibilityState === "visible") fetchRows({ silent: true });
+    }, 15000);
+    // api_keys changes in bursts while sessions run; refetch at most every 3 seconds.
+    // (studio_sessions isn't in the realtime publication, so the poll covers it.)
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; fetchRows({ silent: true }); }, 3000);
+    };
     const ch = supabase
       .channel("admin-key-activity-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "studio_sessions" }, () => fetchRows({ silent: true }))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "api_keys" }, () => fetchRows({ silent: true }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "api_keys" }, schedule)
       .subscribe();
-    return () => { clearInterval(poll); supabase.removeChannel(ch); };
+    return () => { clearInterval(poll); if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
   }, [fetchRows]);
 
   const filtered = rows.filter((r) => {

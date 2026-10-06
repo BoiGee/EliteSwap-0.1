@@ -78,6 +78,9 @@ interface Payment {
   tx_hash: string | null;
   payment_method?: string;
   status: string;
+  plan_id?: string | null;
+  discount_code?: string | null;
+  discount_amount_usd?: number | null;
 }
 
 interface Profile {
@@ -168,10 +171,24 @@ export default function PaymentActionDialog({
     if (preset) setNote(preset.note);
   };
 
+  // The customer's discount was applied when the payment was created (amount_usd is already
+  // net of it). Switching plans keeps the same percentage off rather than charging full price.
+  const discountRate = (() => {
+    const off = Number(payment.discount_amount_usd ?? 0);
+    const paid = Number(payment.amount_usd ?? 0);
+    return off > 0 && paid + off > 0 ? off / (paid + off) : 0;
+  })();
+
   const handlePlanChange = (id: string) => {
     setSelectedPlanId(id);
     const plan = plans.find((p) => p.id === id);
-    if (plan) setAmountUsd(String(Number(plan.price_usd)));
+    if (!plan) return;
+    if (id === payment.plan_id && payment.amount_usd != null) {
+      setAmountUsd(String(Number(payment.amount_usd)));
+      return;
+    }
+    const price = Number(plan.price_usd);
+    setAmountUsd(String(Math.round(price * (1 - discountRate) * 100) / 100));
   };
 
   const handleConfirm = async () => {
@@ -205,7 +222,7 @@ export default function PaymentActionDialog({
       eventType: isApprove ? "admin_confirmed" : "admin_rejected",
       userEmail: profile?.email ?? null,
       userDisplayName: profile?.display_name ?? null,
-      amountUsd: payment.amount_usd,
+      amountUsd: isApprove ? parsedAmount : payment.amount_usd,
       currency: payment.currency,
       paymentMethod: method,
       reference,
@@ -222,7 +239,7 @@ export default function PaymentActionDialog({
             idempotencyKey: `payment-${payment.id}-${action}`,
             templateData: {
               displayName: profile.display_name || profile.email.split("@")[0],
-              amountUsd: payment.amount_usd,
+              amountUsd: isApprove ? parsedAmount : payment.amount_usd,
               paymentMethod: method,
               reference,
               adminNote: note.trim() || undefined,
@@ -339,6 +356,11 @@ export default function PaymentActionDialog({
                   className="h-9 text-sm"
                   placeholder="0.00"
                 />
+                {payment.discount_code && discountRate > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Customer used {payment.discount_code} ({Math.round(discountRate * 100)}% off); the amount includes it.
+                  </p>
+                )}
               </div>
             </div>
           )}

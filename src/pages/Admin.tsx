@@ -102,6 +102,8 @@ export default function Admin() {
   const [editKeyValue, setEditKeyValue] = useState("");
   const [editKeyLabel, setEditKeyLabel] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [keySearch, setKeySearch] = useState("");
+  const [keyStatus, setKeyStatus] = useState<"all" | "active" | "inactive">("all");
   const [navOpen, setNavOpen] = useState(false);
   const { totalUnread: supportUnread } = useSupportChatNotifications();
   // Last-fetched is_active per key, so realtime can tell a real (de)activation from heartbeat noise.
@@ -228,6 +230,16 @@ export default function Admin() {
   }, [isStaff, fetchAll]);
 
   const toggleApiKey = async (id: string, is_active: boolean) => {
+    // Deactivating a key that's mid-session ends the session through the normal path first
+    // (billed and logged), instead of leaving it open until the reaper notices.
+    const key = apiKeys.find((k) => k.id === id) as (ApiKey & { active_session_id?: string | null }) | undefined;
+    if (is_active && key?.active_session_id) {
+      const { error: closeErr } = await supabase.rpc("close_studio_session" as any, { p_api_key_id: id, p_reason: "force_release" });
+      if (closeErr) {
+        toast({ title: "Couldn't end the live session", description: closeErr.message, variant: "destructive" });
+        return;
+      }
+    }
     const { error } = await supabase.from("api_keys").update({ is_active: !is_active }).eq("id", id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -238,6 +250,9 @@ export default function Admin() {
   };
 
   const deleteApiKey = async (id: string) => {
+    const key = apiKeys.find((k) => k.id === id);
+    const owner = key ? emailForUser(key.user_id) : "this user";
+    if (!confirm(`Permanently delete ${key?.label || "this key"} for ${owner}? Their remaining time on it is lost. Deactivate instead if you may need it back.`)) return;
     const { error } = await supabase.from("api_keys").delete().eq("id", id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -358,8 +373,10 @@ export default function Admin() {
     setTab("analytics");
   }
 
+  // A map, not profiles.find(): lists like Unique Keys call this once per row (500+ rows x 2,000+ profiles).
+  const emailById = new Map(profiles.map((p) => [p.user_id, p.email]));
   const emailForUser = (userId: string | null) =>
-    (userId && profiles.find((p) => p.user_id === userId)?.email) ?? (userId ? userId.slice(0, 8) : "deleted account");
+    (userId && emailById.get(userId)) || (userId ? userId.slice(0, 8) : "deleted account");
 
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
@@ -490,8 +507,22 @@ export default function Admin() {
           {tab === "api_keys" && (
             <div className="space-y-4">
               <h2 className="text-2xl font-heading font-bold text-foreground">Manage Unique Keys</h2>
+              <div className="flex flex-wrap gap-2 items-center">
+                <Input placeholder="Search email, label or key…" value={keySearch} onChange={(e) => setKeySearch(e.target.value)} className="max-w-sm h-9 text-sm" />
+                <select value={keyStatus} onChange={(e) => setKeyStatus(e.target.value as typeof keyStatus)} className="h-9 px-2 rounded-md bg-background border border-input text-sm font-heading">
+                  <option value="all">All ({apiKeys.length})</option>
+                  <option value="active">Active ({apiKeys.filter((k) => k.is_active).length})</option>
+                  <option value="inactive">Inactive ({apiKeys.filter((k) => !k.is_active).length})</option>
+                </select>
+              </div>
               <div className="space-y-2">
-                {apiKeys.map((k) => (
+                {apiKeys.filter((k) => {
+                  if (keyStatus === "active" && !k.is_active) return false;
+                  if (keyStatus === "inactive" && k.is_active) return false;
+                  const q = keySearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return [emailForUser(k.user_id), k.label, k.key].some((v) => (v ?? "").toLowerCase().includes(q));
+                }).map((k) => (
                   <div key={k.id} className="glass rounded-xl px-4 py-3 flex items-center gap-4 text-sm">
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-muted-foreground font-heading">{emailForUser(k.user_id)}</div>

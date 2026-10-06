@@ -83,6 +83,17 @@ export function useAdminAlerts(enabled: boolean) {
       toast({ title, description });
     };
 
+    // Realtime UPDATE events carry only the new row (these tables don't publish the old one),
+    // so "old.status !== new.status" was always true: every write to a payment re-announced its
+    // status with a sound. Each id + status is announced once per session instead.
+    const announced = new Set<string>();
+    const firstTime = (id: string | undefined, status: string) => {
+      const k = `${id}:${status}`;
+      if (!id || announced.has(k)) return false;
+      announced.add(k);
+      return true;
+    };
+
     const channel = supabase
       .channel("admin-alerts-hub")
       .on(
@@ -97,8 +108,9 @@ export function useAdminAlerts(enabled: boolean) {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "payments" },
         (p: any) => {
-          if (p.new?.status && p.old?.status !== p.new?.status) {
-            fire("payment", `Payment ${p.new.status}`, p.new?.tx_hash ?? "");
+          const status = p.new?.status;
+          if ((status === "confirmed" || status === "rejected") && firstTime(p.new?.id, status)) {
+            fire("payment", `Payment ${status}`, p.new?.tx_hash ?? "");
           }
         },
       )
@@ -113,10 +125,15 @@ export function useAdminAlerts(enabled: boolean) {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "trial_purchases" },
         (p: any) => {
-          if (p.new?.status === "paid" && p.old?.status !== "paid") {
+          // Trials are "confirmed" when paid (there is no "paid" status, so this never fired).
+          const status = p.new?.status;
+          const justConfirmed = p.new?.confirmed_at && Date.now() - new Date(p.new.confirmed_at).getTime() < 10 * 60_000;
+          if (status === "confirmed" && justConfirmed && firstTime(p.new?.id, status)) {
             fire("trial", "Trial payment confirmed", p.new?.provider_reference ?? "");
-          } else if (p.new?.status === "failed" && p.old?.status !== "failed") {
+          } else if (status === "failed" && firstTime(p.new?.id, status)) {
             fire("trial", "Trial payment failed", p.new?.provider_reference ?? "");
+          } else if (p.new?.needs_admin_review && firstTime(p.new?.id, "review")) {
+            fire("trial", "Trial payment needs review", p.new?.provider_reference ?? "");
           }
         },
       )

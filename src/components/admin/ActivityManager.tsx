@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/adminData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -123,11 +124,14 @@ export default function ActivityManager({ profiles }: Props) {
   }, []);
 
   const fetchPresence = useCallback(async () => {
-    const { data } = await supabase
+    // Paginated: one request stops at 1,000 of 2,000+ profiles, so searching for anyone past
+    // that found nothing.
+    const { data, error } = await fetchAllRows<Profile>(() => supabase
       .from("profiles")
       .select("user_id, email, display_name, created_at, last_seen_at")
-      .order("last_seen_at", { ascending: false });
-    if (data) setPresenceProfiles(data as Profile[]);
+      .order("last_seen_at", { ascending: false, nullsFirst: false })
+      .order("user_id"));
+    if (!error) setPresenceProfiles(data);
   }, []);
 
   // Refetch the log whenever the filter/user/page-depth changes.
@@ -142,9 +146,10 @@ export default function ActivityManager({ profiles }: Props) {
     fetchActionCounts();
   }, [fetchPresence, fetchActionCounts]);
 
-  // Auto-refresh every 30s
+  // Auto-refresh every 30s while the tab is visible
   useEffect(() => {
     const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       fetchPresence();
       fetchActivities({ silent: true });
     }, 30000);

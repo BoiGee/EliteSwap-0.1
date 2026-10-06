@@ -46,3 +46,10 @@ export function computeDateRange(preset: string, customFrom: string, customTo: s
   }
   return { from: null, to: null };
 }
+
+// supabase.functions.invoke() reports any non-2xx as a generic "Edge Function returned a non-2xx
+// status code"; the function's own message is in the response body.
+export async function readFunctionError(error: any): Promise<{ message: string; body: any }> {
+  const body = await error?.context?.json?.().catch(() => null);
+  return { message: body?.message || body?.error || error?.message || "Unknown error", body };
+}

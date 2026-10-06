@@ -10,6 +10,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { readFunctionError } from "@/lib/adminData";
 import RecipientPreviewDialog, { RecipientPreviewRow } from "./RecipientPreviewDialog";
 import BroadcastHistory from "./BroadcastHistory";
 import EmailHealthPanel from "./EmailHealthPanel";
@@ -36,11 +37,6 @@ function parseLocalDateTime(value: string): Date | null {
 }
 
 // supabase-js only says "non-2xx status code"; the function's own reason is in the response body.
-async function readFunctionError(error: any): Promise<{ message: string; body: any }> {
-  const body = await error?.context?.json?.().catch(() => null);
-  return { message: body?.message || body?.error || error?.message || "Unknown error", body };
-}
-
 function formatLocalMin(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;

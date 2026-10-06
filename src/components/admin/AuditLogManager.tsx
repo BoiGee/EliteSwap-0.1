@@ -74,10 +74,12 @@ export default function AuditLogManager() {
         .select("*", { count: "exact" })
         .order("created_at", { ascending: false });
 
-      if (search.trim()) {
-        const term = search.trim().toLowerCase();
+      // Characters that are syntax inside a PostgREST or() filter (comma, parentheses) or
+      // LIKE wildcards made the whole query fail with an error; search for them as spaces.
+      const term = search.trim().toLowerCase().replace(/[,()%*\\"]/g, " ").trim();
+      if (term) {
         query = query.or(
-          `actor_email.ilike.%${term}%,action.ilike.%${term}%,target_id.ilike.%${term}%`
+          `actor_email.ilike.%${term}%,action.ilike.%${term}%,target_id.ilike.%${term}%,target_type.ilike.%${term}%`
         );
       }
 
