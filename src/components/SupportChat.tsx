@@ -53,6 +53,18 @@ export default function SupportChat() {
   const { unreadByConv } = useSupportChatNotifications();
   const totalUnread = Object.values(unreadByConv).reduce((a, b) => a + b, 0);
 
+  // Lets other parts of the app (e.g. the custom "Higher Requests" plan) open this chat with
+  // a starter message: window.dispatchEvent(new CustomEvent("open-support-chat", { detail: { message } })).
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const message = (e as CustomEvent<{ message?: string }>).detail?.message;
+      setOpen(true);
+      if (message) setInput((cur) => cur || message);
+    };
+    window.addEventListener("open-support-chat", onOpen);
+    return () => window.removeEventListener("open-support-chat", onOpen);
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     setTimeout(() => {
       if (scrollRef.current) {

@@ -7,6 +7,7 @@ import { CryptoPayment } from "./CryptoPayment";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
 import { Monitor, Smartphone, Copy, Download, GripVertical, Zap, TimerOff, ImagePlus, Lock } from "lucide-react";
@@ -287,6 +288,25 @@ export function DeepfakeStudio() {
 
   // Auto-fill of the access key has been removed by request; every user must
   // paste their key manually each time they launch the studio.
+
+  // Low-time warnings at 5 and 1 minutes left, so a streamer isn't cut off live with no notice.
+  // "Top up" opens the dashboard in a new tab so the current stream keeps running.
+  const handleLowTime = useCallback((minutesLeft: number) => {
+    const topUpUrl = `${import.meta.env.BASE_URL}dashboard?topup=1`;
+    toast({
+      title: `${minutesLeft} minute${minutesLeft === 1 ? "" : "s"} left on this key`,
+      description: isFreeTrial
+        ? "Your trial ends when the timer hits zero. Grab a plan to keep going."
+        : "Your session stops when the timer hits zero. Top up now to keep streaming without a break.",
+      variant: minutesLeft <= 1 ? "destructive" : undefined,
+      duration: 15000,
+      action: (
+        <ToastAction altText="Top up in a new tab" onClick={() => window.open(topUpUrl, "_blank", "noopener")}>
+          Top up
+        </ToastAction>
+      ),
+    });
+  }, [isFreeTrial, toast]);
 
   // Called by <StudioCountdown> when the timer reaches zero. Hard-stops the
   // session and force-deactivates the API key so it can't be reused.
@@ -2370,7 +2390,7 @@ export function DeepfakeStudio() {
               Face Swap Active
             </span>
           )}
-          <StudioCountdown anchor={timerAnchor} onExpire={handleExpire} />
+          <StudioCountdown anchor={timerAnchor} onExpire={handleExpire} onLowTime={handleLowTime} />
         </div>
         <div className="flex items-center gap-2">
           {/* Orientation toggle */}

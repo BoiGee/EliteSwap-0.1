@@ -41,7 +41,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-primary animate-pulse font-heading text-xl">Loading...</div></div>;
-  if (!user) return <Navigate to={location.pathname === "/admin" ? "/auth?redirect=admin" : "/auth"} replace />;
+  // Carry the page they asked for through sign-in (e.g. a /studio or /forum/new link).
+  if (!user) {
+    const target = location.pathname === "/admin" ? "admin" : location.pathname + location.search;
+    return <Navigate to={`/auth?redirect=${encodeURIComponent(target)}`} replace />;
+  }
   return <>{children}</>;
 }
 

@@ -39,6 +39,7 @@ export default function Pricing() {
 
   const displayPrice = (plan: PricingPlan) => {
     const usd = plan.price_usd;
+    if (!(Number(usd) > 0)) return { display: "Custom", usdSubtext: "Priced for your volume" };
     const converted = convert(usd, currency);
     return {
       display: formatFiat(converted, currency, locale),

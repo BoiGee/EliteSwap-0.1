@@ -30,9 +30,11 @@ interface Props {
   hasConfirmedPayment: boolean;
   prefillCode?: string | null;
   onRepurchaseModeChange?: (open: boolean) => void;
+  /** Set by the dashboard ("Repurchase to Launch Studio", studio "Top up") to unlock the plans. */
+  repurchaseRequested?: boolean;
 }
 
-export default function PricingSection({ onSelectPlan, hasConfirmedPayment, prefillCode, onRepurchaseModeChange }: Props) {
+export default function PricingSection({ onSelectPlan, hasConfirmedPayment, prefillCode, onRepurchaseModeChange, repurchaseRequested }: Props) {
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const { currency, locale } = useDisplayLocale();
@@ -45,6 +47,12 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
     onRepurchaseModeChange?.(v);
   };
   const { convert, lastUpdated } = useFiatRates();
+
+  // The dashboard's own repurchase flag never reached this component, so "Repurchase to
+  // Launch Studio" said "pick a plan below" while the plans stayed locked.
+  useEffect(() => {
+    if (repurchaseRequested) setRepurchase(true);
+  }, [repurchaseRequested]);
 
   useEffect(() => {
     supabase
@@ -82,6 +90,8 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
 
   const displayPrice = (plan: PricingPlan) => {
     const usd = plan.price_usd;
+    // A $0 plan is the custom-volume tier ("Higher Requests"), priced by conversation.
+    if (!(Number(usd) > 0)) return { display: "Custom", usdSubtext: "Priced for your volume" };
     const converted = convert(usd, currency);
     const usdSubtext = currency !== "USD" ? `≈ $${usd.toFixed(2)} USD` : null;
     return { display: formatFiat(converted, currency, locale), usdSubtext };
@@ -175,7 +185,20 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                   ))}
                 </ul>
               )}
-              {purchaseUnlocked && (
+              {!(Number(planUsd) > 0) ? (
+                // 18 crypto payments were submitted against this $0 plan (16 rejected): it had the
+                // same "Pay with Crypto" button as the priced plans. It's a conversation, not a checkout.
+                <Button
+                  onClick={() => window.dispatchEvent(new CustomEvent("open-support-chat", {
+                    detail: { message: `Hi! I'm interested in the ${plan.name} plan. My expected monthly usage is: ` },
+                  }))}
+                  size="sm"
+                  variant="outline"
+                  className="w-full font-heading font-semibold text-xs"
+                >
+                  Message us for a quote
+                </Button>
+              ) : purchaseUnlocked && (
                 <div className="space-y-2">
                   {planDiscount && (
                     <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-center">

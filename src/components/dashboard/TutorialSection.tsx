@@ -110,7 +110,7 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
                       <div>
                         <span className="font-semibold text-foreground">Wait for activation:</span>
                         <ul className="mt-1 list-disc pl-5 space-y-1 text-foreground/70">
-                          <li>Crypto: 15-60 min admin verification of your tx hash.</li>
+                          <li>Crypto: usually confirmed automatically within minutes of you submitting your tx hash; the odd one goes to our team for a manual check.</li>
                           <li>You'll get a confirmation email when your key is ready.</li>
                         </ul>
                       </div>

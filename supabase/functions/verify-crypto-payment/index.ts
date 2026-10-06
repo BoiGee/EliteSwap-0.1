@@ -375,7 +375,7 @@ async function verifyOne(
     .from("payment_verification_attempts")
     .select("id")
     .eq("payment_id", payment.id)
-    .eq("reason", "needs_admin_review_offchain")
+    .in("reason", ["needs_admin_review_offchain", "needs_admin_review_no_amount"])
     .limit(1);
   if (prevEscalation && prevEscalation.length > 0) {
     return { paymentId, outcome: "skipped", reason: "awaiting_admin_review" };
@@ -412,7 +412,11 @@ async function verifyOne(
     expectedUsd = Number(plan?.price_usd ?? 0);
   }
   if (!expectedUsd || expectedUsd <= 0) {
+    // Nothing to compare the chain against (e.g. a payment filed under the $0 custom plan).
+    // Escalate once and stop: this used to be retried every 2 minutes forever (721 times for
+    // one payment).
     await logAttempt({ paymentId, outcome: "skipped", reason: "no_expected_amount" });
+    await logAttempt({ paymentId, outcome: "skipped", reason: "needs_admin_review_no_amount" });
     return { paymentId, outcome: "skipped", reason: "no_expected_amount" };
   }
 

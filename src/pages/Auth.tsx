@@ -27,14 +27,35 @@ export default function Auth() {
   const redirect = searchParams.get("redirect");
   const isTrialFlow = redirect === "trial" || redirect === "free-trial";
   const isAdminFlow = redirect === "admin";
+  // A same-site path from a protected page (ProtectedRoute sends ?redirect=/studio etc.).
+  // "//host" and "/\host" are rejected so this can't bounce users to another site.
+  const pathRedirect =
+    redirect && redirect.startsWith("/") && !redirect.startsWith("//") && !redirect.startsWith("/\\") && !redirect.startsWith("/auth")
+      ? redirect
+      : null;
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
-  const baseDestination = isTrialFlow ? "/dashboard?trial=purchase" : isAdminFlow ? "/admin" : "/dashboard";
+  // Only offer Google once the provider is switched on in Supabase Auth.
+  useEffect(() => {
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!url || !key) return;
+    fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
+      .then((r) => r.json())
+      .then((s) => setGoogleEnabled(!!s?.external?.google))
+      .catch(() => {});
+  }, []);
+
+  const baseDestination = isTrialFlow ? "/dashboard?trial=purchase" : isAdminFlow ? "/admin" : pathRedirect ?? "/dashboard";
   const normalizedEmail = email.trim().toLowerCase();
 
   const resolveDestination = async (): Promise<string> => {
     // Trial flow always wins; explicit admin redirect keeps /admin.
     if (isTrialFlow) return "/dashboard?trial=purchase";
     if (isAdminFlow) return "/admin";
+    if (pathRedirect) return pathRedirect;
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return baseDestination;
@@ -60,6 +81,33 @@ export default function Auth() {
     }
   }, [searchParams, toast]);
 
+  // Keeps ?redirect through the email link, so the trial / deep link still applies after confirming.
+  const confirmRedirect = `${window.location.origin}/auth?verified=1${redirect ? `&redirect=${encodeURIComponent(redirect)}` : ""}`;
+
+  const resendConfirmation = async () => {
+    if (!normalizedEmail) {
+      toast({ title: "Enter your email above first", variant: "destructive" });
+      return;
+    }
+    setResending(true);
+    const { error } = await supabase.auth.resend({ type: "signup", email: normalizedEmail, options: { emailRedirectTo: confirmRedirect } });
+    setResending(false);
+    if (error) {
+      toast({ title: "Couldn't resend", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Confirmation email sent", description: "Check your inbox and spam folder; the link expires after a day." });
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    const dest = isTrialFlow ? "/dashboard?trial=purchase" : isAdminFlow ? "/admin" : pathRedirect ?? "/dashboard";
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}${dest}` },
+    });
+    if (error) toast({ title: "Google sign-in failed", description: error.message, variant: "destructive" });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -70,7 +118,7 @@ export default function Auth() {
           setLoading(false);
           return;
         }
-        await signUp(normalizedEmail, password, `${window.location.origin}/auth?verified=1`);
+        await signUp(normalizedEmail, password, confirmRedirect);
         // Stamp acceptance on the user's profile + audit log. Best-effort:
         // signUp() with email confirmation required returns no session, so
         // getUser() below has nothing to identify; this only actually
@@ -110,6 +158,7 @@ export default function Auth() {
           title: "Check your email",
           description: "We sent you a confirmation link. Click it, then sign in here.",
         });
+        setAwaitingConfirmation(true);
         setIsSignUp(false);
       } else {
         await signIn(normalizedEmail, password);
@@ -131,6 +180,15 @@ export default function Auth() {
       }
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : "Something went wrong";
+      if (/email not confirmed/i.test(raw)) {
+        setAwaitingConfirmation(true);
+        toast({
+          title: "Confirm your email first",
+          description: "Open the confirmation link we emailed you, or tap \"Resend confirmation email\" below.",
+          variant: "destructive",
+        });
+        return;
+      }
       const isRateLimited =
         /rate limit|over_request_rate_limit|429/i.test(raw);
       const message = isRateLimited
@@ -186,7 +244,7 @@ export default function Auth() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={isSignUp ? 8 : 6}
               className="bg-muted/30 border-border focus:border-primary"
             />
           </div>
@@ -249,8 +307,33 @@ export default function Auth() {
           )}
           {isSignUp && (
             <p className="text-[11px] text-muted-foreground/80 font-body leading-relaxed mt-1">
-              We'll send a confirmation link to your email before you can sign in.
+              We'll send a confirmation link to your email before you can sign in. Use at least 8 characters for your password.
             </p>
+          )}
+          {!isSignUp && awaitingConfirmation && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-left space-y-2">
+              <p className="text-xs text-foreground/80">
+                Didn't get the confirmation email? Check spam, or send it again to <span className="font-semibold">{normalizedEmail || "your email"}</span>.
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={resendConfirmation} disabled={resending} className="font-heading text-xs w-full">
+                {resending ? "Sending…" : "Resend confirmation email"}
+              </Button>
+            </div>
+          )}
+          {googleEnabled && (
+            <>
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+              </div>
+              <Button type="button" variant="outline" onClick={signInWithGoogle} className="w-full font-heading font-semibold">
+                Continue with Google
+              </Button>
+              {isSignUp && (
+                <p className="text-[11px] text-muted-foreground/80">
+                  By continuing with Google you agree to the Terms, Privacy &amp; Responsible Use Policy.
+                </p>
+              )}
+            </>
           )}
         </form>
 

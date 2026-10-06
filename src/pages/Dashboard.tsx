@@ -50,6 +50,25 @@ interface Payment {
   tx_hash: string | null;
   status: string;
   created_at: string;
+  plan_id?: string | null;
+  payment_method?: string | null;
+}
+
+// What a customer should know about each payment, in plain words instead of a raw status.
+function describePayment(p: Payment): { label: string; detail: string; tone: "ok" | "bad" | "wait" } {
+  if (p.status === "confirmed") return { label: "Confirmed", detail: "Your unique key was issued.", tone: "ok" };
+  if (p.status === "rejected") {
+    return { label: "Not verified", detail: "We couldn't match this payment. Message support from the chat button with your transaction details.", tone: "bad" };
+  }
+  const ageH = (Date.now() - new Date(p.created_at).getTime()) / 3_600_000;
+  if (p.status === "pending_review" || ageH > 6) {
+    return { label: "Being reviewed", detail: "Our team is checking this payment by hand. You'll get an email the moment it's confirmed.", tone: "wait" };
+  }
+  return {
+    label: "Checking",
+    detail: "We're confirming it on the blockchain. Most payments confirm within a few minutes; this page updates by itself.",
+    tone: "wait",
+  };
 }
 
 export default function Dashboard() {
@@ -85,6 +104,20 @@ export default function Dashboard() {
   const [inlinePlans, setInlinePlans] = useState<{ id: string; name: string; price_usd: number }[]>([]);
   const [inlinePlanId, setInlinePlanId] = useState<string>("");
   const [showTutorialGuide, setShowTutorialGuide] = useState(false);
+
+  // ?topup=1 comes from the studio's low-time "Top up" button: open the plans straight away.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("topup") !== "1") return;
+    setRepurchaseMode(true);
+    params.delete("topup");
+    const qs = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+    const t = setTimeout(() => {
+      document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 600);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -211,7 +244,10 @@ export default function Dashboard() {
         (payload) => {
           fetchPayments();
           if (payload.eventType === 'UPDATE' && (payload.new as Payment).status === 'confirmed') {
-            toast({ title: "Payment confirmed!", description: "You can now generate your unique key." });
+            // Keys are issued the moment a payment is confirmed; pull it in right away.
+            fetchApiKeys();
+            setTimeout(fetchApiKeys, 3000);
+            toast({ title: "Payment confirmed!", description: "Your unique key is ready below." });
           } else if (payload.eventType === 'UPDATE' && (payload.new as Payment).status === 'rejected') {
             toast({ title: "Payment rejected", description: "Please contact support or submit a new payment.", variant: "destructive" });
           }
@@ -474,6 +510,7 @@ export default function Dashboard() {
                 hasConfirmedPayment={hasConfirmedPayment}
                 prefillCode={pricingPrefillCode}
                 onRepurchaseModeChange={setRepurchaseMode}
+                repurchaseRequested={repurchaseMode}
               />
             </div>
 
@@ -599,21 +636,30 @@ export default function Dashboard() {
                     {payments.length > 0 && (
                       <div className="space-y-2 pt-2">
                         <h3 className="text-xs font-heading text-muted-foreground uppercase tracking-wider">Payment History</h3>
-                        {payments.map((p) => (
-                          <div key={p.id} className="flex items-center justify-between bg-muted/20 rounded-lg px-3 py-2 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-heading font-semibold">{p.currency}</span>
-                              <span className="text-muted-foreground font-mono truncate max-w-[200px]">{p.tx_hash}</span>
+                        {payments.map((p) => {
+                          const d = describePayment(p);
+                          const plan = inlinePlans.find((pl) => pl.id === p.plan_id);
+                          return (
+                            <div key={p.id} className="bg-muted/20 rounded-lg px-3 py-2 text-xs space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="font-heading font-semibold">{plan?.name ?? p.currency}</span>
+                                  {p.amount_usd != null && <span className="text-muted-foreground">${Number(p.amount_usd).toFixed(2)}</span>}
+                                  <span className="text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</span>
+                                </div>
+                                <span className={`font-heading font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                                  d.tone === "ok" ? "bg-primary/20 text-primary" :
+                                  d.tone === "bad" ? "bg-destructive/20 text-destructive" :
+                                  "bg-warning/20 text-warning"
+                                }`}>
+                                  {d.label}
+                                </span>
+                              </div>
+                              {p.status !== "confirmed" && <p className="text-muted-foreground">{d.detail}</p>}
+                              {p.tx_hash && <p className="text-muted-foreground/70 font-mono truncate" title={p.tx_hash}>{p.currency} · {p.tx_hash}</p>}
                             </div>
-                            <span className={`font-heading font-semibold px-2 py-0.5 rounded-full ${
-                              p.status === "confirmed" ? "bg-primary/20 text-primary" :
-                              p.status === "rejected" ? "bg-destructive/20 text-destructive" :
-                              "bg-warning/20 text-warning"
-                            }`}>
-                              {p.status}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </>
@@ -636,9 +682,13 @@ export default function Dashboard() {
                             </div>
                             <div className="space-y-2">
                               <p className="text-sm font-heading font-semibold text-foreground">Payment confirmed!</p>
+                              {/* Keys are issued automatically the moment a payment is confirmed (0 minutes
+                                  for every payment checked). This only shows for a few seconds, or if the
+                                  key pool was momentarily empty and the 5-minute retry is about to run. */}
                               <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                                Your unique key will be sent to <span className="font-semibold text-foreground/80">{user?.email}</span> within <span className="font-semibold text-primary">15 to 60 minutes</span>. Please check your inbox (and spam folder).
+                                Your unique key is being issued and will appear here shortly. We'll also email it to <span className="font-semibold text-foreground/80">{user?.email}</span>. If it isn't here within 10 minutes, message us from the chat button.
                               </p>
+                              <Button variant="outline" size="sm" onClick={fetchApiKeys} className="font-heading text-xs">Check again</Button>
                             </div>
                           </div>
                         ) : (

@@ -19,7 +19,15 @@ interface Props {
   anchor: CountdownAnchor | null;
   /** Called once when the timer hits zero. */
   onExpire?: () => void;
+  /**
+   * Called once per threshold as the time left drops to it (or immediately on connect if
+   * there's already less), with the minutes left. Thresholds are in milliseconds.
+   */
+  onLowTime?: (minutesLeft: number) => void;
+  lowTimeThresholdsMs?: number[];
 }
+
+const DEFAULT_THRESHOLDS = [5 * 60_000, 60_000];
 
 const formatCountdown = (ms: number) => {
   if (ms <= 0) return "00:00:00";
@@ -31,7 +39,7 @@ const formatCountdown = (ms: number) => {
 
 const computeRemaining = (a: CountdownAnchor) => Math.max(0, a.remainingMs - (performance.now() - a.perf));
 
-export function StudioCountdown({ anchor, onExpire }: Props) {
+export function StudioCountdown({ anchor, onExpire, onLowTime, lowTimeThresholdsMs = DEFAULT_THRESHOLDS }: Props) {
   const [remainingMs, setRemainingMs] = useState<number | null>(anchor ? computeRemaining(anchor) : null);
 
   useEffect(() => {
@@ -40,9 +48,19 @@ export function StudioCountdown({ anchor, onExpire }: Props) {
       return;
     }
     let fired = false;
+    // Warn only for the lowest threshold already crossed, so connecting with 40s left gives
+    // one "1 minute" warning rather than a 5-minute one followed by a 1-minute one.
+    const warned = new Set<number>();
     const tick = () => {
       const next = computeRemaining(anchor);
       setRemainingMs(next);
+      if (next > 0 && onLowTime) {
+        const crossed = lowTimeThresholdsMs.filter((t) => next <= t && !warned.has(t));
+        if (crossed.length) {
+          lowTimeThresholdsMs.filter((t) => next <= t).forEach((t) => warned.add(t));
+          onLowTime(Math.max(1, Math.ceil(next / 60_000)));
+        }
+      }
       if (next <= 0 && !fired) {
         fired = true;
         onExpire?.();
@@ -51,7 +69,7 @@ export function StudioCountdown({ anchor, onExpire }: Props) {
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [anchor, onExpire]);
+  }, [anchor, onExpire, onLowTime, lowTimeThresholdsMs]);
 
   if (remainingMs === null) return null;
 
