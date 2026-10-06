@@ -69,7 +69,7 @@ type MethodFilter = "all" | "crypto" | "none";
 type AgeFilter = "all" | "new24h" | "week" | "month" | "older30" | "older90";
 type ActivityFilter = "all" | "active" | "idle" | "dormant";
 type KeysFilter = "all" | "active_key" | "no_active_key" | "expired_key" | "free_trial_used";
-type RoleFilter = "all" | "admin" | "moderator" | "user_only";
+type RoleFilter = "all" | "admin" | "sec_admin" | "moderator" | "user_only";
 type TermsFilter = "all" | "accepted" | "pending";
 type SortKey = "newest" | "oldest" | "most_paid" | "most_payments" | "most_active" | "email_asc";
 
@@ -200,8 +200,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       } else if (pay.status === "rejected") {
         s.rejectedCount++;
       } else if (pay.status === "pending") {
-        s.pendingCount++;
-      } else if (pay.status === "pending_review") {
+        // Payments awaiting admin review are stored as "pending" (there is no separate review status).
         s.pendingCount++;
         if (now - created > staleHours * 3_600_000) s.pendingReviewStaleCount++;
       }
@@ -284,7 +283,8 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       const roles = userRoles.filter((r) => r.user_id === p.user_id).map((r) => r.role);
       if (roleFilter === "admin" && !roles.includes("admin")) return false;
       if (roleFilter === "moderator" && !roles.includes("moderator")) return false;
-      if (roleFilter === "user_only" && (roles.includes("admin") || roles.includes("moderator"))) return false;
+      if (roleFilter === "sec_admin" && !roles.includes("sec_admin")) return false;
+      if (roleFilter === "user_only" && (roles.includes("admin") || roles.includes("moderator") || roles.includes("sec_admin"))) return false;
 
       // Terms acceptance
       const termsOk = !!p.terms_accepted_at && p.terms_version === TERMS_VERSION;
@@ -406,6 +406,13 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
   };
 
   const updateKeyExpirationCustom = async (id: string, totalMs: number) => {
+    // heartbeat_studio_session recomputes remaining time from the session's starting balance every
+    // 1.5s, so a change made mid-session is overwritten almost immediately.
+    const { data: live } = await supabase.from("api_keys").select("active_session_id").eq("id", id).maybeSingle();
+    if ((live as any)?.active_session_id) {
+      toast({ title: "User is streaming right now", description: "Change the timer after their session ends, or it will be overwritten.", variant: "destructive" });
+      return;
+    }
     const updateData: any = {
       remaining_ms: totalMs > 0 ? totalMs : null,
       expires_at: null, // Reset expires_at; it will be set when user connects
@@ -546,17 +553,32 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
   const createPaymentForUser = async (userId: string) => {
     const amt = newPaymentAmount ? parseFloat(newPaymentAmount) : null;
     let matchedPlanId: string | null = null;
+    let commissionBase: number | null = null;
     if (amt != null) {
       const { data: plan } = await supabase
         .from("pricing_plans")
-        .select("id")
+        .select("id, commission_base_usd")
         .eq("is_active", true)
         .eq("price_usd", amt)
         .order("sort_order")
         .limit(1)
         .maybeSingle();
       matchedPlanId = (plan as any)?.id ?? null;
+      commissionBase = (plan as any)?.commission_base_usd ?? null;
     }
+    // With no plan, partner commission would fall back to the full amount instead of the
+    // plan's shareable profit.
+    if (amt != null && !matchedPlanId) {
+      const { data: prices } = await supabase.from("pricing_plans").select("price_usd").eq("is_active", true).gt("price_usd", 0).order("price_usd");
+      toast({
+        title: "Amount doesn't match a plan",
+        description: `Enter a plan price (${(prices ?? []).map((p: any) => `$${p.price_usd}`).join(", ")}) so partner commission uses that plan's shareable profit.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    // Admin inserts skip payments_enforce_financials, so lock the base here as checkout does;
+    // otherwise a later base change would retroactively change this payment's commission.
     const { error } = await supabase.from("payments").insert({
       user_id: userId,
       currency: newPaymentCurrency,
@@ -564,6 +586,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       tx_hash: newPaymentTxHash.trim() || null,
       amount_usd: amt,
       plan_id: matchedPlanId,
+      commission_base_usd_snapshot: commissionBase,
       status: newPaymentStatus,
     });
     if (error) {
@@ -624,17 +647,6 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
     } else {
       toast({ title: "Profile updated ✅" });
       setEditingProfile(null);
-      onRefresh();
-    }
-  };
-
-  const deleteProfile = async (userId: string) => {
-    if (!confirm("Are you sure you want to delete this user's profile? This cannot be undone.")) return;
-    const { error } = await supabase.from("profiles").delete().eq("user_id", userId);
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Profile deleted 🗑️" });
       onRefresh();
     }
   };
@@ -775,6 +787,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
           <SelectContent>
             <SelectItem value="all">Role: All</SelectItem>
             <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="sec_admin">Sec admin</SelectItem>
             <SelectItem value="moderator">Moderator</SelectItem>
             <SelectItem value="user_only">User only</SelectItem>
           </SelectContent>
@@ -794,11 +807,14 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       <div className="flex flex-wrap items-center gap-3 justify-between glass rounded-xl px-4 py-2.5">
         <div className="text-xs text-muted-foreground font-heading">
           Showing <span className="text-foreground font-semibold">{filtered.length}</span> of {profiles.length} users
-          <span className="mx-2">·</span>
-          <span className="text-primary font-semibold">{filteredPaidCount} paid</span>
-          <span className="mx-2">·</span>
-          <span className="text-foreground font-semibold">${filteredRevenue.toFixed(2)}</span> revenue
-          <span className="text-muted-foreground/60"> / ${totalRevenue.toFixed(2)} total</span>
+          {/* Only payment managers can read payments (RLS); for other staff these would read 0. */}
+          {canManagePayments && (<>
+            <span className="mx-2">·</span>
+            <span className="text-primary font-semibold">{filteredPaidCount} paid</span>
+            <span className="mx-2">·</span>
+            <span className="text-foreground font-semibold">${filteredRevenue.toFixed(2)}</span> revenue
+            <span className="text-muted-foreground/60"> / ${totalRevenue.toFixed(2)} total</span>
+          </>)}
         </div>
         <div className="flex items-center gap-2">
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
@@ -874,7 +890,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                   >
                     Details
                   </span>
-                  <span
+                  {isAdmin && <span
                     role="button"
                     onClick={async (e) => {
                       e.stopPropagation();
@@ -892,7 +908,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                     className="text-xs bg-destructive/10 text-destructive hover:bg-destructive/20 px-2 py-0.5 rounded-full font-heading cursor-pointer"
                   >
                     Delete
-                  </span>
+                  </span>}
                   <span className="text-xs text-muted-foreground">{isExpanded ? "▲" : "▼"}</span>
                 </div>
               </button>
@@ -913,7 +929,6 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                               <Button size="sm" variant="outline" onClick={() => setEditingProfile(null)} className="font-heading text-xs h-6 px-2">Cancel</Button>
                             </>
                           )}
-                          <Button size="sm" variant="outline" onClick={() => deleteProfile(p.user_id)} className="border-destructive/30 text-destructive hover:bg-destructive/10 font-heading text-xs h-6 px-2">Delete User</Button>
                         </div>
                       )}
                     </div>
@@ -924,7 +939,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                           <div className="font-mono text-foreground/80 mt-0.5 truncate">{p.user_id}</div>
                         </div>
                         <div>
-                          <span className="text-muted-foreground font-heading">Email</span>
+                          <span className="text-muted-foreground font-heading" title="Used for display and emails we send. The address they log in with is not changed.">Contact email (login unchanged)</span>
                           <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="h-7 text-xs mt-0.5" />
                         </div>
                         <div>
