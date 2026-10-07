@@ -3,10 +3,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, KeyRound, ShieldAlert } from "lucide-react";
+import { AlertTriangle, KeyRound, Lock, ShieldAlert, Unlock } from "lucide-react";
+
+interface LockState {
+  studio_locked: boolean;
+  lock_reason: string | null;
+  locked_at: string | null;
+}
 
 interface PoolRow {
   id: string;
@@ -46,6 +53,10 @@ export default function DecartPoolManager() {
   const [confirmDeactivate, setConfirmDeactivate] = useState<PoolRow | null>(null);
   const [bypassSignals, setBypassSignals] = useState<BypassSignal[]>([]);
   const [bypassLoading, setBypassLoading] = useState(true);
+  const [lockState, setLockState] = useState<LockState | null>(null);
+  const [lockReasonDraft, setLockReasonDraft] = useState("");
+  const [lockSaving, setLockSaving] = useState(false);
+  const [confirmLock, setConfirmLock] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -68,8 +79,38 @@ export default function DecartPoolManager() {
     if (!error) setBypassSignals((data ?? []) as unknown as BypassSignal[]);
   }, []);
 
+  const fetchLockState = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("studio_pricing_config" as any)
+      .select("studio_locked, lock_reason, locked_at")
+      .eq("id", true)
+      .maybeSingle();
+    if (!error && data) {
+      setLockState(data as unknown as LockState);
+      setLockReasonDraft((data as any).lock_reason || "");
+    }
+  }, []);
+
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { fetchBypassSignals(); }, [fetchBypassSignals]);
+  useEffect(() => { fetchLockState(); }, [fetchLockState]);
+
+  const setStudioLock = async (locked: boolean) => {
+    setLockSaving(true);
+    const { data, error } = await supabase.rpc("admin_set_studio_lock" as any, {
+      p_locked: locked,
+      p_reason: locked ? lockReasonDraft.trim() || null : null,
+    });
+    setLockSaving(false);
+    setConfirmLock(false);
+    if (error) {
+      toast({ title: "Couldn't update studio lock", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: locked ? "Studio locked 🔒" : "Studio reopened 🔓" });
+    const result = data as any;
+    setLockState({ studio_locked: result?.studio_locked ?? locked, lock_reason: result?.lock_reason ?? null, locked_at: locked ? new Date().toISOString() : null });
+  };
 
   const activeCount = pool.filter((r) => r.is_active).length;
 
@@ -167,6 +208,53 @@ export default function DecartPoolManager() {
 
   return (
     <div className="space-y-5">
+      <div className={`glass rounded-xl p-4 border ${lockState?.studio_locked ? "border-destructive/50" : "border-border"}`}>
+        <h3 className="text-sm font-heading font-semibold text-foreground flex items-center gap-2">
+          {lockState?.studio_locked ? <Lock className="w-4 h-4 text-destructive" /> : <Unlock className="w-4 h-4 text-primary" />}
+          Studio Access
+        </h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Platform-wide switch: when locked, every studio connect attempt (trial and paid keys alike) is rejected with
+          the reason below, before any key is even looked up. In-progress sessions already connected keep running
+          until they naturally end; this only blocks new connects.
+        </p>
+
+        {lockState?.studio_locked ? (
+          <div className="mt-3 space-y-3">
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-1">
+              <div className="font-heading font-semibold text-destructive">🔒 Studio is locked for all users</div>
+              <div className="text-foreground">{lockState.lock_reason || "(no reason set — users see a generic message)"}</div>
+              {lockState.locked_at && (
+                <div className="text-muted-foreground">Since {new Date(lockState.locked_at).toLocaleString()}</div>
+              )}
+            </div>
+            <Button size="sm" onClick={() => setStudioLock(false)} disabled={lockSaving} className="font-heading text-xs">
+              {lockSaving ? "Reopening…" : "Unlock studio"}
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <Label className="font-heading text-xs">Reason shown to users when locked (optional)</Label>
+            <Textarea
+              value={lockReasonDraft}
+              onChange={(e) => setLockReasonDraft(e.target.value)}
+              placeholder="e.g. We're resolving an issue with our video provider. Please check back shortly."
+              className="text-sm"
+              rows={2}
+            />
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setConfirmLock(true)}
+              disabled={lockSaving}
+              className="font-heading text-xs"
+            >
+              Lock studio for all users
+            </Button>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-heading font-bold text-foreground flex items-center gap-2">
@@ -347,6 +435,24 @@ export default function DecartPoolManager() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDeactivate(null)} className="font-heading text-xs">Cancel</Button>
             <Button variant="destructive" onClick={() => confirmDeactivate && setActive(confirmDeactivate, false)} className="font-heading text-xs">Deactivate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmLock} onOpenChange={(o) => !o && setConfirmLock(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Lock the studio for every user?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            No user, trial or paid, will be able to start a new studio session until you unlock it again. They'll see
+            the reason you entered. Sessions already connected right now are not interrupted.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmLock(false)} className="font-heading text-xs">Cancel</Button>
+            <Button variant="destructive" onClick={() => setStudioLock(true)} disabled={lockSaving} className="font-heading text-xs">
+              {lockSaving ? "Locking…" : "Lock studio"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -8,7 +8,7 @@ import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
-import { Monitor, Smartphone, Copy, Download, GripVertical, Zap, TimerOff, ImagePlus } from "lucide-react";
+import { Monitor, Smartphone, Copy, Download, GripVertical, Zap, TimerOff, ImagePlus, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { ReviewPromptModal } from "./dashboard/ReviewPromptModal";
 import { StudioDiagnostics, type DiagnosticsState } from "./StudioDiagnostics";
@@ -87,6 +87,7 @@ export function DeepfakeStudio() {
   const [timerAnchor, setTimerAnchor] = useState<{ remainingMs: number; perf: number } | null>(null);
   const [isFreeTrial, setIsFreeTrial] = useState(false);
   const [showTrialEnded, setShowTrialEnded] = useState(false);
+  const [studioLockedNotice, setStudioLockedNotice] = useState<string | null>(null);
   const [autoStartPending, setAutoStartPending] = useState(false);
   // OBS broadcast is opt-in to save CPU/RAM for the 99% of users who don't stream.
   const [obsEnabled, setObsEnabled] = useState(false);
@@ -1430,6 +1431,11 @@ export function DeepfakeStudio() {
         );
         if (mintErr) throw new Error(mintErr.message || "Preview session mint failed");
         const row: any = Array.isArray(mint) ? mint[0] : mint;
+        if (row?.reason === "studio_locked") {
+          setStudioLockedNotice(row?.message || "The studio is temporarily unavailable. Please check back soon.");
+          setIsLaunching(false);
+          return;
+        }
         if (!row?.ok || !row?.decart_key) {
           throw new Error(row?.reason ? `Preview unavailable: ${row.reason}` : "Could not obtain preview credential");
         }
@@ -1579,6 +1585,8 @@ export function DeepfakeStudio() {
             toast({ title: "Unique key not assigned", description: "This key is not assigned to your account.", variant: "destructive" });
           } else if (row?.reason === "not_authenticated") {
             toast({ title: "Sign in required", description: "Please sign in before opening the studio.", variant: "destructive" });
+          } else if (row?.reason === "studio_locked") {
+            setStudioLockedNotice(row?.message || "The studio is temporarily unavailable. Please check back soon.");
           } else {
             toast({ title: "Studio could not open", description: "This assigned key could not start a secure studio session.", variant: "destructive" });
           }
@@ -2199,6 +2207,23 @@ export function DeepfakeStudio() {
                 Close
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+      {studioLockedNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="glass border border-border rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
+            <Lock className="w-9 h-9 mx-auto text-primary" strokeWidth={1.5} />
+            <h2 className="text-xl font-heading font-bold text-foreground">Studio temporarily unavailable</h2>
+            <p className="text-sm text-muted-foreground">{studioLockedNotice}</p>
+            <Button
+              onClick={() => setStudioLockedNotice(null)}
+              variant="outline"
+              size="sm"
+              className="w-full font-heading"
+            >
+              Close
+            </Button>
           </div>
         </div>
       )}
