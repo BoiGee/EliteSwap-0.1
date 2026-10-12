@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, KeyRound, Lock, ShieldAlert, Unlock } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, KeyRound, Lock, ShieldAlert, Sparkles, Unlock } from "lucide-react";
 
 interface LockState {
   studio_locked: boolean;
@@ -15,9 +15,20 @@ interface LockState {
   locked_at: string | null;
 }
 
+type Provider = "decart" | "vidu";
+
 interface PoolRow {
   id: string;
   decart_key: string;
+  is_active: boolean;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ViduPoolRow {
+  id: string;
+  vidu_api_key: string;
   is_active: boolean;
   note: string | null;
   created_at: string;
@@ -57,6 +68,18 @@ export default function DecartPoolManager() {
   const [lockReasonDraft, setLockReasonDraft] = useState("");
   const [lockSaving, setLockSaving] = useState(false);
   const [confirmLock, setConfirmLock] = useState(false);
+  const [activeProvider, setActiveProviderState] = useState<Provider | null>(null);
+  const [providerSaving, setProviderSaving] = useState(false);
+  const [confirmProvider, setConfirmProvider] = useState<Provider | null>(null);
+  const [viduPool, setViduPool] = useState<ViduPoolRow[]>([]);
+  const [viduLoading, setViduLoading] = useState(true);
+  const [showAddVidu, setShowAddVidu] = useState(false);
+  const [newViduKey, setNewViduKey] = useState("");
+  const [newViduNote, setNewViduNote] = useState("");
+  const [viduSaving, setViduSaving] = useState(false);
+  const [revealedViduKeys, setRevealedViduKeys] = useState<Record<string, boolean>>({});
+  const [confirmRemoveVidu, setConfirmRemoveVidu] = useState<ViduPoolRow | null>(null);
+  const [confirmDeactivateVidu, setConfirmDeactivateVidu] = useState<ViduPoolRow | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -82,18 +105,134 @@ export default function DecartPoolManager() {
   const fetchLockState = useCallback(async () => {
     const { data, error } = await supabase
       .from("studio_pricing_config" as any)
-      .select("studio_locked, lock_reason, locked_at")
+      .select("studio_locked, lock_reason, locked_at, active_provider")
       .eq("id", true)
       .maybeSingle();
     if (!error && data) {
       setLockState(data as unknown as LockState);
       setLockReasonDraft((data as any).lock_reason || "");
+      setActiveProviderState(((data as any).active_provider as Provider) || "decart");
     }
   }, []);
+
+  const fetchViduPool = useCallback(async () => {
+    setViduLoading(true);
+    const { data, error } = await supabase
+      .from("vidu_shared_pool" as any)
+      .select("*")
+      .order("created_at", { ascending: false });
+    setViduLoading(false);
+    if (error) {
+      toast({ title: "Couldn't load Vidu pool", description: error.message, variant: "destructive" });
+      return;
+    }
+    setViduPool((data ?? []) as unknown as ViduPoolRow[]);
+  }, [toast]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { fetchBypassSignals(); }, [fetchBypassSignals]);
   useEffect(() => { fetchLockState(); }, [fetchLockState]);
+  useEffect(() => { fetchViduPool(); }, [fetchViduPool]);
+
+  const activeViduCount = viduPool.filter((r) => r.is_active).length;
+
+  const setActiveProvider = async (provider: Provider) => {
+    setProviderSaving(true);
+    const { data, error } = await supabase.rpc("admin_set_active_provider" as any, { p_provider: provider });
+    setProviderSaving(false);
+    setConfirmProvider(null);
+    if (error) {
+      toast({ title: "Couldn't switch provider", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: `Active provider switched to ${provider === "vidu" ? "Vidu S2" : "Decart"}` });
+    setActiveProviderState(((data as any)?.active_provider as Provider) ?? provider);
+  };
+
+  const addViduKey = async () => {
+    const key = newViduKey.trim();
+    if (!key) {
+      toast({ title: "Paste a Vidu API key", variant: "destructive" });
+      return;
+    }
+    setViduSaving(true);
+    const { error } = await supabase.from("vidu_shared_pool" as any).insert({
+      vidu_api_key: key,
+      note: newViduNote.trim() || null,
+    });
+    setViduSaving(false);
+    if (error) {
+      toast({ title: "Couldn't add key", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Vidu key added to the shared pool 🔑" });
+    setNewViduKey(""); setNewViduNote(""); setShowAddVidu(false);
+    fetchViduPool();
+  };
+
+  const setViduActive = async (row: ViduPoolRow, is_active: boolean) => {
+    if (!is_active && activeViduCount <= 1 && row.is_active) {
+      toast({
+        title: "This is the last active key",
+        description: "Deactivating it will break studio connections for every user while Vidu is the active provider.",
+        variant: "destructive",
+      });
+      setConfirmDeactivateVidu(null);
+      return;
+    }
+    const { error: auditErr } = await supabase.rpc("log_vidu_shared_pool_status_change" as any, {
+      p_pool_id: row.id,
+      p_is_active: is_active,
+    });
+    if (auditErr) {
+      toast({ title: "Blocked", description: auditErr.message, variant: "destructive" });
+      setConfirmDeactivateVidu(null);
+      return;
+    }
+    const { error } = await supabase.from("vidu_shared_pool" as any).update({ is_active, updated_at: new Date().toISOString() }).eq("id", row.id);
+    setConfirmDeactivateVidu(null);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: is_active ? "Key activated" : "Key deactivated" });
+      fetchViduPool();
+    }
+  };
+
+  const removeViduKey = async (row: ViduPoolRow) => {
+    if (row.is_active && activeViduCount <= 1) {
+      toast({
+        title: "This is the last active key",
+        description: "Add or activate another key before removing this one.",
+        variant: "destructive",
+      });
+      setConfirmRemoveVidu(null);
+      return;
+    }
+    const { error } = await supabase.from("vidu_shared_pool" as any).delete().eq("id", row.id);
+    setConfirmRemoveVidu(null);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Key removed from pool" });
+      fetchViduPool();
+    }
+  };
+
+  const revealViduKey = async (row: ViduPoolRow) => {
+    const { error: auditErr } = await supabase.rpc("log_vidu_shared_pool_reveal" as any, { p_pool_id: row.id });
+    if (auditErr) {
+      toast({ title: "Reveal blocked", description: auditErr.message, variant: "destructive" });
+      return;
+    }
+    setRevealedViduKeys((s) => ({ ...s, [row.id]: true }));
+    try {
+      await navigator.clipboard.writeText(row.vidu_api_key);
+      toast({ title: "Key revealed & copied to clipboard", description: "This action was logged in the admin audit trail." });
+    } catch {
+      toast({ title: "Key revealed", description: "This action was logged in the admin audit trail." });
+    }
+  };
 
   const setStudioLock = async (locked: boolean) => {
     setLockSaving(true);
@@ -208,6 +347,34 @@ export default function DecartPoolManager() {
 
   return (
     <div className="space-y-5">
+      <div className="glass neon-border rounded-xl p-4">
+        <h3 className="text-sm font-heading font-semibold text-foreground flex items-center gap-2">
+          <ArrowLeftRight className="w-4 h-4 text-primary" /> Active Realtime Provider
+        </h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Platform-wide switch: every new studio connect (trial and paid alike) is routed to whichever provider is
+          active here. Sessions already connected keep running on the provider they started with; this only affects
+          new connects going forward.
+        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <span className={`text-xs font-heading px-3 py-1.5 rounded-full ${activeProvider === "decart" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+            Decart {activeProvider === "decart" && "(active)"}
+          </span>
+          <span className={`text-xs font-heading px-3 py-1.5 rounded-full ${activeProvider === "vidu" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+            Vidu S2 {activeProvider === "vidu" && "(active)"}
+          </span>
+          {activeProvider === "decart" ? (
+            <Button size="sm" variant="outline" className="font-heading text-xs" onClick={() => setConfirmProvider("vidu")} disabled={providerSaving}>
+              Switch to Vidu S2
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" className="font-heading text-xs" onClick={() => setConfirmProvider("decart")} disabled={providerSaving}>
+              Switch to Decart
+            </Button>
+          )}
+        </div>
+      </div>
+
       <div className={`glass rounded-xl p-4 border ${lockState?.studio_locked ? "border-destructive/50" : "border-border"}`}>
         <h3 className="text-sm font-heading font-semibold text-foreground flex items-center gap-2">
           {lockState?.studio_locked ? <Lock className="w-4 h-4 text-destructive" /> : <Unlock className="w-4 h-4 text-primary" />}
@@ -337,6 +504,88 @@ export default function DecartPoolManager() {
         </div>
       </div>
 
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-heading font-bold text-foreground flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary" /> Vidu Pool
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            The real Vidu API key(s) used to mint short-lived join credentials when Vidu is the active provider.
+            Unlike Decart's pooled key, these never reach the browser directly -- mint-vidu-rtc-session resolves one
+            server-side and exchanges it for a session token.
+          </p>
+        </div>
+        <Button onClick={() => setShowAddVidu(true)} className="font-heading text-xs">+ Add key</Button>
+      </div>
+
+      {!viduLoading && activeViduCount === 0 && activeProvider === "vidu" && (
+        <div className="glass border border-destructive/50 rounded-xl p-4 flex items-center gap-2 text-destructive font-heading text-sm">
+          <AlertTriangle className="w-4 h-4" />
+          No active Vidu keys, and Vidu is the active provider: every studio connection attempt will fail right now.
+        </div>
+      )}
+
+      <div className="glass neon-border rounded-xl p-4 text-center max-w-[180px] space-y-1">
+        <div className="text-2xl font-heading font-bold text-foreground">{activeViduCount}</div>
+        <div className="text-xs text-muted-foreground font-heading">Active key{activeViduCount === 1 ? "" : "s"}</div>
+      </div>
+
+      <div className="glass rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="font-heading text-xs">Key</TableHead>
+              <TableHead className="font-heading text-xs">Status</TableHead>
+              <TableHead className="font-heading text-xs">Note</TableHead>
+              <TableHead className="font-heading text-xs">Added</TableHead>
+              <TableHead className="font-heading text-xs text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {viduPool.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs">
+                  {revealedViduKeys[r.id] ? (
+                    <span className="break-all">{r.vidu_api_key}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-left hover:text-primary underline decoration-dotted"
+                      onClick={() => revealViduKey(r)}
+                      title="Click to reveal & copy (audited)"
+                    >
+                      {mask(r.vidu_api_key)}
+                    </button>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className={`text-xs font-heading px-2 py-0.5 rounded-full ${
+                    r.is_active ? "bg-primary/20 text-primary" : "bg-destructive/20 text-destructive"
+                  }`}>{r.is_active ? "active" : "inactive"}</span>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{r.note || "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex gap-1 justify-end">
+                    {r.is_active ? (
+                      <Button size="sm" variant="outline" className="font-heading text-xs" onClick={() => setConfirmDeactivateVidu(r)}>Deactivate</Button>
+                    ) : (
+                      <Button size="sm" variant="outline" className="font-heading text-xs" onClick={() => setViduActive(r, true)}>Activate</Button>
+                    )}
+                    <Button size="sm" variant="outline" className="font-heading text-xs border-destructive/30 text-destructive hover:bg-destructive/10" onClick={() => setConfirmRemoveVidu(r)}>Remove</Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {!viduLoading && viduPool.length === 0 && (
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No Vidu keys in the pool yet.</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+        </div>
+      </div>
+
       <div className="glass rounded-xl overflow-hidden">
         <div className="p-4 border-b border-border">
           <h3 className="text-sm font-heading font-semibold text-foreground flex items-center gap-2">
@@ -435,6 +684,82 @@ export default function DecartPoolManager() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDeactivate(null)} className="font-heading text-xs">Cancel</Button>
             <Button variant="destructive" onClick={() => confirmDeactivate && setActive(confirmDeactivate, false)} className="font-heading text-xs">Deactivate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddVidu} onOpenChange={setShowAddVidu}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Add a Vidu key to the shared pool</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="font-heading text-xs">Vidu API key</Label>
+              <Input value={newViduKey} onChange={(e) => setNewViduKey(e.target.value)} placeholder="vda_..." className="font-mono text-xs" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="font-heading text-xs">Note (optional)</Label>
+              <Input value={newViduNote} onChange={(e) => setNewViduNote(e.target.value)} placeholder="e.g. Global account, added Oct 2026" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddVidu(false)} className="font-heading text-xs">Cancel</Button>
+            <Button onClick={addViduKey} disabled={viduSaving} className="font-heading text-xs">{viduSaving ? "Adding…" : "Add to pool"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmRemoveVidu} onOpenChange={(o) => !o && setConfirmRemoveVidu(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Remove this Vidu key?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This permanently deletes the key from the pool. Any session currently using it keeps working until it ends,
+            but no new session will ever be assigned it again.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRemoveVidu(null)} className="font-heading text-xs">Cancel</Button>
+            <Button variant="destructive" onClick={() => confirmRemoveVidu && removeViduKey(confirmRemoveVidu)} className="font-heading text-xs">Remove</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmDeactivateVidu} onOpenChange={(o) => !o && setConfirmDeactivateVidu(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Deactivate this Vidu key?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            While Vidu is the active provider, every new session draws its real Vidu credential at random from the
+            active pool. Deactivating this key stops new sessions from being assigned it immediately; sessions
+            already using it keep working until they end. This action is logged in the admin audit trail.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeactivateVidu(null)} className="font-heading text-xs">Cancel</Button>
+            <Button variant="destructive" onClick={() => confirmDeactivateVidu && setViduActive(confirmDeactivateVidu, false)} className="font-heading text-xs">Deactivate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmProvider} onOpenChange={(o) => !o && setConfirmProvider(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">
+              Switch the active provider to {confirmProvider === "vidu" ? "Vidu S2" : "Decart"}?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {confirmProvider === "vidu"
+              ? "Every new studio connect will route to Vidu S2 instead of Decart. Make sure at least one active Vidu key is in the pool below before switching, or every connect attempt will fail."
+              : "Every new studio connect will route back to Decart. Sessions currently running on Vidu are not interrupted."}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmProvider(null)} className="font-heading text-xs">Cancel</Button>
+            <Button onClick={() => confirmProvider && setActiveProvider(confirmProvider)} disabled={providerSaving} className="font-heading text-xs">
+              {providerSaving ? "Switching…" : "Switch"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

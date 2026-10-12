@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useDecartRealtime } from "@/hooks/useDecartRealtime";
+import { useViduRealtime } from "@/hooks/useViduRealtime";
 import { VideoDisplay, type Orientation } from "./VideoDisplay";
 import { CharacterPresets } from "./CharacterPresets";
 import { CryptoPayment } from "./CryptoPayment";
@@ -1367,15 +1368,50 @@ export function DeepfakeStudio() {
   }, [remoteStream, obsEnabled, debugMode]);
 
   const {
-    connectionState,
-    error,
+    connectionState: decartConnectionState,
+    error: decartError,
     previewStream,
-    connect,
+    connect: decartConnect,
     startPreviewLoop,
-    disconnect,
+    disconnect: decartDisconnect,
     setImage,
-    applyStudioRequest,
+    applyStudioRequest: decartApplyStudioRequest,
   } = useDecartRealtime();
+
+  // Dual-provider dispatch: admin_set_active_provider() + mint_studio_credentials
+  // (supabase/migrations/20261012120000_vidu_dual_provider_plumbing.sql) decide
+  // which provider a given session actually uses; this ref just remembers that
+  // choice for the lifetime of the current session so disconnect/applyStudioRequest
+  // route to the right engine without every call site needing to know about it.
+  // Vidu's realtime API has no confirmed equivalent of Decart's setImage/
+  // applyStudioRequest for changing the reference image mid-session -- only
+  // session creation (which requires the image upfront) is confirmed, so
+  // applyStudioRequest is a clear "not supported yet" while connected to Vidu
+  // rather than a guessed implementation.
+  const viduRealtime = useViduRealtime();
+  const activeProviderRef = useRef<"decart" | "vidu">("decart");
+  const connectionState = activeProviderRef.current === "vidu" ? viduRealtime.connectionState : decartConnectionState;
+  const error = activeProviderRef.current === "vidu" ? viduRealtime.error : decartError;
+
+  const disconnect = useCallback(async () => {
+    if (activeProviderRef.current === "vidu") {
+      await viduRealtime.disconnect();
+    } else {
+      await decartDisconnect();
+    }
+  }, [viduRealtime, decartDisconnect]);
+
+  const applyStudioRequest = useCallback(async (options: Parameters<typeof decartApplyStudioRequest>[0]) => {
+    if (activeProviderRef.current === "vidu") {
+      toast({
+        title: "Not available on this provider yet",
+        description: "Switching characters or prompts mid-session isn't supported while connected to Vidu.",
+        variant: "destructive",
+      });
+      return { success: false, error: "not_supported_on_vidu", mode: options.mode ?? "live", outputUrl: null } as any;
+    }
+    return decartApplyStudioRequest(options);
+  }, [decartApplyStudioRequest, toast]);
 
   useEffect(() => {
     if (studioMode !== "preview") return;
@@ -1474,7 +1510,7 @@ export function DeepfakeStudio() {
           try {
             try { await disconnect(); } catch { /* noop */ }
             try { localStream?.getTracks().forEach((t) => t.stop()); } catch { /* noop */ }
-            const liveResult = await connect(
+            const liveResult = await decartConnect(
               previewDecartKey,
               handleRemoteStream,
               "Enhance the video slightly",
@@ -1593,9 +1629,20 @@ export function DeepfakeStudio() {
           setIsLaunching(false);
           return;
         }
+        activeProviderRef.current = row.provider === "vidu" ? "vidu" : "decart";
         decartKey = String(row.decart_key || "");
-        if (!decartKey) {
+        if (activeProviderRef.current === "decart" && !decartKey) {
           toast({ title: "Studio could not open", description: "Could not obtain a studio credential. Please try again.", variant: "destructive" });
+          setIsLaunching(false);
+          return;
+        }
+        if (activeProviderRef.current === "vidu" && !referenceImage) {
+          // Vidu needs the reference image at session-creation time (unlike
+          // Decart, which connects with a generic prompt and applies the
+          // image afterward via setImage) -- release the session mint just
+          // opened before bailing, since nothing will come along and close it.
+          try { await supabase.rpc("pause_studio_session", { p_key: trimmedKey, p_session_id: row.session_id } as any); } catch { /* noop */ }
+          toast({ title: "Upload a reference image first", description: "Vidu needs your reference image before connecting.", variant: "destructive" });
           setIsLaunching(false);
           return;
         }
@@ -1630,14 +1677,47 @@ export function DeepfakeStudio() {
     }
 
 
-    // PHASE 2: Open the Decart connection using the freshly minted credential.
-    // Metering already started at mint so handshake time is accounted for.
-    let connectResult: Awaited<ReturnType<typeof connect>> | null = null;
+    // PHASE 2 (Vidu branch): Vidu's mint already confirmed earlier that
+    // referenceImage is set. This path is intentionally simpler than
+    // Decart's below -- no timeout-retry or capacity-string heuristics,
+    // since neither has been confirmed against a real Vidu failure yet.
+    if (activeProviderRef.current === "vidu") {
+      try {
+        const referenceImageDataUri = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => (typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Failed to read reference image")));
+          reader.onerror = () => reject(new Error("Failed to read reference image"));
+          reader.readAsDataURL(referenceImage as File);
+        });
+        await viduRealtime.connect({
+          pKey: trimmedKey,
+          sessionId: sessionIdRef.current || "",
+          referenceImageDataUri,
+          onRemoteStream: handleRemoteStream,
+        });
+      } catch (e: any) {
+        console.error("[Studio] Vidu connect failed:", e);
+        if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+        try { await supabase.rpc("pause_studio_session", { p_key: trimmedKey, p_session_id: sessionIdRef.current } as any); } catch { /* noop */ }
+        setSession(null);
+        setTimerAnchor(null);
+        toast({ title: "Studio could not open", description: e?.message || "Could not connect to Vidu. Please try again.", variant: "destructive" });
+        setIsLaunching(false);
+        return;
+      }
+      setIsLaunching(false);
+      return;
+    }
+
+    // PHASE 2 (Decart branch): Open the Decart connection using the freshly
+    // minted credential. Metering already started at mint so handshake time
+    // is accounted for.
+    let connectResult: Awaited<ReturnType<typeof decartConnect>> | null = null;
     let connectAttempt = 0;
 
     while (true) {
       try {
-        connectResult = await connect(decartKey, handleRemoteStream, "Enhance the video slightly", { lite: liteMode });
+        connectResult = await decartConnect(decartKey, handleRemoteStream, "Enhance the video slightly", { lite: liteMode });
         break;
       } catch (e: any) {
         const raw0 = (e?.message || e?.error?.message || e?.toString?.() || "") + " " + (e?.name || "");

@@ -296,7 +296,7 @@ export default function Admin() {
     { id: "payments", label: "Payments", icon: "💰" },
     { id: "funnel", label: "Funnel", icon: "🎯" },
     { id: "api_keys", label: "Unique Keys", icon: "🔑" },
-    { id: "key_pool", label: "Decart Pool", icon: "🗝️" },
+    { id: "key_pool", label: "Realtime Providers", icon: "🗝️" },
     { id: "key_activity", label: "Key Activity", icon: "📜" },
     { id: "pricing", label: "Pricing", icon: "💎" },
     { id: "partners", label: "Partners", icon: "🤝" },

@@ -1,0 +1,198 @@
+import { useRef, useState, useCallback, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+
+// aliyun-rtc-sdk is NOT statically imported here on purpose: it pulls in a
+// ~1MB dependency tree (axios, aliyun-queen-engine, crypto-js, etc.) that a
+// static import inlines into whatever chunk DeepfakeStudio.tsx ends up in --
+// confirmed by a real build: the main bundle jumped from 258KB to 1.3MB
+// before this was switched to a dynamic import. Since active_provider
+// defaults to 'decart' and only an admin can flip it, almost no visitor
+// should ever pay for this download; loading it lazily inside connect()
+// means they don't, while Decart's existing bundling (its own SDK already
+// splits into a separate livekit-client chunk) stays untouched.
+let aliRtcModulePromise: Promise<typeof import("aliyun-rtc-sdk")> | null = null;
+function loadAliRtc() {
+  if (!aliRtcModulePromise) aliRtcModulePromise = import("aliyun-rtc-sdk");
+  return aliRtcModulePromise;
+}
+
+export type ViduConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting";
+
+export interface ViduConnectParams {
+  pKey: string;
+  sessionId: string;
+  /** data:image/...;base64,... -- Vidu's external image_url fetch path is
+   * confirmed broken server-side (reproduced across 2 keys, every image and
+   * editing_type tried); inline base64 is the only path confirmed working. */
+  referenceImageDataUri: string;
+  editingType?: string;
+  onRemoteStream: (stream: MediaStream) => void;
+}
+
+// Everything in this module is hands-on confirmed against a live Vidu
+// account and the real aliyun-rtc-sdk@7.3.x TypeScript definitions (not
+// doc-skimmed) -- EXCEPT the actual browser-side joinChannel/subscribe flow
+// below, which has not yet been run in a real browser. Treat the mint
+// request/response shape as solid; treat the AliRTC wiring as a careful
+// first pass that needs a real end-to-end connect test before wide rollout.
+//
+// Key confirmed facts this hook relies on:
+// - mint-vidu-rtc-session (supabase/functions/mint-vidu-rtc-session) returns
+//   { rtc: { app_id, channel_id, user_id, token, token_expire_at, provider },
+//     render_uid, live_id, client_secret }.
+// - rtc.token is NOT a plain AliRTC token string -- it's a base64-encoded
+//   JSON blob: { appid, channelid, nonce, timestamp, token, userid }. This
+//   is literally the AliRtcAuthInfo payload, just bundled and base64-wrapped
+//   by Vidu. Decoded and remapped to the SDK's camelCase AliRtcAuthInfo
+//   shape (appId/channelId/userId/nonce/timestamp/token) below.
+// - render_uid is a SEPARATE identity from rtc.user_id: rtc.user_id is this
+//   browser's own publish identity; render_uid is the identity the
+//   AI-transformed output is published under. We join as rtc.user_id and
+//   wait for render_uid's track to become available, mirroring Decart's
+//   onRemoteStream callback pattern.
+// - aliyun-rtc-sdk's AliRtcEngine.getVideoTrack({ userId, streamType }) and
+//   getAudioTrack(userId) return raw MediaStreamTrack objects for ANY uid
+//   (local when userId is omitted, remote when provided) -- confirmed via
+//   the package's shipped .d.ts. Wrapping those in `new MediaStream([...])`
+//   gives the same MediaStream shape useDecartRealtime's onRemoteStream
+//   callback already expects, so DeepfakeStudio.tsx doesn't need a
+//   provider-specific rendering path downstream of connect().
+
+const JOIN_TIMEOUT_MS = 20000;
+
+export function useViduRealtime() {
+  const [connectionState, setConnectionState] = useState<ViduConnectionState>("disconnected");
+  const [error, setError] = useState<string | null>(null);
+  const engineRef = useRef<any>(null);
+  const renderUidRef = useRef<string | null>(null);
+  const onRemoteStreamRef = useRef<((s: MediaStream) => void) | null>(null);
+  const remoteDeliveredRef = useRef(false);
+
+  const tryDeliverRemoteStream = useCallback(async () => {
+    const engine = engineRef.current;
+    const renderUid = renderUidRef.current;
+    if (!engine || !renderUid || remoteDeliveredRef.current) return;
+    try {
+      const { AliRtcRawDataStreamType } = await loadAliRtc();
+      const videoTrack = await engine.getVideoTrack({
+        userId: renderUid,
+        streamType: AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture,
+      });
+      if (!videoTrack) return; // not published yet; a later event will retry
+      const audioTrack = await engine.getAudioTrack(renderUid).catch(() => undefined);
+      const tracks: MediaStreamTrack[] = [videoTrack];
+      if (audioTrack) tracks.push(audioTrack);
+      remoteDeliveredRef.current = true;
+      onRemoteStreamRef.current?.(new MediaStream(tracks));
+      setConnectionState("connected");
+    } catch (err) {
+      console.warn("[useViduRealtime] Failed to materialize the remote stream", err);
+    }
+  }, []);
+
+  const connect = useCallback(async (params: ViduConnectParams) => {
+    const { pKey, sessionId, referenceImageDataUri, editingType, onRemoteStream } = params;
+    setConnectionState("connecting");
+    setError(null);
+    remoteDeliveredRef.current = false;
+    onRemoteStreamRef.current = onRemoteStream;
+
+    try {
+      const { data: session, error: sessionErr } = await supabase.functions.invoke("mint-vidu-rtc-session", {
+        body: {
+          p_key: pKey,
+          p_session_id: sessionId,
+          image_url: referenceImageDataUri,
+          editing_type: editingType,
+        },
+      });
+      if (sessionErr) throw new Error(sessionErr.message || "Could not start the Vidu session");
+      if (!session?.ok) throw new Error(session?.message || "Vidu rejected the session request");
+
+      const rtc = session.rtc;
+      renderUidRef.current = session.render_uid || null;
+      if (!rtc?.token) throw new Error("Vidu did not return join credentials");
+
+      let authInfo: { appId: string; channelId: string; userId: string; nonce?: string; timestamp: number; token: string };
+      try {
+        const decoded = JSON.parse(atob(rtc.token));
+        authInfo = {
+          appId: decoded.appid,
+          channelId: decoded.channelid,
+          userId: decoded.userid,
+          nonce: decoded.nonce || undefined,
+          timestamp: decoded.timestamp,
+          token: decoded.token,
+        };
+        if (!authInfo.appId || !authInfo.channelId || !authInfo.userId || !authInfo.token) {
+          throw new Error("incomplete");
+        }
+      } catch {
+        throw new Error("Could not read Vidu session credentials");
+      }
+
+      const { default: AliRtcEngine } = await loadAliRtc();
+      const engine = AliRtcEngine.getInstance();
+      engineRef.current = engine;
+
+      engine.on("remoteUserOnLineNotify", (uid: string) => {
+        if (uid === renderUidRef.current) void tryDeliverRemoteStream();
+      });
+      engine.on("remoteTrackAvailableNotify", (uid: string) => {
+        if (uid === renderUidRef.current) void tryDeliverRemoteStream();
+      });
+      engine.on("occurError", (err: any) => {
+        console.error("[useViduRealtime] engine error", err);
+        setError(err?.message || "Vidu connection error");
+      });
+
+      // Starting the local preview before joinChannel opens the camera; the
+      // engine auto-publishes camera+mic on join (its documented default),
+      // so no separate publish() call is needed on this SDK version.
+      await engine.startPreview();
+
+      await Promise.race([
+        engine.joinChannel(authInfo, "eliteswap-user"),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out")), JOIN_TIMEOUT_MS)),
+      ]);
+
+      // The remote (AI-transformed) track may already be publishing by the
+      // time join resolves; the event listeners above catch it otherwise.
+      void tryDeliverRemoteStream();
+
+      return { engine, liveId: session.live_id as string | null };
+    } catch (err: any) {
+      const message = err?.message || "Failed to connect to Vidu realtime";
+      setError(message);
+      try { await engineRef.current?.leaveChannel?.(); } catch { /* noop */ }
+      try { await engineRef.current?.destroy?.(); } catch { /* noop */ }
+      engineRef.current = null;
+      setConnectionState("disconnected");
+      throw err;
+    }
+  }, [tryDeliverRemoteStream]);
+
+  const disconnect = useCallback(async () => {
+    try { await engineRef.current?.leaveChannel?.(); } catch { /* noop */ }
+    try { await engineRef.current?.destroy?.(); } catch { /* noop */ }
+    engineRef.current = null;
+    renderUidRef.current = null;
+    remoteDeliveredRef.current = false;
+    onRemoteStreamRef.current = null;
+    setConnectionState("disconnected");
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      try { engineRef.current?.leaveChannel?.(); } catch { /* noop */ }
+      try { engineRef.current?.destroy?.(); } catch { /* noop */ }
+    };
+  }, []);
+
+  return {
+    connectionState,
+    error,
+    connect,
+    disconnect,
+  };
+}
