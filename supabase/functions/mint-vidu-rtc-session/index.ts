@@ -19,9 +19,12 @@
 //   - Endpoint: POST https://api.vidu.com/live/s_editing/realtime
 //   - Auth: Authorization: Token vda_xxx
 //   - Body: { image_url, editing_type }. editing_type is one of
-//     style_transfer (default), virtual_tryon, subject_replacement,
-//     background_replacement -- NOT "face_swap", which doesn't exist and
-//     silently passes validation before crashing deeper in the pipeline.
+//     style_transfer (Vidu's API default), virtual_tryon,
+//     subject_replacement, background_replacement -- NOT "face_swap", which
+//     doesn't exist. We default to subject_replacement: it's what Vidu's own
+//     character-swap page uses, and it's confirmed live to replace the
+//     person on camera with the reference character (style_transfer only
+//     repaints the video in the reference's look).
 //   - image_url MUST be an inline base64 data URI (data:image/...;base64,...).
 //     A real, publicly-reachable external https:// URL in the same field
 //     consistently 500s ({"reason":"editing_liveO100live"}) -- reproduced
@@ -38,11 +41,10 @@
 //     client_secret, rtc: { app_id, channel_id, user_id, token,
 //     token_expire_at, provider }, render_uid }. render_uid is the identity
 //     the AI-transformed output is published under -- distinct from
-//     rtc.user_id, which is this session's own publish identity. The
-//     browser will need app_id/channel_id/token/user_id to join Aliyun RTC
-//     and render_uid to know which remote stream to subscribe to; the
-//     actual browser-side join is not yet verified end-to-end (needs a
-//     real browser + the Aliyun RTC web SDK, not just this REST call).
+//     rtc.user_id, which is this session's own publish identity.
+//   - client_secret authenticates the session's control WebSocket on its
+//     own (no API key), so the browser opens it directly -- see
+//     useViduRealtime.ts. control_url tells it where, matching VIDU_API_HOST.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -58,6 +60,7 @@ const json = (b: unknown, s = 200) =>
   });
 
 const VIDU_API_HOST = Deno.env.get("VIDU_API_HOST") || "https://api.vidu.com";
+const VIDU_CONTROL_URL = `${VIDU_API_HOST.replace(/^http/, "ws")}/live/ws/live/connect`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -84,7 +87,7 @@ Deno.serve(async (req) => {
     const imageDataUri = body?.image_url;
     const editingType = typeof body?.editing_type === "string" && body.editing_type.trim()
       ? body.editing_type.trim()
-      : "style_transfer";
+      : "subject_replacement";
 
     if (!pKey || !sessionId) {
       return json({ code: "BAD_REQUEST", message: "p_key and p_session_id are required" }, 400);
@@ -132,12 +135,8 @@ Deno.serve(async (req) => {
       return json({ code: "PROVIDER_MISMATCH", message: "Vidu is not the active provider right now" }, 409);
     }
 
-    // Queried directly (not via assign_shared_vidu_key()) because the
-    // control-channel relay (vidu-control-relay) needs to reuse the exact
-    // same pooled key for this session afterward -- Vidu scopes a live_id
-    // to the account/key that created it, so a freshly re-randomized key
-    // would likely be rejected. Need the pool row's id to persist that
-    // choice, which the RPC's plain-text return doesn't give us.
+    // Queried directly (not via assign_shared_vidu_key()) so the chosen
+    // pool row's id can be recorded on the session for auditing.
     const { data: poolRow, error: poolErr } = await admin
       .from("vidu_shared_pool")
       .select("id, vidu_api_key")
@@ -186,8 +185,6 @@ Deno.serve(async (req) => {
       return json({ code: "VIDU_ERROR", message: "Vidu did not return join credentials" }, 502);
     }
 
-    // Record which pool key this live_id belongs to so vidu-control-relay
-    // can reuse it for the control WebSocket handshake afterward.
     try {
       await admin
         .from("studio_sessions")
@@ -214,6 +211,7 @@ Deno.serve(async (req) => {
       // camera feed under rtc.user_id.
       render_uid: viduBody.render_uid ?? null,
       client_secret: viduBody.client_secret ?? null,
+      control_url: VIDU_CONTROL_URL,
     });
   } catch (e) {
     console.error("[mint-vidu-rtc-session]", e);

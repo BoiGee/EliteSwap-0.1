@@ -1,15 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-// aliyun-rtc-sdk is NOT statically imported here on purpose: it pulls in a
-// ~1MB dependency tree (axios, aliyun-queen-engine, crypto-js, etc.) that a
-// static import inlines into whatever chunk DeepfakeStudio.tsx ends up in --
-// confirmed by a real build: the main bundle jumped from 258KB to 1.3MB
-// before this was switched to a dynamic import. Since active_provider
-// defaults to 'decart' and only an admin can flip it, almost no visitor
-// should ever pay for this download; loading it lazily inside connect()
-// means they don't, while Decart's existing bundling (its own SDK already
-// splits into a separate livekit-client chunk) stays untouched.
+// Lazy-loaded: the SDK is ~1MB and a static import lands it in the main bundle.
 let aliRtcModulePromise: Promise<typeof import("aliyun-rtc-sdk")> | null = null;
 function loadAliRtc() {
   if (!aliRtcModulePromise) aliRtcModulePromise = import("aliyun-rtc-sdk");
@@ -21,55 +13,25 @@ export type ViduConnectionState = "disconnected" | "connecting" | "connected" | 
 export interface ViduConnectParams {
   pKey: string;
   sessionId: string;
-  /** data:image/...;base64,... -- Vidu's external image_url fetch path is
-   * confirmed broken server-side (reproduced across 2 keys, every image and
-   * editing_type tried); inline base64 is the only path confirmed working. */
+  /** data:image/...;base64 -- Vidu's external image_url fetch is broken server-side. */
   referenceImageDataUri: string;
   editingType?: string;
   onRemoteStream: (stream: MediaStream) => void;
+  /** Vidu ended the session on its side (render worker left, server hangup, control lost, no output). */
+  onEnded?: (reason: string) => void;
 }
 
-// Everything in this module is hands-on confirmed against a live Vidu
-// account and the real aliyun-rtc-sdk@7.3.x TypeScript definitions (not
-// doc-skimmed) -- EXCEPT the actual browser-side joinChannel/subscribe flow
-// below, which has not yet been run in a real browser. Treat the mint
-// request/response shape as solid; treat the AliRTC wiring as a careful
-// first pass that needs a real end-to-end connect test before wide rollout.
-//
-// Key confirmed facts this hook relies on:
-// - mint-vidu-rtc-session (supabase/functions/mint-vidu-rtc-session) returns
-//   { rtc: { app_id, channel_id, user_id, token, token_expire_at, provider },
-//     render_uid, live_id, client_secret }.
-// - rtc.token is NOT a plain AliRTC token string -- it's a base64-encoded
-//   JSON blob: { appid, channelid, nonce, timestamp, token, userid }. This
-//   is literally the AliRtcAuthInfo payload, just bundled and base64-wrapped
-//   by Vidu. Decoded and remapped to the SDK's camelCase AliRtcAuthInfo
-//   shape (appId/channelId/userId/nonce/timestamp/token) below.
-// - render_uid is a SEPARATE identity from rtc.user_id: rtc.user_id is this
-//   browser's own publish identity; render_uid is the identity the
-//   AI-transformed output is published under. We join as rtc.user_id and
-//   wait for render_uid's track to become available, mirroring Decart's
-//   onRemoteStream callback pattern.
-// - aliyun-rtc-sdk's AliRtcEngine.getVideoTrack({ userId, streamType }) and
-//   getAudioTrack(userId) return raw MediaStreamTrack objects for ANY uid
-//   (local when userId is omitted, remote when provided) -- confirmed via
-//   the package's shipped .d.ts. Wrapping those in `new MediaStream([...])`
-//   gives the same MediaStream shape useDecartRealtime's onRemoteStream
-//   callback already expects, so DeepfakeStudio.tsx doesn't need a
-//   provider-specific rendering path downstream of connect().
-
-// Generous on purpose: Vidu's own reference server waits up to 120s for
-// conn_init_ack on editing-type sessions before giving up (confirmed from
-// their source, not guessed) -- meaning their backend can legitimately take
-// nearly 2 minutes to finish spinning up for this session type. The old
-// 20s/10s values here were tight enough that real studio_sessions rows were
-// self-ending at 14-30s on every attempt: DeepfakeStudio.tsx's catch block
-// calls pause_studio_session (and this hook force-closes the control
-// socket) the moment either timeout throws, which was hanging up on Vidu
-// mid-handshake every single time, before it could ever succeed -- not a
-// sign anything was actually broken.
-const JOIN_TIMEOUT_MS = 60000;
-const PREVIEW_TIMEOUT_MS = 20000;
+// Verified end-to-end against the live service (headless Chrome + fake camera):
+// - Without conn_init on the control channel, Vidu's render worker leaves ~25s in and output freezes.
+// - render_uid's track is only retrievable once its subscription reaches Subscribed, after join resolves.
+// - The SDK auto-plays subscribed remote audio; nothing consumes output audio, so it would only echo.
+const PREVIEW_TIMEOUT_MS = 30000; // covers a camera-permission prompt the user still has to answer
+const JOIN_TIMEOUT_MS = 30000; // measured 2-5s
+const OUTPUT_TIMEOUT_MS = 45000; // swapped output measured arriving 7-9s after join starts
+const REMOTE_POLL_MS = 1000;
+const CONTROL_RECONNECT_DELAYS_MS = [500, 1500, 3000, 5000];
+const DEFAULT_CONTROL_URL = "wss://api.vidu.com/live/ws/live/connect";
+const USER_OFFLINE_QUIT = 0; // AliRtcUserOfflineReason.AliRtcUserOfflineQuit (not exported at runtime)
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([
@@ -78,13 +40,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   ]);
 }
 
-// A timed-out startPreview()/joinChannel() doesn't actually cancel the
-// underlying getUserMedia() call -- the browser can still grab the camera
-// in the background afterward, orphaned, with nothing left to release it,
-// since we gave up our only reference when we stopped waiting. Explicitly
-// stopping whatever local video track exists (MediaStreamTrack.stop() works
-// regardless of what acquired it) before destroying the engine is the best
-// defense available against that without a confirmed cancellation API.
+// A timed-out getUserMedia() isn't cancelled; stop the track or the camera stays locked.
 async function releaseEngine(engine: any) {
   if (!engine) return;
   try {
@@ -97,56 +53,154 @@ async function releaseEngine(engine: any) {
   try { await engine.destroy?.(); } catch { /* noop */ }
 }
 
-function buildControlSocketUrl(params: { accessToken: string; pKey: string; sessionId: string; liveId: string; clientSecret?: string | null }) {
-  const base = import.meta.env.VITE_SUPABASE_URL as string;
-  const wsBase = base.replace(/^http/, "ws");
-  const query = new URLSearchParams({
-    access_token: params.accessToken,
-    p_key: params.pKey,
-    p_session_id: params.sessionId,
-    live_id: params.liveId,
-  });
-  if (params.clientSecret) query.set("client_secret", params.clientSecret);
-  return `${wsBase}/functions/v1/vidu-control-relay?${query.toString()}`;
+// Opened directly from the browser: the per-session client_secret authenticates it, no API key.
+// Envelope per Vidu's reference server: type 1 conn_init, 2 ack, 5 hangup (client), 6 hangup (server).
+class ViduControlChannel {
+  private ws: WebSocket | null = null;
+  private seq = 0;
+  private connId = "";
+  private attempts = 0;
+  private closed = false;
+
+  constructor(
+    private readonly url: string,
+    private readonly liveId: string,
+    private readonly clientSecret: string,
+    private readonly onEnded: (reason: string) => void,
+  ) {}
+
+  open() {
+    if (this.closed) return;
+    this.connId = crypto.randomUUID();
+    this.seq = 0;
+    const query = new URLSearchParams({ live_id: this.liveId, conn_id: this.connId, client_secret: this.clientSecret });
+    const ws = new WebSocket(`${this.url}?${query.toString()}`);
+    this.ws = ws;
+    ws.onopen = () => this.send(1, { conn_init: { version: 1 } });
+    ws.onmessage = (ev) => this.handleMessage(ev.data);
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      this.ws = null;
+      if (this.closed) return;
+      // The render worker leaves ~25s after losing this channel; a new conn_id + conn_init re-attaches.
+      const delay = CONTROL_RECONNECT_DELAYS_MS[this.attempts];
+      if (delay === undefined) {
+        this.end("control_lost");
+        return;
+      }
+      this.attempts++;
+      console.warn(`[useViduRealtime] control channel dropped; reconnecting in ${delay}ms`);
+      setTimeout(() => this.open(), delay);
+    };
+  }
+
+  hangup() {
+    if (this.closed) return;
+    this.closed = true;
+    this.send(5, { hangup: { hangup_reason: "user_end" } });
+    const ws = this.ws;
+    this.ws = null;
+    setTimeout(() => { try { ws?.close(1000, "session ended"); } catch { /* noop */ } }, 300);
+  }
+
+  private send(type: number, payload: Record<string, unknown>) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ type, live_id: this.liveId, conn_id: this.connId, seq_id: ++this.seq, payload }));
+  }
+
+  private handleMessage(data: unknown) {
+    let msg: any;
+    try { msg = JSON.parse(String(data)); } catch { return; }
+    const ack = msg?.payload?.conn_init_ack;
+    if (ack) {
+      if (ack.success) {
+        this.attempts = 0;
+        console.info("[useViduRealtime] control channel ready");
+      } else if (ack.error_code !== "NOT_READY") {
+        // NOT_READY is transient for editing sessions; anything else (e.g. LIVE_ENDED) is final.
+        console.error("[useViduRealtime] control channel rejected", ack);
+        this.end(`control_rejected:${ack.error_code || "unknown"}`);
+      }
+      return;
+    }
+    if (msg?.type === 6) this.end(msg.payload?.hangup?.hangup_reason || "server_hangup");
+  }
+
+  private end(reason: string) {
+    if (this.closed) return;
+    this.closed = true;
+    const ws = this.ws;
+    this.ws = null;
+    try { ws?.close(); } catch { /* noop */ }
+    this.onEnded(reason);
+  }
 }
 
 export function useViduRealtime() {
   const [connectionState, setConnectionState] = useState<ViduConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const engineRef = useRef<any>(null);
+  const controlRef = useRef<ViduControlChannel | null>(null);
   const renderUidRef = useRef<string | null>(null);
   const onRemoteStreamRef = useRef<((s: MediaStream) => void) | null>(null);
-  const remoteDeliveredRef = useRef(false);
-  const controlSocketRef = useRef<WebSocket | null>(null);
+  const onEndedRef = useRef<((reason: string) => void) | null>(null);
+  const deliveredTrackRef = useRef<MediaStreamTrack | null>(null);
+  const remotePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const outputWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endingRef = useRef(false);
+
+  const stopTimers = useCallback(() => {
+    if (remotePollRef.current) { clearInterval(remotePollRef.current); remotePollRef.current = null; }
+    if (outputWatchdogRef.current) { clearTimeout(outputWatchdogRef.current); outputWatchdogRef.current = null; }
+  }, []);
+
+  const handleEnded = useCallback((reason: string) => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+    console.warn("[useViduRealtime] session ended by Vidu:", reason);
+    stopTimers();
+    controlRef.current?.hangup();
+    controlRef.current = null;
+    void releaseEngine(engineRef.current);
+    engineRef.current = null;
+    setError(reason === "no_output" ? "Vidu didn't start sending the swapped video" : "The Vidu session ended");
+    setConnectionState("disconnected");
+    const onEnded = onEndedRef.current;
+    onEndedRef.current = null;
+    onEnded?.(reason);
+  }, [stopTimers]);
 
   const tryDeliverRemoteStream = useCallback(async () => {
     const engine = engineRef.current;
     const renderUid = renderUidRef.current;
-    if (!engine || !renderUid || remoteDeliveredRef.current) return;
+    if (!engine || !renderUid || endingRef.current) return;
     try {
       const { AliRtcRawDataStreamType } = await loadAliRtc();
-      const videoTrack = await engine.getVideoTrack({
+      const videoTrack: MediaStreamTrack | undefined = await engine.getVideoTrack({
         userId: renderUid,
         streamType: AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture,
       });
-      if (!videoTrack) return; // not published yet; a later event will retry
-      const audioTrack = await engine.getAudioTrack(renderUid).catch(() => undefined);
-      const tracks: MediaStreamTrack[] = [videoTrack];
-      if (audioTrack) tracks.push(audioTrack);
-      remoteDeliveredRef.current = true;
-      onRemoteStreamRef.current?.(new MediaStream(tracks));
+      if (!videoTrack || endingRef.current) return;
+      stopTimers();
+      // A re-subscription hands back a new track object; re-deliver so output isn't left on a dead one.
+      if (videoTrack === deliveredTrackRef.current) return;
+      deliveredTrackRef.current = videoTrack;
+      onRemoteStreamRef.current?.(new MediaStream([videoTrack]));
       setConnectionState("connected");
     } catch (err) {
       console.warn("[useViduRealtime] Failed to materialize the remote stream", err);
     }
-  }, []);
+  }, [stopTimers]);
 
   const connect = useCallback(async (params: ViduConnectParams) => {
-    const { pKey, sessionId, referenceImageDataUri, editingType, onRemoteStream } = params;
+    const { pKey, sessionId, referenceImageDataUri, editingType, onRemoteStream, onEnded } = params;
+    endingRef.current = false;
     setConnectionState("connecting");
     setError(null);
-    remoteDeliveredRef.current = false;
+    deliveredTrackRef.current = null;
     onRemoteStreamRef.current = onRemoteStream;
+    // Armed only once connect() succeeds; an end before that surfaces as connect()'s own error.
+    onEndedRef.current = null;
 
     try {
       const { data: session, error: sessionErr } = await supabase.functions.invoke("mint-vidu-rtc-session", {
@@ -162,56 +216,12 @@ export function useViduRealtime() {
 
       const rtc = session.rtc;
       renderUidRef.current = session.render_uid || null;
-      if (!rtc?.token) throw new Error("Vidu did not return join credentials");
+      if (!rtc?.token || !renderUidRef.current) throw new Error("Vidu did not return join credentials");
+      if (!session.live_id || !session.client_secret) throw new Error("Vidu did not return session control credentials");
 
-      // Separate from the AliRTC media join below: Vidu's sessions come
-      // back in "waiting" status and (per their own reference server) need
-      // this control WebSocket's conn_init handshake completed before they
-      // start actually producing output. Opened in parallel with the media
-      // join since it only needs live_id/client_secret, both already in
-      // hand -- doesn't need to wait for joinChannel to resolve first.
-      // Best-effort: failure here shouldn't block the media connection
-      // itself, since the camera panel is useful even if this fails and
-      // gets caught/retried separately. Logged loudly either way.
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const accessToken = sessionData?.session?.access_token;
-        if (accessToken && session.live_id) {
-          const controlUrl = buildControlSocketUrl({
-            accessToken,
-            pKey,
-            sessionId,
-            liveId: session.live_id,
-            clientSecret: session.client_secret,
-          });
-          const controlSocket = new WebSocket(controlUrl);
-          controlSocketRef.current = controlSocket;
-          controlSocket.onmessage = (ev) => {
-            try {
-              const msg = JSON.parse(ev.data);
-              if (msg?.payload?.conn_init_ack) {
-                if (msg.payload.conn_init_ack.success) {
-                  console.info("[useViduRealtime] control channel ready (conn_init_ack success)");
-                } else {
-                  console.warn("[useViduRealtime] control channel conn_init_ack failed", msg.payload.conn_init_ack);
-                }
-              } else if (msg?.event === "fatal") {
-                console.error("[useViduRealtime] control channel fatal", msg);
-              } else {
-                console.info("[useViduRealtime] control channel message", msg);
-              }
-            } catch {
-              console.info("[useViduRealtime] control channel raw message", ev.data);
-            }
-          };
-          controlSocket.onerror = (ev) => console.error("[useViduRealtime] control channel error", ev);
-          controlSocket.onclose = (ev) => console.info("[useViduRealtime] control channel closed", ev.code, ev.reason);
-        } else {
-          console.warn("[useViduRealtime] could not open control channel: missing access token or live_id");
-        }
-      } catch (controlErr) {
-        console.error("[useViduRealtime] control channel setup failed", controlErr);
-      }
+      const control = new ViduControlChannel(session.control_url || DEFAULT_CONTROL_URL, session.live_id, session.client_secret, handleEnded);
+      controlRef.current = control;
+      control.open();
 
       let authInfo: { appId: string; channelId: string; userId: string; nonce?: string; timestamp: number; token: string };
       try {
@@ -231,43 +241,31 @@ export function useViduRealtime() {
         throw new Error("Could not read Vidu session credentials");
       }
 
-      const { default: AliRtcEngine } = await loadAliRtc();
-      // createInstance(), not getInstance(): getInstance() is a singleton
-      // getter -- if a previous failed attempt left its engine in a wedged
-      // internal state (plausible given the camera issues seen so far),
-      // every subsequent attempt would silently inherit that same broken
-      // instance instead of starting clean. createInstance() guarantees a
-      // genuinely fresh engine every connect.
-      const engine = AliRtcEngine.createInstance();
+      const AliRtc = await loadAliRtc();
+      // createInstance(), not the getInstance() singleton, so a wedged engine from a failed attempt can't leak in.
+      const engine = AliRtc.default.createInstance();
       engineRef.current = engine;
 
-      engine.on("remoteUserOnLineNotify", (uid: string) => {
-        if (uid === renderUidRef.current) void tryDeliverRemoteStream();
+      const isRender = (uid: string) => uid === renderUidRef.current;
+      engine.on("remoteUserOnLineNotify", (uid: string) => { if (isRender(uid)) void tryDeliverRemoteStream(); });
+      engine.on("remoteTrackAvailableNotify", (uid: string) => { if (isRender(uid)) void tryDeliverRemoteStream(); });
+      engine.on("videoSubscribeStateChanged", (uid: string, _prev: number, next: number) => {
+        if (isRender(uid) && next === AliRtc.AliRtcSubscribeState.AliRtcStateSubscribed) void tryDeliverRemoteStream();
       });
-      engine.on("remoteTrackAvailableNotify", (uid: string) => {
-        if (uid === renderUidRef.current) void tryDeliverRemoteStream();
+      engine.on("remoteUserOffLineNotify", (uid: string, reason: number) => {
+        if (isRender(uid) && reason === USER_OFFLINE_QUIT && deliveredTrackRef.current) handleEnded("render_left");
+      });
+      engine.on("connectionStatusChange", (status: number) => {
+        if (status === AliRtc.AliRtcConnectionStatus.AliRtcConnectionStatusFailed) handleEnded("connection_failed");
       });
       engine.on("occurError", (err: any) => {
         console.error("[useViduRealtime] engine error", err);
         setError(err?.message || "Vidu connection error");
       });
 
-      // NOTE: an explicit enableLocalVideo(true) call was tried here and
-      // reverted -- live testing showed it reintroduced the exact
-      // stuck-on-connecting hang that the startPreview() timeout below was
-      // added to fix, right after a round where the connection was
-      // actually getting through (camera permission granted) without it.
-      // Likely conflicts with startPreview()'s own internal camera
-      // handling rather than helping it. Do not re-add without confirming
-      // it's actually necessary first.
+      engine.setDefaultSubscribeAllRemoteAudioStreams(false);
 
-      // Starting the local preview before joinChannel opens the camera; the
-      // engine auto-publishes camera+mic on join (its documented default),
-      // so no separate publish() call is needed on this SDK version.
-      // Timeout-guarded: an unresolved startPreview() (e.g. camera access
-      // silently stuck) previously left connectionState stuck on
-      // "connecting" forever with no error, since nothing downstream of it
-      // could ever run -- reproduced live.
+      // Don't add enableLocalVideo(true) here: it reintroduced a stuck-on-connecting hang in live testing.
       try {
         await withTimeout(engine.startPreview(), PREVIEW_TIMEOUT_MS, "Could not access your camera. Check camera permissions and try again.");
       } catch (previewErr) {
@@ -277,17 +275,16 @@ export function useViduRealtime() {
 
       await withTimeout(engine.joinChannel(authInfo, "eliteswap-user"), JOIN_TIMEOUT_MS, "Connection timed out");
 
-      // The remote (AI-transformed) track may already be publishing by the
-      // time join resolves; the event listeners above catch it otherwise.
       void tryDeliverRemoteStream();
+      if (!deliveredTrackRef.current) {
+        remotePollRef.current = setInterval(() => void tryDeliverRemoteStream(), REMOTE_POLL_MS);
+        outputWatchdogRef.current = setTimeout(() => {
+          if (!deliveredTrackRef.current) handleEnded("no_output");
+        }, OUTPUT_TIMEOUT_MS);
+      }
 
-      // DeepfakeStudio.tsx's own camera-feed panel expects a local
-      // MediaStream back from connect() (mirrors Decart's connect(), which
-      // returns { stream, realtimeClient } for exactly this) -- this was
-      // missing entirely before, so that panel had nothing to show even
-      // when the camera and connection were otherwise fine.
-      const { AliRtcRawDataStreamType } = await loadAliRtc();
-      const localVideoTrack = await engine.getVideoTrack({ streamType: AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture }).catch(() => undefined);
+      // DeepfakeStudio's camera panel expects the local stream back, like Decart's connect().
+      const localVideoTrack = await engine.getVideoTrack({ streamType: AliRtc.AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture }).catch(() => undefined);
       const localAudioTrack = await engine.getAudioTrack().catch(() => undefined);
       const localTracks: MediaStreamTrack[] = [];
       if (localVideoTrack) localTracks.push(localVideoTrack);
@@ -297,34 +294,46 @@ export function useViduRealtime() {
         console.warn("[useViduRealtime] joined successfully but no local track was available to return");
       }
 
-      return { engine, liveId: session.live_id as string | null, stream: localStream };
+      if (endingRef.current) throw new Error("The Vidu session ended before it finished connecting");
+      onEndedRef.current = onEnded ?? null;
+      return { engine, liveId: session.live_id as string, stream: localStream };
     } catch (err: any) {
-      const message = err?.message || "Failed to connect to Vidu realtime";
-      setError(message);
+      endingRef.current = true;
+      stopTimers();
+      controlRef.current?.hangup();
+      controlRef.current = null;
       await releaseEngine(engineRef.current);
       engineRef.current = null;
-      try { controlSocketRef.current?.close(); } catch { /* noop */ }
-      controlSocketRef.current = null;
+      setError(err?.message || "Failed to connect to Vidu realtime");
       setConnectionState("disconnected");
       throw err;
     }
-  }, [tryDeliverRemoteStream]);
+  }, [handleEnded, stopTimers, tryDeliverRemoteStream]);
 
   const disconnect = useCallback(async () => {
+    endingRef.current = true;
+    stopTimers();
+    controlRef.current?.hangup();
+    controlRef.current = null;
     await releaseEngine(engineRef.current);
     engineRef.current = null;
-    try { controlSocketRef.current?.close(); } catch { /* noop */ }
-    controlSocketRef.current = null;
     renderUidRef.current = null;
-    remoteDeliveredRef.current = false;
+    deliveredTrackRef.current = null;
     onRemoteStreamRef.current = null;
+    onEndedRef.current = null;
     setConnectionState("disconnected");
-  }, []);
+  }, [stopTimers]);
 
   useEffect(() => {
+    const onPageHide = () => controlRef.current?.hangup();
+    window.addEventListener("pagehide", onPageHide);
     return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      endingRef.current = true;
+      if (remotePollRef.current) clearInterval(remotePollRef.current);
+      if (outputWatchdogRef.current) clearTimeout(outputWatchdogRef.current);
+      controlRef.current?.hangup();
       void releaseEngine(engineRef.current);
-      try { controlSocketRef.current?.close(); } catch { /* noop */ }
     };
   }, []);
 

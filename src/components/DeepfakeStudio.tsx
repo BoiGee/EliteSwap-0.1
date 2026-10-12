@@ -1690,6 +1690,9 @@ export function DeepfakeStudio() {
     // Decart's below -- no timeout-retry or capacity-string heuristics,
     // since neither has been confirmed against a real Vidu failure yet.
     if (activeProviderRef.current === "vidu") {
+      // Vidu bakes the reference in at mint; marking it applied keeps the auto-apply effect
+      // from firing applyStudioRequest's "not supported on Vidu" toast the moment output arrives.
+      appliedReferenceRef.current = referenceImage;
       try {
         const referenceImageDataUri = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -1702,6 +1705,16 @@ export function DeepfakeStudio() {
           sessionId: sessionIdRef.current || "",
           referenceImageDataUri,
           onRemoteStream: handleRemoteStream,
+          onEnded: (reason) => {
+            toast({
+              title: reason === "no_output" ? "Swap didn't start" : "Swap session ended",
+              description: reason === "no_output"
+                ? "Vidu didn't start sending the swapped video. Please try again."
+                : "The swap session ended on Vidu's side. Reconnect to continue.",
+              variant: "destructive",
+            });
+            void handleDisconnectRef.current();
+          },
         });
         // Mirrors the Decart branch below (connectResult.stream ->
         // setLocalStream): without this, the studio's own camera-feed panel
@@ -1710,6 +1723,7 @@ export function DeepfakeStudio() {
         // the swapped output, never the raw local feed.
         if (viduConnectResult?.stream) setLocalStream(viduConnectResult.stream);
       } catch (e: any) {
+        appliedReferenceRef.current = null;
         console.error("[Studio] Vidu connect failed:", e);
         if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
         try { await supabase.rpc("pause_studio_session", { p_key: trimmedKey, p_session_id: sessionIdRef.current } as any); } catch { /* noop */ }
@@ -2091,6 +2105,16 @@ export function DeepfakeStudio() {
     // Always clear the input value so the same file can be re-picked after a block.
     input.value = "";
 
+    // Vidu fixes the reference when the session starts, so a mid-session pick would only
+    // change the panel, not the swap.
+    if (activeProviderRef.current === "vidu" && connectionState !== "disconnected") {
+      toast({
+        title: "Disconnect to change the photo",
+        description: "On this provider the reference photo is set when the session starts. Disconnect, pick the new photo, then reconnect.",
+      });
+      return;
+    }
+
     let file = picked;
     if (REFERENCE_GATE_ENABLED) {
       try {
@@ -2141,6 +2165,13 @@ export function DeepfakeStudio() {
   }, [toast, connectionState, setImage, buildPrompt, verifyReferenceApplied]);
 
   const handleClearImage = useCallback(async () => {
+    if (activeProviderRef.current === "vidu" && connectionState !== "disconnected") {
+      toast({
+        title: "Disconnect to change the photo",
+        description: "On this provider the reference photo is set when the session starts. Disconnect, pick the new photo, then reconnect.",
+      });
+      return;
+    }
     setReferenceImage(null);
     appliedReferenceRef.current = null;
     if (referencePreview) URL.revokeObjectURL(referencePreview);
@@ -2152,7 +2183,7 @@ export function DeepfakeStudio() {
       mode: studioMode,
     });
     toast({ title: "Reference cleared", description: "Switched back to prompt-only mode." });
-  }, [applyStudioRequest, referencePreview, toast, studioMode]);
+  }, [applyStudioRequest, referencePreview, toast, studioMode, connectionState]);
 
 
   const isConnected =
