@@ -1864,7 +1864,7 @@ export function DeepfakeStudio() {
       }]).then(() => {}, () => {});
     });
     setIsLaunching(false);
-  }, [apiKey, connect, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop]);
+  }, [apiKey, decartConnect, viduRealtime, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop]);
 
   useEffect(() => {
     if (!autoStartPending || isStarted || !apiKey.trim()) return;
