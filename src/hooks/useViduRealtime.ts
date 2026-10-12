@@ -87,6 +87,19 @@ async function releaseEngine(engine: any) {
   try { await engine.destroy?.(); } catch { /* noop */ }
 }
 
+function buildControlSocketUrl(params: { accessToken: string; pKey: string; sessionId: string; liveId: string; clientSecret?: string | null }) {
+  const base = import.meta.env.VITE_SUPABASE_URL as string;
+  const wsBase = base.replace(/^http/, "ws");
+  const query = new URLSearchParams({
+    access_token: params.accessToken,
+    p_key: params.pKey,
+    p_session_id: params.sessionId,
+    live_id: params.liveId,
+  });
+  if (params.clientSecret) query.set("client_secret", params.clientSecret);
+  return `${wsBase}/functions/v1/vidu-control-relay?${query.toString()}`;
+}
+
 export function useViduRealtime() {
   const [connectionState, setConnectionState] = useState<ViduConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +107,7 @@ export function useViduRealtime() {
   const renderUidRef = useRef<string | null>(null);
   const onRemoteStreamRef = useRef<((s: MediaStream) => void) | null>(null);
   const remoteDeliveredRef = useRef(false);
+  const controlSocketRef = useRef<WebSocket | null>(null);
 
   const tryDeliverRemoteStream = useCallback(async () => {
     const engine = engineRef.current;
@@ -139,6 +153,55 @@ export function useViduRealtime() {
       const rtc = session.rtc;
       renderUidRef.current = session.render_uid || null;
       if (!rtc?.token) throw new Error("Vidu did not return join credentials");
+
+      // Separate from the AliRTC media join below: Vidu's sessions come
+      // back in "waiting" status and (per their own reference server) need
+      // this control WebSocket's conn_init handshake completed before they
+      // start actually producing output. Opened in parallel with the media
+      // join since it only needs live_id/client_secret, both already in
+      // hand -- doesn't need to wait for joinChannel to resolve first.
+      // Best-effort: failure here shouldn't block the media connection
+      // itself, since the camera panel is useful even if this fails and
+      // gets caught/retried separately. Logged loudly either way.
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (accessToken && session.live_id) {
+          const controlUrl = buildControlSocketUrl({
+            accessToken,
+            pKey,
+            sessionId,
+            liveId: session.live_id,
+            clientSecret: session.client_secret,
+          });
+          const controlSocket = new WebSocket(controlUrl);
+          controlSocketRef.current = controlSocket;
+          controlSocket.onmessage = (ev) => {
+            try {
+              const msg = JSON.parse(ev.data);
+              if (msg?.payload?.conn_init_ack) {
+                if (msg.payload.conn_init_ack.success) {
+                  console.info("[useViduRealtime] control channel ready (conn_init_ack success)");
+                } else {
+                  console.warn("[useViduRealtime] control channel conn_init_ack failed", msg.payload.conn_init_ack);
+                }
+              } else if (msg?.event === "fatal") {
+                console.error("[useViduRealtime] control channel fatal", msg);
+              } else {
+                console.info("[useViduRealtime] control channel message", msg);
+              }
+            } catch {
+              console.info("[useViduRealtime] control channel raw message", ev.data);
+            }
+          };
+          controlSocket.onerror = (ev) => console.error("[useViduRealtime] control channel error", ev);
+          controlSocket.onclose = (ev) => console.info("[useViduRealtime] control channel closed", ev.code, ev.reason);
+        } else {
+          console.warn("[useViduRealtime] could not open control channel: missing access token or live_id");
+        }
+      } catch (controlErr) {
+        console.error("[useViduRealtime] control channel setup failed", controlErr);
+      }
 
       let authInfo: { appId: string; channelId: string; userId: string; nonce?: string; timestamp: number; token: string };
       try {
@@ -230,6 +293,8 @@ export function useViduRealtime() {
       setError(message);
       await releaseEngine(engineRef.current);
       engineRef.current = null;
+      try { controlSocketRef.current?.close(); } catch { /* noop */ }
+      controlSocketRef.current = null;
       setConnectionState("disconnected");
       throw err;
     }
@@ -238,6 +303,8 @@ export function useViduRealtime() {
   const disconnect = useCallback(async () => {
     await releaseEngine(engineRef.current);
     engineRef.current = null;
+    try { controlSocketRef.current?.close(); } catch { /* noop */ }
+    controlSocketRef.current = null;
     renderUidRef.current = null;
     remoteDeliveredRef.current = false;
     onRemoteStreamRef.current = null;
@@ -247,6 +314,7 @@ export function useViduRealtime() {
   useEffect(() => {
     return () => {
       void releaseEngine(engineRef.current);
+      try { controlSocketRef.current?.close(); } catch { /* noop */ }
     };
   }, []);
 

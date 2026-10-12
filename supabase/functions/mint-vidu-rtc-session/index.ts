@@ -132,9 +132,22 @@ Deno.serve(async (req) => {
       return json({ code: "PROVIDER_MISMATCH", message: "Vidu is not the active provider right now" }, 409);
     }
 
-    const { data: viduKey, error: poolErr } = await admin.rpc("assign_shared_vidu_key");
+    // Queried directly (not via assign_shared_vidu_key()) because the
+    // control-channel relay (vidu-control-relay) needs to reuse the exact
+    // same pooled key for this session afterward -- Vidu scopes a live_id
+    // to the account/key that created it, so a freshly re-randomized key
+    // would likely be rejected. Need the pool row's id to persist that
+    // choice, which the RPC's plain-text return doesn't give us.
+    const { data: poolRow, error: poolErr } = await admin
+      .from("vidu_shared_pool")
+      .select("id, vidu_api_key")
+      .eq("is_active", true)
+      .limit(50);
     if (poolErr) return json({ code: "DB_ERROR", message: poolErr.message }, 500);
-    if (!viduKey) return json({ code: "NO_SHARED_KEY_AVAILABLE", message: "No active Vidu key in the pool" }, 503);
+    const activePool = (poolRow ?? []) as { id: string; vidu_api_key: string }[];
+    if (activePool.length === 0) return json({ code: "NO_SHARED_KEY_AVAILABLE", message: "No active Vidu key in the pool" }, 503);
+    const chosen = activePool[Math.floor(Math.random() * activePool.length)];
+    const viduKey = chosen.vidu_api_key;
 
     let viduRes: Response;
     try {
@@ -171,6 +184,18 @@ Deno.serve(async (req) => {
     if (!rtc.token || !rtc.user_id || !rtc.app_id || !rtc.channel_id) {
       console.error("[mint-vidu-rtc-session] Vidu response missing rtc credentials", viduBody);
       return json({ code: "VIDU_ERROR", message: "Vidu did not return join credentials" }, 502);
+    }
+
+    // Record which pool key this live_id belongs to so vidu-control-relay
+    // can reuse it for the control WebSocket handshake afterward.
+    try {
+      await admin
+        .from("studio_sessions")
+        .update({ vidu_pool_key_id: chosen.id })
+        .eq("session_id", sessionId)
+        .eq("user_id", userId);
+    } catch (e) {
+      console.error("[mint-vidu-rtc-session] Failed to record vidu_pool_key_id", e);
     }
 
     return json({
