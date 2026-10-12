@@ -59,6 +59,14 @@ export interface ViduConnectParams {
 //   provider-specific rendering path downstream of connect().
 
 const JOIN_TIMEOUT_MS = 20000;
+const PREVIEW_TIMEOUT_MS = 10000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
 
 export function useViduRealtime() {
   const [connectionState, setConnectionState] = useState<ViduConnectionState>("disconnected");
@@ -149,12 +157,18 @@ export function useViduRealtime() {
       // Starting the local preview before joinChannel opens the camera; the
       // engine auto-publishes camera+mic on join (its documented default),
       // so no separate publish() call is needed on this SDK version.
-      await engine.startPreview();
+      // Timeout-guarded: an unresolved startPreview() (e.g. camera access
+      // silently stuck) previously left connectionState stuck on
+      // "connecting" forever with no error, since nothing downstream of it
+      // could ever run -- reproduced live.
+      try {
+        await withTimeout(engine.startPreview(), PREVIEW_TIMEOUT_MS, "Could not access your camera. Check camera permissions and try again.");
+      } catch (previewErr) {
+        console.error("[useViduRealtime] startPreview failed", previewErr);
+        throw previewErr;
+      }
 
-      await Promise.race([
-        engine.joinChannel(authInfo, "eliteswap-user"),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out")), JOIN_TIMEOUT_MS)),
-      ]);
+      await withTimeout(engine.joinChannel(authInfo, "eliteswap-user"), JOIN_TIMEOUT_MS, "Connection timed out");
 
       // The remote (AI-transformed) track may already be publishing by the
       // time join resolves; the event listeners above catch it otherwise.
