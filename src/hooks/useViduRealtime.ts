@@ -58,8 +58,18 @@ export interface ViduConnectParams {
 //   callback already expects, so DeepfakeStudio.tsx doesn't need a
 //   provider-specific rendering path downstream of connect().
 
-const JOIN_TIMEOUT_MS = 20000;
-const PREVIEW_TIMEOUT_MS = 10000;
+// Generous on purpose: Vidu's own reference server waits up to 120s for
+// conn_init_ack on editing-type sessions before giving up (confirmed from
+// their source, not guessed) -- meaning their backend can legitimately take
+// nearly 2 minutes to finish spinning up for this session type. The old
+// 20s/10s values here were tight enough that real studio_sessions rows were
+// self-ending at 14-30s on every attempt: DeepfakeStudio.tsx's catch block
+// calls pause_studio_session (and this hook force-closes the control
+// socket) the moment either timeout throws, which was hanging up on Vidu
+// mid-handshake every single time, before it could ever succeed -- not a
+// sign anything was actually broken.
+const JOIN_TIMEOUT_MS = 60000;
+const PREVIEW_TIMEOUT_MS = 20000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([
