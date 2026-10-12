@@ -1697,12 +1697,18 @@ export function DeepfakeStudio() {
           reader.onerror = () => reject(new Error("Failed to read reference image"));
           reader.readAsDataURL(referenceImage as File);
         });
-        await viduRealtime.connect({
+        const viduConnectResult = await viduRealtime.connect({
           pKey: trimmedKey,
           sessionId: sessionIdRef.current || "",
           referenceImageDataUri,
           onRemoteStream: handleRemoteStream,
         });
+        // Mirrors the Decart branch below (connectResult.stream ->
+        // setLocalStream): without this, the studio's own camera-feed panel
+        // has nothing to show even when the camera and connection are fine,
+        // since useViduRealtime's remote-stream callback only ever carries
+        // the swapped output, never the raw local feed.
+        if (viduConnectResult?.stream) setLocalStream(viduConnectResult.stream);
       } catch (e: any) {
         console.error("[Studio] Vidu connect failed:", e);
         if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }

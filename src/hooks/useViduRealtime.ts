@@ -206,7 +206,23 @@ export function useViduRealtime() {
       // time join resolves; the event listeners above catch it otherwise.
       void tryDeliverRemoteStream();
 
-      return { engine, liveId: session.live_id as string | null };
+      // DeepfakeStudio.tsx's own camera-feed panel expects a local
+      // MediaStream back from connect() (mirrors Decart's connect(), which
+      // returns { stream, realtimeClient } for exactly this) -- this was
+      // missing entirely before, so that panel had nothing to show even
+      // when the camera and connection were otherwise fine.
+      const { AliRtcRawDataStreamType } = await loadAliRtc();
+      const localVideoTrack = await engine.getVideoTrack({ streamType: AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture }).catch(() => undefined);
+      const localAudioTrack = await engine.getAudioTrack().catch(() => undefined);
+      const localTracks: MediaStreamTrack[] = [];
+      if (localVideoTrack) localTracks.push(localVideoTrack);
+      if (localAudioTrack) localTracks.push(localAudioTrack);
+      const localStream = localTracks.length > 0 ? new MediaStream(localTracks) : null;
+      if (!localStream) {
+        console.warn("[useViduRealtime] joined successfully but no local track was available to return");
+      }
+
+      return { engine, liveId: session.live_id as string | null, stream: localStream };
     } catch (err: any) {
       const message = err?.message || "Failed to connect to Vidu realtime";
       setError(message);
