@@ -68,6 +68,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   ]);
 }
 
+// A timed-out startPreview()/joinChannel() doesn't actually cancel the
+// underlying getUserMedia() call -- the browser can still grab the camera
+// in the background afterward, orphaned, with nothing left to release it,
+// since we gave up our only reference when we stopped waiting. Explicitly
+// stopping whatever local video track exists (MediaStreamTrack.stop() works
+// regardless of what acquired it) before destroying the engine is the best
+// defense available against that without a confirmed cancellation API.
+async function releaseEngine(engine: any) {
+  if (!engine) return;
+  try {
+    const { AliRtcRawDataStreamType } = await loadAliRtc();
+    const localTrack = await engine.getVideoTrack({ streamType: AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture }).catch(() => undefined);
+    localTrack?.stop?.();
+  } catch { /* noop */ }
+  try { await engine.enableLocalVideo?.(false); } catch { /* noop */ }
+  try { await engine.leaveChannel?.(); } catch { /* noop */ }
+  try { await engine.destroy?.(); } catch { /* noop */ }
+}
+
 export function useViduRealtime() {
   const [connectionState, setConnectionState] = useState<ViduConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
@@ -178,8 +197,7 @@ export function useViduRealtime() {
     } catch (err: any) {
       const message = err?.message || "Failed to connect to Vidu realtime";
       setError(message);
-      try { await engineRef.current?.leaveChannel?.(); } catch { /* noop */ }
-      try { await engineRef.current?.destroy?.(); } catch { /* noop */ }
+      await releaseEngine(engineRef.current);
       engineRef.current = null;
       setConnectionState("disconnected");
       throw err;
@@ -187,8 +205,7 @@ export function useViduRealtime() {
   }, [tryDeliverRemoteStream]);
 
   const disconnect = useCallback(async () => {
-    try { await engineRef.current?.leaveChannel?.(); } catch { /* noop */ }
-    try { await engineRef.current?.destroy?.(); } catch { /* noop */ }
+    await releaseEngine(engineRef.current);
     engineRef.current = null;
     renderUidRef.current = null;
     remoteDeliveredRef.current = false;
@@ -198,8 +215,7 @@ export function useViduRealtime() {
 
   useEffect(() => {
     return () => {
-      try { engineRef.current?.leaveChannel?.(); } catch { /* noop */ }
-      try { engineRef.current?.destroy?.(); } catch { /* noop */ }
+      void releaseEngine(engineRef.current);
     };
   }, []);
 
