@@ -159,7 +159,13 @@ export function useViduRealtime() {
       }
 
       const { default: AliRtcEngine } = await loadAliRtc();
-      const engine = AliRtcEngine.getInstance();
+      // createInstance(), not getInstance(): getInstance() is a singleton
+      // getter -- if a previous failed attempt left its engine in a wedged
+      // internal state (plausible given the camera issues seen so far),
+      // every subsequent attempt would silently inherit that same broken
+      // instance instead of starting clean. createInstance() guarantees a
+      // genuinely fresh engine every connect.
+      const engine = AliRtcEngine.createInstance();
       engineRef.current = engine;
 
       engine.on("remoteUserOnLineNotify", (uid: string) => {
@@ -172,6 +178,13 @@ export function useViduRealtime() {
         console.error("[useViduRealtime] engine error", err);
         setError(err?.message || "Vidu connection error");
       });
+
+      // Explicitly enabling local video before startPreview() rather than
+      // assuming startPreview() alone requests the camera -- the docs
+      // mention both together often enough that relying on just one felt
+      // like a real candidate for "camera never opens, no permission
+      // prompt" given the symptoms seen so far.
+      try { await engine.enableLocalVideo(true); } catch (e) { console.warn("[useViduRealtime] enableLocalVideo failed", e); }
 
       // Starting the local preview before joinChannel opens the camera; the
       // engine auto-publishes camera+mic on join (its documented default),
