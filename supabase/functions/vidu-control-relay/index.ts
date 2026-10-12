@@ -50,7 +50,10 @@ Deno.serve(async (req) => {
   const liveId = url.searchParams.get("live_id") || "";
   const clientSecret = url.searchParams.get("client_secret") || "";
 
+  console.info("[vidu-control-relay] incoming WS upgrade", { liveId, sessionId, hasAccessToken: !!accessToken, hasClientSecret: !!clientSecret });
+
   if (!accessToken || !pKey || !sessionId || !liveId) {
+    console.error("[vidu-control-relay] rejecting: missing required params", { hasAccessToken: !!accessToken, hasPKey: !!pKey, hasSessionId: !!sessionId, hasLiveId: !!liveId });
     return new Response("Missing required params", { status: 400 });
   }
 
@@ -62,7 +65,10 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
   });
   const { data: ud, error: ue } = await userClient.auth.getUser(accessToken);
-  if (ue || !ud?.user) return new Response("Unauthorized", { status: 401 });
+  if (ue || !ud?.user) {
+    console.error("[vidu-control-relay] rejecting: unauthorized", ue?.message);
+    return new Response("Unauthorized", { status: 401 });
+  }
   const userId = ud.user.id;
 
   const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
@@ -75,6 +81,7 @@ Deno.serve(async (req) => {
     .eq("user_id", userId)
     .maybeSingle();
   if (!keyRow || keyRow.active_session_id !== sessionId) {
+    console.error("[vidu-control-relay] rejecting: key/session mismatch", { hasKeyRow: !!keyRow, activeSessionId: keyRow?.active_session_id, expected: sessionId });
     return new Response("Not an active session for this key", { status: 403 });
   }
 
@@ -86,6 +93,7 @@ Deno.serve(async (req) => {
     .is("ended_at", null)
     .maybeSingle();
   if (!sessionRow || !(sessionRow as any).vidu_pool_key_id) {
+    console.error("[vidu-control-relay] rejecting: no session or no pool key recorded", { hasSessionRow: !!sessionRow, poolKeyId: (sessionRow as any)?.vidu_pool_key_id });
     return new Response("Session is not active or has no recorded Vidu key", { status: 403 });
   }
 
@@ -95,9 +103,11 @@ Deno.serve(async (req) => {
     .eq("id", (sessionRow as any).vidu_pool_key_id)
     .maybeSingle();
   if (!(poolRow as any)?.vidu_api_key) {
+    console.error("[vidu-control-relay] rejecting: pool key lookup failed", { poolKeyId: (sessionRow as any).vidu_pool_key_id });
     return new Response("Could not resolve the Vidu key for this session", { status: 500 });
   }
   const viduApiKey = (poolRow as any).vidu_api_key as string;
+  console.info("[vidu-control-relay] auth checks passed, upgrading browser socket", { liveId });
 
   const { socket: browserSocket, response } = Deno.upgradeWebSocket(req);
 
@@ -110,42 +120,74 @@ Deno.serve(async (req) => {
   let seqId = 1;
 
   const sendToVidu = (payload: Record<string, unknown>) => {
-    if (!viduSocket || viduSocket.readyState !== NodeWebSocket.OPEN) return;
-    viduSocket.send(JSON.stringify({ type: 1, live_id: liveId, conn_id: connId, seq_id: seqId++, payload }));
+    if (!viduSocket || viduSocket.readyState !== NodeWebSocket.OPEN) {
+      console.warn("[vidu-control-relay] sendToVidu called while socket not open", { connId, readyState: viduSocket?.readyState });
+      return;
+    }
+    const envelope = { type: 1, live_id: liveId, conn_id: connId, seq_id: seqId++, payload };
+    console.info("[vidu-control-relay] -> vidu", envelope);
+    viduSocket.send(JSON.stringify(envelope));
   };
 
-  const closeBoth = () => {
+  const closeBoth = (reason: string) => {
+    console.info("[vidu-control-relay] closing both sockets", { connId, reason });
     try { viduSocket?.close(); } catch { /* noop */ }
     try { browserSocket.close(); } catch { /* noop */ }
   };
 
   browserSocket.onopen = () => {
-    viduSocket = new NodeWebSocket(viduWsUrl, {
-      headers: { Authorization: `Token ${viduApiKey}` },
-    });
+    console.info("[vidu-control-relay] browser socket open, connecting to Vidu", { connId, liveId, viduWsUrl: viduWsUrl.split("?")[0] });
+    try {
+      viduSocket = new NodeWebSocket(viduWsUrl, {
+        headers: { Authorization: `Token ${viduApiKey}` },
+      });
+    } catch (e) {
+      console.error("[vidu-control-relay] failed to construct Vidu WebSocket", e);
+      closeBoth("construct_failed");
+      return;
+    }
 
     viduSocket.on("open", () => {
+      console.info("[vidu-control-relay] Vidu socket open, sending conn_init", { connId });
       sendToVidu({ conn_init: { version: 1 } });
     });
     viduSocket.on("message", (data: unknown) => {
       try {
         const text = typeof data === "string" ? data : (data as any)?.toString?.() ?? String(data);
+        try {
+          const parsed = JSON.parse(text);
+          console.info("[vidu-control-relay] <- vidu", { connId, type: parsed?.type, payloadKeys: parsed?.payload ? Object.keys(parsed.payload) : [] });
+          if (parsed?.payload?.conn_init_ack) {
+            console.info("[vidu-control-relay] conn_init_ack", { connId, ...parsed.payload.conn_init_ack });
+          }
+        } catch {
+          console.info("[vidu-control-relay] <- vidu (non-JSON)", { connId, text });
+        }
         browserSocket.send(text);
       } catch (e) {
         console.error("[vidu-control-relay] forward to browser failed", e);
       }
     });
-    viduSocket.on("close", () => closeBoth());
+    viduSocket.on("close", (code: number, reasonBuf: unknown) => {
+      console.info("[vidu-control-relay] Vidu socket closed", { connId, code, reason: String(reasonBuf) });
+      closeBoth("vidu_closed");
+    });
     viduSocket.on("error", (err: unknown) => {
-      console.error("[vidu-control-relay] Vidu WS error", err);
-      closeBoth();
+      console.error("[vidu-control-relay] Vidu WS error", { connId, err: err instanceof Error ? err.message : err });
+      closeBoth("vidu_error");
     });
   };
 
   // v1: no browser-initiated actions (switch_prompt/hangup) relayed yet --
   // only the one-way conn_init handshake needed to unblock output.
-  browserSocket.onclose = () => { try { viduSocket?.close(); } catch { /* noop */ } };
-  browserSocket.onerror = () => { try { viduSocket?.close(); } catch { /* noop */ } };
+  browserSocket.onclose = (ev) => {
+    console.info("[vidu-control-relay] browser socket closed", { connId, code: ev.code, reason: ev.reason });
+    try { viduSocket?.close(); } catch { /* noop */ }
+  };
+  browserSocket.onerror = (ev) => {
+    console.error("[vidu-control-relay] browser socket error", { connId, ev: String(ev) });
+    try { viduSocket?.close(); } catch { /* noop */ }
+  };
 
   return response;
 });
