@@ -179,12 +179,14 @@ export function useViduRealtime() {
         setError(err?.message || "Vidu connection error");
       });
 
-      // Explicitly enabling local video before startPreview() rather than
-      // assuming startPreview() alone requests the camera -- the docs
-      // mention both together often enough that relying on just one felt
-      // like a real candidate for "camera never opens, no permission
-      // prompt" given the symptoms seen so far.
-      try { await engine.enableLocalVideo(true); } catch (e) { console.warn("[useViduRealtime] enableLocalVideo failed", e); }
+      // NOTE: an explicit enableLocalVideo(true) call was tried here and
+      // reverted -- live testing showed it reintroduced the exact
+      // stuck-on-connecting hang that the startPreview() timeout below was
+      // added to fix, right after a round where the connection was
+      // actually getting through (camera permission granted) without it.
+      // Likely conflicts with startPreview()'s own internal camera
+      // handling rather than helping it. Do not re-add without confirming
+      // it's actually necessary first.
 
       // Starting the local preview before joinChannel opens the camera; the
       // engine auto-publishes camera+mic on join (its documented default),
