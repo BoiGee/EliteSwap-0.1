@@ -275,14 +275,24 @@ export default function DecartPoolManager() {
   };
 
   const setActive = async (row: PoolRow, is_active: boolean) => {
+    // Only a hard block while Decart is actually the active provider --
+    // emptying the pool only breaks live connections if Decart is the one
+    // serving them. While Vidu is active, Decart isn't routing anyone, so
+    // deactivating the last key is safe; just a reminder, not a block.
     if (!is_active && activeCount <= 1 && row.is_active) {
+      if (activeProvider === "decart") {
+        toast({
+          title: "This is the last active key",
+          description: "Deactivating it will break studio connections for every user until another key is active.",
+          variant: "destructive",
+        });
+        setConfirmDeactivate(null);
+        return;
+      }
       toast({
-        title: "This is the last active key",
-        description: "Deactivating it will break studio connections for every user until another key is active.",
-        variant: "destructive",
+        title: "Decart isn't the active provider right now",
+        description: "Safe to deactivate -- just remember to reactivate a key here before switching back to Decart.",
       });
-      setConfirmDeactivate(null);
-      return;
     }
     // Audit every status change: deactivating immediately affects every
     // paid user's studio connection routing, the same reason revealKey is
