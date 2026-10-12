@@ -1623,8 +1623,16 @@ export function DeepfakeStudio() {
             toast({ title: "Sign in required", description: "Please sign in before opening the studio.", variant: "destructive" });
           } else if (row?.reason === "studio_locked") {
             setStudioLockedNotice(row?.message || "The studio is temporarily unavailable. Please check back soon.");
+          } else if (row?.reason === "no_shared_key_available") {
+            toast({ title: "Studio briefly unavailable", description: "No active processing key is available right now. Please try again shortly, or contact support if it keeps happening.", variant: "destructive" });
+          } else if (row?.reason === "too_many_attempts") {
+            toast({ title: "Slow down", description: "Too many connection attempts in a short time. Please wait a minute and try again.", variant: "destructive" });
           } else {
-            toast({ title: "Studio could not open", description: "This assigned key could not start a secure studio session.", variant: "destructive" });
+            // Surface the real reason instead of a generic message that
+            // hides which specific check failed -- this exact fallback is
+            // what made no_shared_key_available (empty Vidu pool) hard to
+            // diagnose from the UI alone.
+            toast({ title: "Studio could not open", description: row?.reason ? `This assigned key could not start a secure studio session (${row.reason}).` : "This assigned key could not start a secure studio session.", variant: "destructive" });
           }
           setIsLaunching(false);
           return;
