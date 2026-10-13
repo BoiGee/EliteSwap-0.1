@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,24 @@ import { useAdmin } from "@/hooks/useAdmin";
 
 const fmtUsd = (n: number | null | undefined) =>
   `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// The finance functions use this to put dates and months on the admin's own calendar.
+const ADMIN_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+const localDay = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// PostgREST caps every response at 1,000 rows (this project's max_rows) whatever .limit() asks for.
+async function fetchAllRows<T>(build: () => any, pageSize = 1000): Promise<{ data: T[]; error: any }> {
+  const out: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await build().range(from, from + pageSize - 1);
+    if (error) return { data: out, error };
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < pageSize) return { data: out, error: null };
+  }
+}
 
 const toCSV = (rows: Record<string, unknown>[]): string => {
   if (rows.length === 0) return "";
@@ -175,39 +193,75 @@ export default function FinanceManager() {
 
   const range = useMemo(() => computeRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
+  const loadSeq = useRef(0);
   const loadAll = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
-    const args = { p_from: range.from, p_to: range.to };
+    const args = { p_from: range.from, p_to: range.to, p_tz: ADMIN_TZ };
     const [ovr, mo, pr, pay, prof, pl, attr, prs, cat, exp] = await Promise.all([
       supabase.rpc("finance_overview" as any, args),
       supabase.rpc("finance_monthly_series" as any, args),
       supabase.rpc("finance_partner_rollup" as any, args),
-      supabase.from("payments").select("id,user_id,plan_id,amount_usd,currency,discount_amount_usd,tx_hash,status,created_at").order("created_at", { ascending: false }).limit(2000),
-      supabase.from("profiles").select("user_id,email,display_name").limit(10000),
+      fetchAllRows<PaymentRow>(() => supabase.from("payments").select("id,user_id,plan_id,amount_usd,currency,discount_amount_usd,tx_hash,status,created_at").order("created_at", { ascending: false }).order("id")),
+      fetchAllRows<{ user_id: string; email: string | null }>(() => supabase.from("profiles").select("user_id,email").order("user_id")),
       supabase.from("pricing_plans").select("id,name"),
-      supabase.from("partner_attributions" as any).select("user_id,partner_id"),
+      fetchAllRows<{ user_id: string; partner_id: string }>(() => supabase.from("partner_attributions" as any).select("user_id,partner_id").order("user_id").order("partner_id")),
       supabase.from("partners" as any).select("id,code"),
       supabase.from("expense_categories" as any).select("*").order("name"),
-      supabase.from("operating_expenses" as any).select("*").order("occurred_on", { ascending: false }),
+      fetchAllRows<ExpenseRow>(() => supabase.from("operating_expenses" as any).select("*").order("occurred_on", { ascending: false }).order("id")),
     ]);
-    if (ovr.data && Array.isArray(ovr.data) && ovr.data[0]) setOverview(ovr.data[0] as any);
-    if (mo.data) setMonthly(mo.data as any);
-    if (pr.data) setPartners(pr.data as any);
-    if (pay.data) setPayments(pay.data as any);
-    if (prof.data) {
-      setProfiles(Object.fromEntries(prof.data.map((p: any) => [p.user_id, p.email ?? ""])));
+    // A slower response for a range the admin has since switched away from must not overwrite the newer one.
+    if (seq !== loadSeq.current) return;
+    // Clear rather than keep the previous range's figures, which would sit under the new range's label.
+    setOverview(ovr.error ? null : ((ovr.data as any)?.[0] ?? null));
+    setMonthly(mo.error ? [] : ((mo.data as any) ?? []));
+    setPartners(pr.error ? [] : ((pr.data as any) ?? []));
+    if (!pay.error) setPayments(pay.data);
+    if (!prof.error) setProfiles(Object.fromEntries(prof.data.map((p) => [p.user_id, p.email ?? ""])));
+    if (!pl.error && pl.data) setPlans(Object.fromEntries(pl.data.map((p: any) => [p.id, p.name])));
+    if (!attr.error) setAttributions(Object.fromEntries(attr.data.map((a) => [a.user_id, a.partner_id])));
+    if (!prs.error && prs.data) setPartnerCodes(Object.fromEntries((prs.data as any[]).map((p) => [p.id, p.code])));
+    if (!cat.error && cat.data) setCategories(cat.data as any);
+    if (!exp.error) setExpenses(exp.data);
+    const firstError = [ovr, mo, pr, pay, prof, pl, attr, prs, cat, exp].find((r) => r.error)?.error;
+    if (firstError) {
+      toast({ title: "Some finance data didn't load", description: firstError.message ?? String(firstError), variant: "destructive" });
     }
-    if (pl.data) setPlans(Object.fromEntries(pl.data.map((p: any) => [p.id, p.name])));
-    if (attr.data) setAttributions(Object.fromEntries((attr.data as any[]).map((a) => [a.user_id, a.partner_id])));
-    if (prs.data) setPartnerCodes(Object.fromEntries((prs.data as any[]).map((p) => [p.id, p.code])));
-    if (cat.data) setCategories(cat.data as any);
-    if (exp.data) setExpenses(exp.data as any);
     setLoading(false);
-  }, [range.from, range.to]);
+  }, [range.from, range.to, toast]);
 
   useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+    if (isAdmin) loadAll();
+  }, [isAdmin, loadAll]);
+
+  // Live: reload when a payment is created, confirmed or rejected elsewhere, and when the admin
+  // comes back to the tab. Payments change rarely, so a throttled full reload is cheap.
+  const loadAllRef = useRef(loadAll);
+  loadAllRef.current = loadAll;
+  useEffect(() => {
+    if (!isAdmin) return;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        loadAllRef.current();
+      }, 2000);
+    };
+    const channel = supabase
+      .channel("finance-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, schedule)
+      .subscribe();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadAllRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      if (pending) clearTimeout(pending);
+      document.removeEventListener("visibilitychange", onVisible);
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin]);
 
   const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
@@ -230,14 +284,29 @@ export default function FinanceManager() {
     });
   }, [payments, range, revStatus, revCurrency, revPartner, revSearch, attributions, profiles]);
 
+  // occurred_on is a calendar date; compare it to the range's local days, as finance_overview does.
   const filteredExpenses = useMemo(() => {
+    const fromDay = range.from ? localDay(new Date(range.from)) : null;
+    const toDay = range.to ? localDay(new Date(new Date(range.to).getTime() - 1)) : null;
     return expenses.filter((e) => {
       if (expCategory !== "all" && e.category_id !== expCategory) return false;
-      if (range.from && new Date(e.occurred_on) < new Date(range.from)) return false;
-      if (range.to && new Date(e.occurred_on) > new Date(range.to)) return false;
+      if (fromDay && e.occurred_on < fromDay) return false;
+      if (toDay && e.occurred_on > toDay) return false;
       return true;
     });
   }, [expenses, expCategory, range]);
+
+  const missingAmountCount = useMemo(
+    () =>
+      payments.filter(
+        (p) =>
+          p.status === "confirmed" &&
+          p.amount_usd == null &&
+          (!range.from || new Date(p.created_at) >= new Date(range.from)) &&
+          (!range.to || new Date(p.created_at) < new Date(range.to)),
+      ).length,
+    [payments, range],
+  );
 
   const currencies = useMemo(() => {
     const s = new Set<string>();
@@ -285,6 +354,13 @@ export default function FinanceManager() {
     const amount = Number(expForm.amount_usd);
     if (!expForm.category_id || !Number.isFinite(amount) || amount < 0) {
       toast({ title: "Invalid expense", variant: "destructive" });
+      return;
+    }
+    // A mistyped year (one expense was saved as 0001-06-10) silently drops the expense from every range.
+    const year = Number(expForm.occurred_on.slice(0, 4));
+    const maxYear = new Date().getFullYear() + 1;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expForm.occurred_on) || year < 2020 || year > maxYear) {
+      toast({ title: "Check the date", description: `Expense dates must fall between 2020 and ${maxYear}.`, variant: "destructive" });
       return;
     }
     const payload: any = {
@@ -425,8 +501,15 @@ export default function FinanceManager() {
               </div>
             ))}
           </div>
+          {missingAmountCount > 0 && (
+            <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+              {missingAmountCount} confirmed payment{missingAmountCount === 1 ? " has" : "s have"} no USD amount recorded, so {missingAmountCount === 1 ? "it adds" : "they add"} $0 to revenue. They show as $0.00 in the Revenue tab.
+            </div>
+          )}
           <div className="text-xs text-muted-foreground">
+            Gross revenue is the list price before discounts; net revenue is what customers actually paid.
             Net profit = Net revenue − Partner commissions (direct) − Override commissions − Operating expenses. Uses each payment's snapshot percentage so historical changes are correct.
+            Cash owed is the commission and override balance still unpaid as of the end of the selected range.
             $10 trial revenue is tracked separately in the "$10 Trials" tab and is not folded into these figures.
           </div>
         </TabsContent>
@@ -517,7 +600,8 @@ export default function FinanceManager() {
               </TableHeader>
               <TableBody>
                 {partners.map((p) => {
-                  const balance = Number(p.gross_earnings_usd) - Number(p.paid_out_usd);
+                  // As of the range end, from the beginning; earned/paid columns are activity inside the range.
+                  const balance = Number(p.balance_owed_usd);
                   return (
                     <TableRow key={p.partner_id}>
                       <TableCell className="text-xs font-mono">{p.code}</TableCell>
@@ -610,7 +694,7 @@ export default function FinanceManager() {
         <TabsContent value="chart" className="space-y-3">
           <div className="glass rounded-xl p-4 h-[420px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthly.map((m) => ({ ...m, month: new Date(m.month).toLocaleDateString(undefined, { year: "2-digit", month: "short" }) }))}>
+              <BarChart data={monthly.map((m) => ({ ...m, month: new Date(`${m.month}T00:00:00`).toLocaleDateString(undefined, { year: "2-digit", month: "short" }) }))}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
@@ -633,7 +717,7 @@ export default function FinanceManager() {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-heading">Date</Label>
-              <Input type="date" value={expForm.occurred_on} onChange={(e) => setExpForm({ ...expForm, occurred_on: e.target.value })} />
+              <Input type="date" min="2020-01-01" max={`${new Date().getFullYear() + 1}-12-31`} value={expForm.occurred_on} onChange={(e) => setExpForm({ ...expForm, occurred_on: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-heading">Category</Label>
