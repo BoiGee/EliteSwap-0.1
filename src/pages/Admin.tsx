@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -104,6 +104,8 @@ export default function Admin() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const { totalUnread: supportUnread } = useSupportChatNotifications();
+  // Last-fetched is_active per key, so realtime can tell a real (de)activation from heartbeat noise.
+  const keyActiveRef = useRef<Map<string, boolean>>(new Map());
 
   const fetchAll = useCallback(async () => {
     // Paginated fetch to bypass PostgREST's 1000-row default cap.
@@ -133,6 +135,7 @@ export default function Admin() {
       setProfiles(profilesAll);
       setPayments(paymentsAll);
       setApiKeys(keysAll);
+      keyActiveRef.current = new Map(keysAll.map((k) => [k.id, k.is_active]));
       setUserRoles(rolesAll as unknown as UserRole[]);
       setFreeTrialAssignments(ftAll as FreeTrialAssignment[]);
     } catch (e) {
@@ -167,10 +170,22 @@ export default function Admin() {
   // at most ~60s even if realtime never delivers another event.
   useEffect(() => {
     if (!isStaff) return;
-    let debounce: ReturnType<typeof setTimeout> | null = null;
+    // Throttle, not debounce: events can arrive faster than any debounce window, and a debounce
+    // that keeps getting reset never fires at all.
+    let pending: ReturnType<typeof setTimeout> | null = null;
     const scheduleRefresh = () => {
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(fetchAll, 500);
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        fetchAll();
+      }, 1000);
+    };
+    // heartbeat_studio_session rewrites a key's remaining_ms every 1.5s per live studio user;
+    // only an activation/deactivation changes anything this page shows.
+    const onKeyUpdate = (payload: { new: { id?: string; is_active?: boolean } }) => {
+      const { id, is_active } = payload.new ?? {};
+      if (id && keyActiveRef.current.get(id) === is_active) return;
+      scheduleRefresh();
     };
 
     let cleanedUp = false;
@@ -180,8 +195,10 @@ export default function Admin() {
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "profiles" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "payments" }, scheduleRefresh)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "payments" }, scheduleRefresh)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "payments" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "api_keys" }, scheduleRefresh)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "api_keys" }, scheduleRefresh)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "api_keys" }, onKeyUpdate)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "api_keys" }, scheduleRefresh)
       .subscribe((status) => {
         if (cleanedUp) return;
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
@@ -203,7 +220,7 @@ export default function Admin() {
 
     return () => {
       cleanedUp = true;
-      if (debounce) clearTimeout(debounce);
+      if (pending) clearTimeout(pending);
       clearInterval(pollInterval);
       document.removeEventListener("visibilitychange", onVisible);
       supabase.removeChannel(channel);
@@ -416,12 +433,14 @@ export default function Admin() {
             <div className="space-y-6">
               <h2 className="text-2xl font-heading font-bold text-foreground">Dashboard Overview</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* RLS limits payments to admin/sec_admin and other users' keys to admin, so for
+                    other staff these counts would just read 0. */}
                 {[
-                  { label: "Total Users", value: totalUsers, Icon: Users },
-                  { label: "Pending Payments", value: pendingPayments, Icon: Clock },
-                  { label: "Confirmed Payments", value: confirmedPayments, Icon: CheckCircle2 },
-                  { label: "Active Unique Keys", value: activeKeys, Icon: KeyRound },
-                ].map((s) => (
+                  { label: "Total Users", value: totalUsers, Icon: Users, visible: true },
+                  { label: "Pending Payments", value: pendingPayments, Icon: Clock, visible: canManagePayments },
+                  { label: "Confirmed Payments", value: confirmedPayments, Icon: CheckCircle2, visible: canManagePayments },
+                  { label: "Active Unique Keys", value: activeKeys, Icon: KeyRound, visible: isAdmin },
+                ].filter((s) => s.visible).map((s) => (
                   <div key={s.label} className="glass border border-border rounded-xl p-4 text-center space-y-2">
                     <s.Icon className="w-5 h-5 mx-auto text-primary" strokeWidth={1.75} />
                     <div className="text-3xl font-heading font-bold text-foreground">{s.value}</div>
@@ -430,7 +449,7 @@ export default function Admin() {
                 ))}
               </div>
 
-              <div className="glass border border-border rounded-xl p-4 space-y-3">
+              {canManagePayments && <div className="glass border border-border rounded-xl p-4 space-y-3">
                 <h3 className="font-heading font-semibold text-foreground">Recent Payments</h3>
                 {payments.slice(0, 5).map((p) => (
                   <div key={p.id} className="flex items-center justify-between bg-muted/20 rounded-lg px-3 py-2 text-xs">
@@ -445,7 +464,7 @@ export default function Admin() {
                   </div>
                 ))}
                 {payments.length === 0 && <p className="text-sm text-muted-foreground">No payments yet.</p>}
-              </div>
+              </div>}
             </div>
           )}
 
