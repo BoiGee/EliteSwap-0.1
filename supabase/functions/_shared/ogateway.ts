@@ -7,8 +7,13 @@
 //   OGATEWAY_TRANSPORT  "direct" (default) or "db": route calls through the database's fixed
 //                       outbound IP (og_http_queue / og_http_result) if OGateway only accepts
 //                       allow-listed addresses; edge functions have no fixed address.
+//   OGATEWAY_API_BASE   optional override of the API address.
+//
+// The docs say api.ogateway.io, but that host returns a CloudFront/ELB 403 to every request.
+// OGateway's own dashboard sends merchant keys to customer-api.ogateway.io, which accepts them
+// (checked 2026-10-13: GET /balance with the test key → 200).
 
-const API = "https://api.ogateway.io";
+const API = (Deno.env.get("OGATEWAY_API_BASE") ?? "https://customer-api.ogateway.io").replace(/\/$/, "");
 
 export type OgStatus = "INITIATED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED" | string;
 
