@@ -1,11 +1,17 @@
+import * as React from 'npm:react@18.3.1'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
+import { FROM_ADDRESS, REPLY_TO, TRANSACTIONAL_QUEUE, generateToken, normalizeRecipientEmail } from '../_shared/email-sender.ts'
+import { renderEmail } from '../_shared/render-email.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const MAX_RECIPIENTS = 2000
+const MAX_RECIPIENTS = 5000
+// Keeps `.in()` filters' URLs well under gateway limits (UUIDs and emails are ~36 chars each).
+const IN_CHUNK = 200
 const SUBJECT_MAX = 120
 const BODY_MAX = 10000
 const ALL_USERS_CONFIRM_THRESHOLD = 500
@@ -122,15 +128,96 @@ function getFirstName(profile: { display_name: string | null; email: string | nu
   return dn.split(/\s+/)[0] || ''
 }
 
-// Personalize subject + body markdown for one recipient before parsing.
-function personalize(
-  template: string,
-  vars: { display_name: string; first_name: string; email: string },
-): string {
+// The email is rendered once with these placeholders and each copy is personalized by string
+// replacement: rendering React per recipient exceeds the edge CPU limit on large lists, and
+// calling send-transactional-email per recipient hits the 30-nested-calls-per-minute limit.
+// Mixed case on purpose: the plain-text renderer uppercases headings, and the uppercased form
+// must stay distinguishable so it can be filled with the uppercased value.
+const PLACEHOLDERS = {
+  display_name: '__esDisplayName__',
+  first_name: '__esFirstName__',
+  email: '__esEmail__',
+} as const
+// react-email pads the hidden inbox preview (the subject here) to 150 chars with this unit.
+const PREVIEW_MAX_LENGTH = 150
+const PREVIEW_PAD_UNIT = '\u00a0\u200c\u200b\u200d\u200e\u200f\ufeff'
+const PREVIEW_PADDING_RE = /<div>(?:\u00a0\u200c\u200b\u200d\u200e\u200f\ufeff)+<\/div>/
+
+type PersonalVars = { display_name: string; first_name: string; email: string }
+type RenderedEmail = { html: string; text: string; subject: string }
+
+function withPlaceholders(template: string): string {
   return template
-    .replace(/\{\{\s*display_name\s*\}\}/gi, vars.display_name || 'there')
-    .replace(/\{\{\s*first_name\s*\}\}/gi, vars.first_name || 'there')
-    .replace(/\{\{\s*email\s*\}\}/gi, vars.email || '')
+    .replace(/\{\{\s*display_name\s*\}\}/gi, PLACEHOLDERS.display_name)
+    .replace(/\{\{\s*first_name\s*\}\}/gi, PLACEHOLDERS.first_name)
+    .replace(/\{\{\s*email\s*\}\}/gi, PLACEHOLDERS.email)
+}
+
+// Same escaping React applies to text and attribute values.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;')
+}
+
+function personalizeRendered(rendered: RenderedEmail, vars: PersonalVars): RenderedEmail {
+  let { html, text, subject } = rendered
+  for (const key of Object.keys(PLACEHOLDERS) as (keyof PersonalVars)[]) {
+    const placeholder = PLACEHOLDERS[key]
+    const value = vars[key]
+    html = html.replaceAll(placeholder, escapeHtml(value))
+    text = text.replaceAll(placeholder.toUpperCase(), value.toUpperCase()).replaceAll(placeholder, value)
+    subject = subject.replaceAll(placeholder, value)
+  }
+  const padding = subject.length >= PREVIEW_MAX_LENGTH ? '' : `<div>${PREVIEW_PAD_UNIT.repeat(PREVIEW_MAX_LENGTH - subject.length)}</div>`
+  html = html.replace(PREVIEW_PADDING_RE, padding)
+  return { html, text, subject }
+}
+
+function personalVars(profile: { display_name: string | null; email: string | null }): PersonalVars {
+  return {
+    display_name: getDisplayName(profile) || 'there',
+    first_name: getFirstName(profile) || 'there',
+    email: profile.email ?? '',
+  }
+}
+
+async function renderBroadcast(input: { subject: string; bodyMd: string; ctaLabel: string; ctaUrl: string }): Promise<RenderedEmail> {
+  const template = TEMPLATES['admin-broadcast']
+  const templateData = {
+    displayName: PLACEHOLDERS.display_name,
+    subject: withPlaceholders(input.subject),
+    blocks: parseMarkdown(withPlaceholders(input.bodyMd)),
+    ctaLabel: input.ctaLabel ? withPlaceholders(input.ctaLabel) : undefined,
+    ctaUrl: input.ctaUrl ? withPlaceholders(input.ctaUrl) : undefined,
+  }
+  const { html, text } = await renderEmail(React.createElement(template.component, templateData))
+  const subject = typeof template.subject === 'function' ? template.subject(templateData) : template.subject
+  return { html, text, subject: subject as string }
+}
+
+// Bulk version of send-transactional-email's per-address token handling. A null entry means the
+// address's token was already used (it unsubscribed), so it must not be emailed.
+async function getUnsubscribeTokens(admin: any, emails: string[]): Promise<Map<string, string | null>> {
+  const tokens = new Map<string, string | null>()
+  const unique = Array.from(new Set(emails))
+  const readChunk = async (chunk: string[]) => {
+    const { data, error } = await admin.from('email_unsubscribe_tokens').select('email, token, used_at').in('email', chunk)
+    if (error) throw new Error(`Unsubscribe token lookup failed: ${error.message}`)
+    for (const row of (data ?? []) as { email: string; token: string; used_at: string | null }[]) {
+      tokens.set(row.email, row.used_at ? null : row.token)
+    }
+  }
+  for (let i = 0; i < unique.length; i += IN_CHUNK) await readChunk(unique.slice(i, i + IN_CHUNK))
+  const missing = unique.filter((e) => !tokens.has(e))
+  for (let i = 0; i < missing.length; i += 500) {
+    const { error } = await admin.from('email_unsubscribe_tokens').upsert(
+      missing.slice(i, i + 500).map((email) => ({ email, token: generateToken() })),
+      { onConflict: 'email', ignoreDuplicates: true },
+    )
+    if (error) throw new Error(`Unsubscribe token creation failed: ${error.message}`)
+  }
+  // Re-read: a concurrent send may have created some of these first, making our upsert a no-op.
+  for (let i = 0; i < missing.length; i += IN_CHUNK) await readChunk(missing.slice(i, i + IN_CHUNK))
+  return tokens
 }
 
 interface Profile { user_id: string; email: string | null; display_name: string | null }
@@ -145,14 +232,27 @@ async function fetchAllRows<T = any>(
   // Hard ceiling so a runaway loop can't hang the function.
   for (let i = 0; i < 100; i++) {
     const { data, error } = await builder(from, from + pageSize - 1)
-    if (error) {
-      console.error('fetchAllRows page failed', { from, error })
-      break
-    }
+    if (error) throw new Error(error.message)
     const rows = (data ?? []) as T[]
     out.push(...rows)
     if (rows.length < pageSize) break
     from += pageSize
+  }
+  return out
+}
+
+// payments.user_id is ON DELETE SET NULL, so deleted accounts leave NULL ids behind, and a
+// single null in an in() list makes PostgREST reject the whole query.
+async function profilesByIds(admin: any, ids: (string | null)[]): Promise<Profile[]> {
+  const clean = Array.from(new Set(ids.filter((id): id is string => !!id)))
+  const out: Profile[] = []
+  for (let i = 0; i < clean.length; i += IN_CHUNK) {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('user_id, email, display_name')
+      .in('user_id', clean.slice(i, i + IN_CHUNK))
+    if (error) throw new Error(error.message)
+    out.push(...((data ?? []) as Profile[]))
   }
   return out
 }
@@ -166,12 +266,7 @@ async function resolveRecipients(
   let recipientProfiles: Profile[] = []
 
   if (recipientMode === 'single' || recipientMode === 'multiple') {
-    if (recipientUserIds.length === 0) return []
-    const { data } = await admin
-      .from('profiles')
-      .select('user_id, email, display_name')
-      .in('user_id', recipientUserIds)
-    recipientProfiles = data ?? []
+    recipientProfiles = await profilesByIds(admin, recipientUserIds)
   } else if (recipientMode === 'all') {
     recipientProfiles = await fetchAllRows<Profile>((from, to) =>
       admin
@@ -182,21 +277,10 @@ async function resolveRecipients(
     )
   } else if (recipientMode === 'filter') {
     if (filterPreset === 'paid') {
-      const paidPayments = await fetchAllRows<{ user_id: string }>((from, to) =>
+      const paidPayments = await fetchAllRows<{ user_id: string | null }>((from, to) =>
         admin.from('payments').select('user_id').eq('status', 'confirmed').range(from, to),
       )
-      const ids = Array.from(new Set(paidPayments.map((p) => p.user_id)))
-      if (ids.length) {
-        // chunk in('user_id', ...) to avoid URL length issues
-        for (let i = 0; i < ids.length; i += 500) {
-          const chunk = ids.slice(i, i + 500)
-          const { data } = await admin
-            .from('profiles')
-            .select('user_id, email, display_name')
-            .in('user_id', chunk)
-          recipientProfiles.push(...((data ?? []) as Profile[]))
-        }
-      }
+      recipientProfiles = await profilesByIds(admin, paidPayments.map((p) => p.user_id))
     } else if (filterPreset === 'unpaid') {
       const paidPayments = await fetchAllRows<{ user_id: string }>((from, to) =>
         admin.from('payments').select('user_id').eq('status', 'confirmed').range(from, to),
@@ -220,20 +304,10 @@ async function resolveRecipients(
           .range(from, to),
       )
     } else if (filterPreset === 'free_trial_used') {
-      const assigns = await fetchAllRows<{ user_id: string }>((from, to) =>
+      const assigns = await fetchAllRows<{ user_id: string | null }>((from, to) =>
         admin.from('free_trial_assignments').select('user_id').range(from, to),
       )
-      const ids = Array.from(new Set(assigns.map((a) => a.user_id)))
-      if (ids.length) {
-        for (let i = 0; i < ids.length; i += 500) {
-          const chunk = ids.slice(i, i + 500)
-          const { data } = await admin
-            .from('profiles')
-            .select('user_id, email, display_name')
-            .in('user_id', chunk)
-          recipientProfiles.push(...((data ?? []) as Profile[]))
-        }
-      }
+      recipientProfiles = await profilesByIds(admin, assigns.map((a) => a.user_id))
     }
   }
 
@@ -365,9 +439,19 @@ Deno.serve(async (req) => {
   }
 
   // 3. Resolve recipients
-  const recipients = await resolveRecipients(admin, recipientMode, recipientUserIds, filterPreset)
+  let recipients: Profile[]
+  try {
+    recipients = await resolveRecipients(admin, recipientMode, recipientUserIds, filterPreset)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    console.error('admin-broadcast recipient lookup failed', { recipientMode, filterPreset, error: message })
+    return new Response(JSON.stringify({ error: `Recipient lookup failed: ${message}` }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
 
   if (recipients.length === 0 && action !== 'fire_scheduled') {
+    console.log('admin-broadcast resolved 0 recipients', { action, recipientMode, filterPreset })
     return new Response(JSON.stringify({ total: 0, suppressed: 0, sendable: 0, recipients: [] }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -378,16 +462,21 @@ Deno.serve(async (req) => {
     }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 
-  // Suppression: chunk to avoid URL length blow-ups on big sends.
+  // Suppression, fail-closed like send-transactional-email: if we can't verify, don't send.
   const emails = recipients.map((r) => r.email!.toLowerCase().trim())
   const suppressedSet = new Set<string>()
-  for (let i = 0; i < emails.length; i += 500) {
-    const chunk = emails.slice(i, i + 500)
+  for (let i = 0; i < emails.length; i += IN_CHUNK) {
+    const chunk = emails.slice(i, i + IN_CHUNK)
     const { data: sup, error: supErr } = await admin
       .from('suppressed_emails')
       .select('email')
       .in('email', chunk)
-    if (supErr) console.error('suppressed_emails lookup failed', { error: supErr, chunkSize: chunk.length })
+    if (supErr) {
+      console.error('suppressed_emails lookup failed', { error: supErr, chunkSize: chunk.length })
+      return new Response(JSON.stringify({ error: `Could not check the unsubscribe list: ${supErr.message}` }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
     for (const s of (sup ?? []) as { email: string }[]) suppressedSet.add(s.email)
   }
   const enriched = recipients.map((r) => ({
@@ -527,81 +616,93 @@ Deno.serve(async (req) => {
     }
   }
 
-  const projectFnBase = `${supabaseUrl}/functions/v1`
   const CONCURRENCY = 8
   const LARGE_JOB_THRESHOLD = 200
 
-  // Build the actual send worker: runs against `sendable` with bounded concurrency.
+  // Renders once, then queues every recipient's copy straight onto the dispatcher queue
+  // (process-email-queue sends them, with Resend rate-limit backoff and retries).
   async function runSendLoop(): Promise<{ enqueued: number; failed: number; fatalError: string | null }> {
     let enqueued = 0
     let failed = 0
     let fatalError: string | null = null
+    const markRecipients = async (recipientEmails: string[], update: Record<string, unknown>) => {
+      for (let i = 0; i < recipientEmails.length; i += IN_CHUNK) {
+        const { error } = await admin.from('broadcast_recipients').update(update)
+          .eq('broadcast_id', broadcastId).in('email', recipientEmails.slice(i, i + IN_CHUNK))
+        if (error) console.error('broadcast_recipients status update failed', { error, broadcastId })
+      }
+    }
 
     try {
-      let idx = 0
-      const worker = async () => {
-        while (true) {
-          const i = idx++
-          if (i >= sendable.length) return
-          const r = sendable[i]
-          const vars = {
-            display_name: getDisplayName(r),
-            first_name: getFirstName(r),
-            email: r.email,
-          }
-          const personalSubject = personalize(subject, vars)
-          const personalBody = personalize(bodyMd, vars)
-          const personalCtaLabel = ctaLabelRaw ? personalize(ctaLabelRaw, vars) : ''
-          const personalCtaUrl = ctaUrlRaw ? personalize(ctaUrlRaw, vars) : ''
-          const blocks = parseMarkdown(personalBody)
+      const rendered = await renderBroadcast({ subject, bodyMd, ctaLabel: ctaLabelRaw, ctaUrl: ctaUrlRaw })
+      const jobs = sendable.map((r) => ({ r, to: normalizeRecipientEmail(r.email) }))
+      const tokens = await getUnsubscribeTokens(admin, jobs.map((j) => j.to.toLowerCase()))
 
-          try {
-            const payload = {
-              templateName: 'admin-broadcast',
-              recipientEmail: r.email,
-              idempotencyKey: `broadcast-${broadcastId}-${r.user_id}`,
-              templateData: {
-                displayName: vars.display_name,
-                subject: personalSubject,
-                blocks,
-                ctaLabel: personalCtaLabel || undefined,
-                ctaUrl: personalCtaUrl || undefined,
-              },
-            }
-            const resp = await fetch(`${projectFnBase}/send-transactional-email`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseServiceKey}`,
-                'apikey': supabaseServiceKey,
-              },
-              body: JSON.stringify(payload),
-            })
-            const json: any = await resp.json().catch(() => ({}))
-            if (resp.ok && json?.success !== false) {
-              enqueued++
-              await admin.from('broadcast_recipients').update({ send_status: 'sent' })
-                .eq('broadcast_id', broadcastId).eq('email', r.email)
-            } else {
-              failed++
-              const errMsg = String(json?.error ?? json?.reason ?? `HTTP ${resp.status}`)
-              console.error('send-transactional-email returned non-OK', { email: r.email, status: resp.status, error: errMsg })
-              await admin.from('broadcast_recipients').update({
-                send_status: 'failed', error_message: errMsg,
-              }).eq('broadcast_id', broadcastId).eq('email', r.email)
-            }
-          } catch (e) {
-            console.error('Broadcast send failed', { error: String(e), email: r.email })
-            failed++
-            await admin.from('broadcast_recipients').update({
-              send_status: 'failed', error_message: String(e),
-            }).eq('broadcast_id', broadcastId).eq('email', r.email)
-          }
+      const unsubscribed = jobs.filter((j) => tokens.get(j.to.toLowerCase()) === null)
+      const tokenless = jobs.filter((j) => tokens.get(j.to.toLowerCase()) === undefined)
+      const ready = jobs.filter((j) => tokens.get(j.to.toLowerCase()))
+      failed += unsubscribed.length + tokenless.length
+      await markRecipients(unsubscribed.map((j) => j.r.email), { send_status: 'failed', error_message: 'email_suppressed' })
+      await markRecipients(tokenless.map((j) => j.r.email), { send_status: 'failed', error_message: 'Failed to prepare email' })
+
+      const messages = ready.map(({ r, to }) => {
+        const copy = personalizeRendered(rendered, personalVars(r))
+        return {
+          email: r.email,
+          payload: {
+            message_id: crypto.randomUUID(),
+            to,
+            from: FROM_ADDRESS,
+            reply_to: REPLY_TO,
+            subject: copy.subject,
+            html: copy.html,
+            text: copy.text,
+            purpose: 'transactional',
+            label: 'admin-broadcast',
+            idempotency_key: `broadcast-${broadcastId}-${r.user_id}`,
+            unsubscribe_token: tokens.get(to.toLowerCase()),
+            queued_at: new Date().toISOString(),
+          },
         }
+      })
+
+      // Log pending before enqueueing, as send-transactional-email does.
+      for (let i = 0; i < messages.length; i += 500) {
+        const { error } = await admin.from('email_send_log').insert(messages.slice(i, i + 500).map(({ payload }) => ({
+          message_id: payload.message_id,
+          template_name: 'admin-broadcast',
+          recipient_email: payload.to,
+          status: 'pending',
+        })))
+        if (error) console.error('email_send_log pending insert failed', { error, offset: i })
       }
 
-      const workers = Array.from({ length: Math.min(CONCURRENCY, sendable.length || 1) }, () => worker())
-      await Promise.all(workers)
+      const queuedEmails: string[] = []
+      let idx = 0
+      const worker = async () => {
+        while (idx < messages.length) {
+          const { email, payload } = messages[idx++]
+          const { error } = await admin.rpc('enqueue_email', { queue_name: TRANSACTIONAL_QUEUE, payload })
+          if (!error) {
+            enqueued++
+            queuedEmails.push(email)
+            continue
+          }
+          failed++
+          console.error('enqueue_email failed', { email, error })
+          await admin.from('email_send_log').insert({
+            message_id: payload.message_id,
+            template_name: 'admin-broadcast',
+            recipient_email: payload.to,
+            status: 'failed',
+            error_message: 'Failed to enqueue email',
+          })
+          await admin.from('broadcast_recipients').update({ send_status: 'failed', error_message: error.message })
+            .eq('broadcast_id', broadcastId).eq('email', email)
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, messages.length || 1) }, () => worker()))
+      await markRecipients(queuedEmails, { send_status: 'sent' })
     } catch (e) {
       fatalError = e instanceof Error ? e.message : String(e)
       console.error('Fatal error in broadcast send loop', { error: fatalError, broadcastId })

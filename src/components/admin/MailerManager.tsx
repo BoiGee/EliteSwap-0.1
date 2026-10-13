@@ -35,6 +35,12 @@ function parseLocalDateTime(value: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// supabase-js only says "non-2xx status code"; the function's own reason is in the response body.
+async function readFunctionError(error: any): Promise<{ message: string; body: any }> {
+  const body = await error?.context?.json?.().catch(() => null);
+  return { message: body?.message || body?.error || error?.message || "Unknown error", body };
+}
+
 function formatLocalMin(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -145,7 +151,7 @@ export default function MailerManager({ profiles }: Props) {
       const { data, error } = await supabase.functions.invoke("admin-broadcast-email", {
         body: buildPayload("preview"),
       });
-      if (error) throw error;
+      if (error) throw new Error((await readFunctionError(error)).message);
       setPreview(data as any);
       setPreviewOpen(true);
     } catch (e: any) {
@@ -162,12 +168,11 @@ export default function MailerManager({ profiles }: Props) {
       });
       const d = data as any;
       if (error) {
-        // Try to extract the function's real error payload (enqueued/failed/error)
-        const detail = d?.error || d?.message || error.message;
-        const extras = d && typeof d.enqueued === "number"
-          ? ` (${d.enqueued} sent, ${d.failed ?? 0} failed)`
+        const { message, body } = await readFunctionError(error);
+        const extras = body && typeof body.enqueued === "number"
+          ? ` (${body.enqueued} sent, ${body.failed ?? 0} failed)`
           : "";
-        throw new Error(`${detail}${extras}`);
+        throw new Error(`${message}${extras}`);
       }
       if (action === "schedule") {
         toast({

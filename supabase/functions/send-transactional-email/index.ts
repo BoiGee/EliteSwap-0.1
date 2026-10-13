@@ -1,45 +1,13 @@
 import * as React from 'npm:react@18.3.1'
-import { renderAsync } from 'npm:@react-email/components@0.0.22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { renderEmail } from '../_shared/render-email.ts'
 import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
-
-const SITE_NAME = "EliteSwap"
-// The "notify." subdomain scheme here was Lovable-era scaffolding; that
-// subdomain was never verified on the current Resend account (verified via
-// Resend's own API: only the root domain "eliteswap.online" is verified,
-// added 2026-08-10 when the user set up Resend directly). Every send was
-// failing with a 403 "domain not verified" until this was caught, matching
-// what Supabase Auth's own SMTP config already correctly uses
-// (hello@eliteswap.online).
-const FROM_DOMAIN = "eliteswap.online"
-const CURRENT_ADMIN_EMAIL = 'elotetoolz@gmail.com'
-const emailFromCodes = (codes: number[]) => String.fromCharCode(...codes)
-const LEGACY_ADMIN_EMAILS = new Set([
-  emailFromCodes([101, 108, 111, 116, 101, 116, 111, 111, 108, 122, 64, 103, 109, 97, 97, 105, 108, 46, 99, 111, 109]),
-  emailFromCodes([97, 98, 98, 121, 99, 97, 109, 53, 53, 52, 52, 64, 103, 109, 97, 105, 108, 46, 99, 111, 109]),
-  emailFromCodes([97, 98, 98, 121, 106, 111, 115, 115, 121, 99, 97, 109, 105, 108, 108, 101, 64, 103, 109, 97, 105, 108, 46, 99, 111, 109]),
-  emailFromCodes([97, 100, 109, 105, 110, 64, 101, 108, 105, 116, 101, 115, 119, 97, 112, 46, 111, 110, 108, 105, 110, 101]),
-  emailFromCodes([101, 108, 105, 116, 101, 116, 111, 111, 108, 122, 64, 111, 117, 116, 108, 111, 111, 107, 46, 99, 111, 109]),
-])
+import { FROM_ADDRESS, REPLY_TO, TRANSACTIONAL_QUEUE, generateToken, normalizeRecipientEmail } from '../_shared/email-sender.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
-}
-
-// Generate a cryptographically random 32-byte hex token
-function generateToken(): string {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-function normalizeRecipientEmail(email: string): string {
-  const trimmed = email.trim()
-  return LEGACY_ADMIN_EMAILS.has(trimmed.toLowerCase()) ? CURRENT_ADMIN_EMAIL : trimmed
 }
 
 // Auth note: verify_jwt = false in config.toml so internal service-role calls
@@ -341,12 +309,8 @@ Deno.serve(async (req) => {
   }
 
   // 4. Render React Email template to HTML and plain text
-  const html = await renderAsync(
+  const { html, text: plainText } = await renderEmail(
     React.createElement(template.component, templateData)
-  )
-  const plainText = await renderAsync(
-    React.createElement(template.component, templateData),
-    { plainText: true }
   )
 
   // Resolve subject: supports static string or dynamic function
@@ -367,12 +331,12 @@ Deno.serve(async (req) => {
   })
 
   const { error: enqueueError } = await supabase.rpc('enqueue_email', {
-    queue_name: 'transactional_emails',
+    queue_name: TRANSACTIONAL_QUEUE,
     payload: {
       message_id: messageId,
       to: effectiveRecipient,
-      from: `${SITE_NAME} <hello@${FROM_DOMAIN}>`,
-      reply_to: 'support@eliteswap.online',
+      from: FROM_ADDRESS,
+      reply_to: REPLY_TO,
       subject: resolvedSubject,
       html,
       text: plainText,
