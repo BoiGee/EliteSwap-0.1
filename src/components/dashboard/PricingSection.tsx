@@ -6,6 +6,7 @@ import { CurrencySelector, formatFiat } from "@/components/CurrencySelector";
 import { useDisplayLocale } from "@/i18n/useDisplayLocale";
 import CouponInput, { type AppliedDiscount } from "@/components/dashboard/CouponInput";
 import { trackFunnel } from "@/lib/paymentFunnel";
+import GatewayCheckoutButton from "@/components/dashboard/GatewayCheckoutButton";
 
 interface PricingPlan {
   id: string;
@@ -32,9 +33,15 @@ interface Props {
   onRepurchaseModeChange?: (open: boolean) => void;
   /** Set by the dashboard ("Repurchase to Launch Studio", studio "Top up") to unlock the plans. */
   repurchaseRequested?: boolean;
+  /** Called when a Mobile Money / card payment is confirmed. */
+  onGatewayPaid?: () => void;
 }
 
-export default function PricingSection({ onSelectPlan, hasConfirmedPayment, prefillCode, onRepurchaseModeChange, repurchaseRequested }: Props) {
+export default function PricingSection({ onSelectPlan, hasConfirmedPayment, prefillCode, onRepurchaseModeChange, repurchaseRequested, onGatewayPaid }: Props) {
+  const [gatewayEnabled, setGatewayEnabled] = useState(false);
+  useEffect(() => {
+    supabase.rpc("payment_options" as any).then(({ data }) => setGatewayEnabled(!!(data as any)?.gateway_checkout));
+  }, []);
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const { currency, locale } = useDisplayLocale();
@@ -200,6 +207,15 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                 </Button>
               ) : purchaseUnlocked && (
                 <div className="space-y-2">
+                  {gatewayEnabled && (
+                    <GatewayCheckoutButton
+                      planId={plan.id}
+                      planName={plan.name}
+                      discountCode={planDiscount?.code ?? null}
+                      onPaid={onGatewayPaid}
+                      className={`w-full font-heading font-semibold text-xs ${isHighlighted ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+                    />
+                  )}
                   {planDiscount && (
                     <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-center">
                       <p className="text-xs font-heading font-semibold text-emerald-400">

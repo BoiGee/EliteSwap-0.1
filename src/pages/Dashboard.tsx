@@ -61,6 +61,9 @@ function describePayment(p: Payment): { label: string; detail: string; tone: "ok
     return { label: "Not verified", detail: "We couldn't match this payment. Message support from the chat button with your transaction details.", tone: "bad" };
   }
   const ageH = (Date.now() - new Date(p.created_at).getTime()) / 3_600_000;
+  if (p.payment_method === "ogateway") {
+    return { label: "Waiting", detail: "Waiting for your Mobile Money or card payment to complete. Unfinished checkouts close by themselves after a day.", tone: "wait" };
+  }
   if (p.status === "pending_review" || ageH > 6) {
     return { label: "Being reviewed", detail: "Our team is checking this payment by hand. You'll get an email the moment it's confirmed.", tone: "wait" };
   }
@@ -511,6 +514,7 @@ export default function Dashboard() {
                 prefillCode={pricingPrefillCode}
                 onRepurchaseModeChange={setRepurchaseMode}
                 repurchaseRequested={repurchaseMode}
+                onGatewayPaid={() => { fetchPayments(); fetchApiKeys(); setTimeout(fetchApiKeys, 3000); setRepurchaseMode(false); }}
               />
             </div>
 

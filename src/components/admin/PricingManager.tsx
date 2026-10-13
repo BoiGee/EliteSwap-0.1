@@ -132,6 +132,7 @@ export default function PricingManager() {
 
   return (
     <div className="space-y-4">
+      <GatewayCheckoutToggle />
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-bold text-foreground">Pricing Plans</h2>
         {!showForm && (
@@ -224,6 +225,42 @@ export default function PricingManager() {
         ))}
         {plans.length === 0 && !showForm && <p className="text-sm text-muted-foreground">No pricing plans yet. Create one to get started.</p>}
       </div>
+    </div>
+  );
+}
+
+// On/off for the OGateway Mobile Money / card button on plan cards (crypto is unaffected).
+function GatewayCheckoutToggle() {
+  const { toast } = useToast();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.rpc("payment_options" as any).then(({ data }) => setEnabled(!!(data as any)?.gateway_checkout));
+  }, []);
+
+  const toggle = async (next: boolean) => {
+    if (next && !confirm("Turn on Mobile Money / card checkout for all customers? Only do this after a successful test payment.")) return;
+    setSaving(true);
+    const { error } = await supabase.rpc("admin_set_gateway_checkout" as any, { p_enabled: next });
+    setSaving(false);
+    if (error) {
+      toast({ title: "Couldn't change checkout", description: error.message, variant: "destructive" });
+      return;
+    }
+    setEnabled(next);
+    toast({ title: next ? "Mobile Money / card checkout is on" : "Mobile Money / card checkout is off" });
+  };
+
+  return (
+    <div className="glass rounded-xl p-4 flex items-center justify-between gap-4">
+      <div>
+        <div className="font-heading font-semibold text-foreground text-sm">Mobile Money &amp; card checkout (OGateway)</div>
+        <p className="text-xs text-muted-foreground">
+          Adds "Pay with Mobile Money or Card" to every plan, charged in GHS at the live exchange rate. Crypto stays available either way.
+        </p>
+      </div>
+      <Switch checked={!!enabled} disabled={enabled === null || saving} onCheckedChange={toggle} />
     </div>
   );
 }
