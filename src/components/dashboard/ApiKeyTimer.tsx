@@ -59,7 +59,16 @@ export function ApiKeyTimer({ remainingMs, activeSessionStartedAt, expiresAt, is
     return () => clearInterval(id);
   }, [remainingMs, activeSessionStartedAt, expiresAt, hasLiveSession]);
 
-  if (displayMs === null) return null;
+  // No remaining_ms and no expiry: the key was issued without any studio time (e.g. an admin
+  // grant with the time fields left blank). Say so instead of rendering nothing.
+  if (displayMs === null) {
+    return (
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold bg-muted/40 text-muted-foreground" title="This key has no studio time yet">
+        <Clock className="w-3 h-3" />
+        No time on this key
+      </div>
+    );
+  }
 
   const exhausted = displayMs <= 0 || !isActive;
   const tone = exhausted

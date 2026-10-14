@@ -117,6 +117,17 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
   const [newPaymentCurrency, setNewPaymentCurrency] = useState<"BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20">("BTC");
   const [newPaymentTxHash, setNewPaymentTxHash] = useState("");
   const [newPaymentAmount, setNewPaymentAmount] = useState("");
+  const [newPaymentPlanId, setNewPaymentPlanId] = useState("");
+  const [paymentPlans, setPaymentPlans] = useState<{ id: string; name: string; price_usd: number; commission_base_usd: number | null; key_duration_minutes: number | null }[]>([]);
+  useEffect(() => {
+    supabase
+      .from("pricing_plans")
+      .select("id, name, price_usd, commission_base_usd, key_duration_minutes")
+      .eq("is_active", true)
+      .gt("price_usd", 0)
+      .order("sort_order")
+      .then(({ data }) => setPaymentPlans((data ?? []) as any));
+  }, []);
   const [newPaymentStatus, setNewPaymentStatus] = useState<"pending" | "confirmed" | "rejected">("confirmed");
   const [partnersList, setPartnersList] = useState<Array<{ id: string; code: string; display_name: string | null }>>([]);
   const [attributions, setAttributions] = useState<Record<string, string>>({}); // user_id -> partner_id
@@ -376,8 +387,18 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
   const getUserRoles = (userId: string) => userRoles.filter((r) => r.user_id === userId);
 
   const createApiKey = async (userId: string) => {
-    setCreatingKey(true);
     const totalMs = (parseFloat(newKeyHours) || 0) * 3600000 + (parseFloat(newKeyMinutes) || 0) * 60000 + (parseFloat(newKeySeconds) || 0) * 1000;
+    // A key with no time can't open the studio, and the customer's dashboard shows it as empty.
+    // For a paid customer, "Create Payment" with their plan issues a key with the right minutes.
+    if (!(totalMs > 0)) {
+      toast({
+        title: "Add studio time to the key",
+        description: "Enter hours/minutes. For a customer who paid, use Create Payment with their plan instead; it issues the key with the plan's time.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCreatingKey(true);
     // Routed through admin_issue_api_key rather than a raw insert: leaving
     // "Custom secret" blank used to fall through to api_keys.key's own
     // column default (a 64-char hex string) instead of the 11-char format
@@ -551,32 +572,22 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
   };
 
   const createPaymentForUser = async (userId: string) => {
-    const amt = newPaymentAmount ? parseFloat(newPaymentAmount) : null;
-    let matchedPlanId: string | null = null;
-    let commissionBase: number | null = null;
-    if (amt != null) {
-      const { data: plan } = await supabase
-        .from("pricing_plans")
-        .select("id, commission_base_usd")
-        .eq("is_active", true)
-        .eq("price_usd", amt)
-        .order("sort_order")
-        .limit(1)
-        .maybeSingle();
-      matchedPlanId = (plan as any)?.id ?? null;
-      commissionBase = (plan as any)?.commission_base_usd ?? null;
-    }
-    // With no plan, partner commission would fall back to the full amount instead of the
-    // plan's shareable profit.
-    if (amt != null && !matchedPlanId) {
-      const { data: prices } = await supabase.from("pricing_plans").select("price_usd").eq("is_active", true).gt("price_usd", 0).order("price_usd");
-      toast({
-        title: "Amount doesn't match a plan",
-        description: `Enter a plan price (${(prices ?? []).map((p: any) => `$${p.price_usd}`).join(", ")}) so partner commission uses that plan's shareable profit.`,
-        variant: "destructive",
-      });
+    // The plan is chosen explicitly: it decides the key's minutes (issued automatically when the
+    // payment is confirmed) and the partner commission base. Matching the amount to a plan price
+    // instead made discounted or custom-priced payments impossible to record, which pushed
+    // admins to issue a bare key with no time instead.
+    const plan = paymentPlans.find((p) => p.id === newPaymentPlanId);
+    if (!plan) {
+      toast({ title: "Choose the plan they paid for", description: "The plan sets the key's studio time and the partner commission.", variant: "destructive" });
       return;
     }
+    const amt = newPaymentAmount.trim() ? parseFloat(newPaymentAmount) : Number(plan.price_usd);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast({ title: "Enter the amount they paid", variant: "destructive" });
+      return;
+    }
+    const matchedPlanId = plan.id;
+    const commissionBase = plan.commission_base_usd;
     // Admin inserts skip payments_enforce_financials, so lock the base here as checkout does;
     // otherwise a later base change would retroactively change this payment's commission.
     const { error } = await supabase.from("payments").insert({
@@ -600,6 +611,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       toast({ title: "Payment created ✅" });
       setNewPaymentTxHash("");
       setNewPaymentAmount("");
+      setNewPaymentPlanId("");
       setNewPaymentUserId(null);
       onRefresh();
     }
@@ -1041,7 +1053,26 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
 
                     {newPaymentUserId === p.user_id && (
                       <div className="bg-muted/20 rounded-lg p-3 space-y-2">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                          <div>
+                            <span className="text-xs text-muted-foreground font-heading">Plan</span>
+                            <select
+                              value={newPaymentPlanId}
+                              onChange={(e) => {
+                                setNewPaymentPlanId(e.target.value);
+                                const pl = paymentPlans.find((x) => x.id === e.target.value);
+                                if (pl && !newPaymentAmount) setNewPaymentAmount(String(Number(pl.price_usd)));
+                              }}
+                              className="w-full bg-muted/30 border border-border rounded-lg px-2 py-1 text-xs font-heading text-foreground mt-0.5"
+                            >
+                              <option value="">Choose plan…</option>
+                              {paymentPlans.map((pl) => (
+                                <option key={pl.id} value={pl.id}>
+                                  {pl.name} (${Number(pl.price_usd)}{pl.key_duration_minutes ? `, ${pl.key_duration_minutes} min` : ""})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                           <div>
                             <span className="text-xs text-muted-foreground font-heading">Currency</span>
                             <select
@@ -1056,8 +1087,8 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                             </select>
                           </div>
                           <div>
-                            <span className="text-xs text-muted-foreground font-heading">Amount (USD)</span>
-                            <Input value={newPaymentAmount} onChange={(e) => setNewPaymentAmount(e.target.value)} type="number" className="h-7 text-xs mt-0.5" placeholder="0.00" />
+                            <span className="text-xs text-muted-foreground font-heading">Amount paid (USD)</span>
+                            <Input value={newPaymentAmount} onChange={(e) => setNewPaymentAmount(e.target.value)} type="number" className="h-7 text-xs mt-0.5" placeholder="Plan price" />
                           </div>
                           <div>
                             <span className="text-xs text-muted-foreground font-heading">TX Hash</span>
