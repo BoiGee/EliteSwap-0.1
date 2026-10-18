@@ -36,6 +36,8 @@ interface Breakdown {
   plan_name: string | null;
   plan_price_usd: number | null;
   amount_paid_usd: number | null;
+  commission_base_usd: number | null;
+  commission_pct: number | null;
   commission_usd: number;
   status: string;
   created_at: string;
@@ -187,7 +189,7 @@ export default function Partner() {
             Welcome, {partner.display_name || partner.code}
           </h2>
           <p className="text-sm text-muted-foreground font-body">
-            You earn <span className="text-primary font-semibold">{partner.commission_pct}%</span> of every confirmed plan purchase from users who sign up through your link or code.
+            You earn <span className="text-primary font-semibold">{partner.commission_pct}%</span> of the shared profit on every confirmed plan purchase from users who sign up through your link or code. Each plan has a fixed shared profit (not its full price); the breakdown below shows it, and your cut, for every sale.
           </p>
         </div>
 
@@ -264,7 +266,7 @@ export default function Partner() {
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-heading font-semibold text-foreground">Commission breakdown</h3>
             <span className="text-[11px] text-muted-foreground font-heading">
-              Per-payment detail · {partner.commission_pct}% of plan price on confirmed payments
+              Per-payment detail · your % of each plan's shared profit, on confirmed payments
             </span>
           </div>
           {breakdown.length === 0 ? (
@@ -278,6 +280,7 @@ export default function Partner() {
                     <TableHead>User</TableHead>
                     <TableHead>Plan</TableHead>
                     <TableHead className="text-right">Plan price</TableHead>
+                    <TableHead className="text-right">Shared profit</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Commission</TableHead>
                   </TableRow>
@@ -291,6 +294,7 @@ export default function Partner() {
                       <TableCell className="font-mono text-xs">{b.email_masked || "—"}</TableCell>
                       <TableCell className="text-xs">{b.plan_name || "—"}</TableCell>
                       <TableCell className="text-right text-xs">{fmtUsd(b.plan_price_usd)}</TableCell>
+                      <TableCell className="text-right text-xs">{b.commission_base_usd != null ? fmtUsd(b.commission_base_usd) : "—"}</TableCell>
                       <TableCell className="text-xs">
                         <span className={`font-heading font-semibold px-2 py-0.5 rounded-full ${
                           b.status === "confirmed" ? "bg-primary/20 text-primary" :
@@ -302,6 +306,11 @@ export default function Partner() {
                         b.status === "confirmed" ? "text-primary" : "text-muted-foreground"
                       }`}>
                         {b.status === "confirmed" ? fmtUsd(b.commission_usd) : "—"}
+                        {b.status === "confirmed" && b.commission_base_usd != null && b.commission_pct != null && (
+                          <div className="text-[10px] text-muted-foreground font-normal">
+                            {Number(b.commission_pct)}% × {fmtUsd(b.commission_base_usd)}
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
