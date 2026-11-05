@@ -33,6 +33,24 @@ self.addEventListener('activate', (event) => {
 // every request — JS chunks, Supabase calls, images — which added a real,
 // measurable per-request tax to the entire session for zero benefit, since
 // none of those responses need COOP/COEP set on themselves.
+// An isolated (COEP) page may only start a worker whose own script response carries COEP;
+// without it Chrome blocks the script (ERR_BLOCKED_BY_RESPONSE, verified live) and the
+// background segmenter never starts. Same-origin worker scripts only.
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if ((req.destination === 'worker' || req.destination === 'sharedworker') && new URL(req.url).origin === self.location.origin) {
+    event.respondWith(
+      fetch(req).then((response) => {
+        if (response.type === 'opaque' || response.status === 0) return response;
+        const headers = new Headers(response.headers);
+        headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+        headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      }),
+    );
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   if (event.request.mode !== 'navigate') return;
   // Scoped to /studio itself — the worker registers at scope '/' (it also
