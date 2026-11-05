@@ -185,7 +185,7 @@ function parseAuthInfo(rtcToken: string) {
   return authInfo;
 }
 
-// AI background, chained after the character swap (BETA, staff-only for now).
+// Elite AI background, chained after the character swap (Professional/Enterprise keys).
 // Vidu runs one editing_type per live stream, so the background is a second live stream
 // (editing_type=background_replacement) whose input is the first stream's swapped output,
 // published through AliRTC's switchCamera(…, track) instead of a camera. Its own output then
@@ -219,9 +219,9 @@ class ViduBackgroundLeg {
     const { data: session, error } = await supabase.functions.invoke("mint-vidu-rtc-session", {
       body: { p_key: params.pKey, p_session_id: params.sessionId, image_url: params.backgroundDataUri, editing_type: "background_replacement" },
     });
-    if (error) throw new Error(error.message || "Could not start the AI background");
+    if (error) throw new Error(error.message || "Could not start the Elite AI background");
     if (!session?.ok || !session.rtc?.token || !session.render_uid || !session.live_id || !session.client_secret) {
-      throw new Error(session?.message || "Vidu rejected the AI background request");
+      throw new Error(session?.message || "The Elite AI background request was rejected");
     }
     if (this.stopped) return;
     this.renderUid = session.render_uid;
@@ -245,8 +245,8 @@ class ViduBackgroundLeg {
     engine.setDefaultSubscribeAllRemoteAudioStreams(false);
 
     // Feed the character-swapped track in place of a camera. No microphone on this leg.
-    await withTimeout(engine.switchCamera(undefined, this.cloneInput(params.input)), PREVIEW_TIMEOUT_MS, "Couldn't feed the swapped video to the AI background");
-    await withTimeout(engine.joinChannel(parseAuthInfo(session.rtc.token), "eliteswap-bg"), JOIN_TIMEOUT_MS, "AI background connection timed out");
+    await withTimeout(engine.switchCamera(undefined, this.cloneInput(params.input)), PREVIEW_TIMEOUT_MS, "Couldn't feed the swapped video to the Elite AI background");
+    await withTimeout(engine.joinChannel(parseAuthInfo(session.rtc.token), "eliteswap-bg"), JOIN_TIMEOUT_MS, "Elite AI background connection timed out");
     try { await engine.publishLocalAudioStream(false); } catch { /* noop */ }
     try { await engine.publishLocalVideoStream(true); } catch { /* noop */ }
 
@@ -280,7 +280,7 @@ class ViduBackgroundLeg {
 
   private fail(reason: string) {
     if (this.stopped) return;
-    console.warn("[useViduRealtime] AI background ended:", reason);
+    console.warn("[useViduRealtime] Elite AI background ended:", reason);
     void this.stop();
     this.onEnded(reason);
   }
@@ -499,12 +499,12 @@ export function useViduRealtime() {
     return { ok: true as const };
   }, []);
 
-  // Start the chained AI background (second Vidu stream) on a live character session.
+  // Start the chained Elite AI background (second Vidu stream) on a live character session.
   // onFallback runs if it stops on its own; the character-only output is restored first.
   const startBackground = useCallback(async (backgroundDataUri: string, onFallback?: (reason: string) => void) => {
     const input = deliveredTrackRef.current;
     const params = sessionParamsRef.current;
-    if (!input || !params || endingRef.current) return { ok: false, message: "Connect first, then turn on the AI background." };
+    if (!input || !params || endingRef.current) return { ok: false, message: "Connect first, then pick a background." };
     if (bgLegRef.current) {
       const failure = await bgLegRef.current.switchBackground(backgroundDataUri);
       return failure ? { ok: false, message: failure.error_msg || failure.error_code || "Couldn't switch the background" } : { ok: true as const };
@@ -532,7 +532,7 @@ export function useViduRealtime() {
     } catch (e: any) {
       if (bgLegRef.current === leg) { bgLegRef.current = null; setBackgroundState("off"); }
       await leg.stop();
-      return { ok: false, message: e?.message || "Couldn't start the AI background" };
+      return { ok: false, message: e?.message || "Couldn't start the Elite AI background" };
     }
   }, []);
 

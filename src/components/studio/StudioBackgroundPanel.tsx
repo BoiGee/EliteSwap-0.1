@@ -4,8 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Image as ImageIcon, Trash2, Upload } from "lucide-react";
-import type { BackgroundConfig, BackgroundMode } from "@/hooks/useBackgroundCompositor";
-import { ensureStudioCrossOriginIsolation } from "@/lib/crossOriginIsolation";
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
 const BUCKET = "studio-backgrounds";
@@ -16,23 +14,31 @@ interface BackgroundRow {
   storage_path: string;
   file_name: string | null;
   is_active: boolean;
-  mode: BackgroundMode;
-  chroma_key_color: string | null;
 }
+
+export interface StudioBackground {
+  imageUrl: string;
+}
+
+export type EliteBackgroundStatus = "idle" | "unavailable" | "off" | "starting" | "on";
 
 interface Props {
-  /** Called whenever the active background/mode changes; null when off. */
-  onActiveChange: (config: BackgroundConfig | null) => void;
+  /** Called whenever the active background changes; null when off. */
+  onActiveChange: (config: StudioBackground | null) => void;
+  /** Elite AI background state for the live session (idle = not connected). */
+  status: EliteBackgroundStatus;
 }
 
-export function StudioBackgroundPanel({ onActiveChange }: Props) {
+// Elite AI background: the active image is applied by Vidu (a second, chained live stream
+// that redraws the scene behind the swapped character). Replaced the in-browser MediaPipe
+// cut-out and green-screen compositor.
+export function StudioBackgroundPanel({ onActiveChange, status }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [rows, setRows] = useState<BackgroundRow[]>([]);
   const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadMode, setUploadMode] = useState<BackgroundMode>("segmentation");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -40,7 +46,7 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
     setLoading(true);
     const { data, error } = await supabase
       .from("studio_backgrounds" as any)
-      .select("id, storage_path, file_name, is_active, mode, chroma_key_color")
+      .select("id, storage_path, file_name, is_active")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
     if (!error && data) {
@@ -55,23 +61,7 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       );
       setThumbUrls(urls);
       const active = list.find((r) => r.is_active);
-      // Only pay the cross-origin-isolation setup (service worker + a
-      // one-time reload) for accounts actually using AI mode; every other
-      // /studio visit, including chroma-key users, stays exactly as fast as
-      // before. useBackgroundCompositor falls back to a safe passthrough if
-      // segmentation never becomes ready on a given device/browser anyway,
-      // so this is never worse than the old chromakey-only behavior even
-      // where isolation doesn't take.
-      if (active?.mode === "segmentation") ensureStudioCrossOriginIsolation();
-      // Each row's own stored mode: segmentation (AI, no physical screen
-      // needed) now works via crossOriginIsolation.ts's service-worker-based
-      // COOP/COEP injection (GitHub Pages itself still can't send those
-      // headers).
-      onActiveChange(
-        active && urls[active.id]
-          ? { imageUrl: urls[active.id], mode: active.mode, chromaKeyColor: active.chroma_key_color ?? "#00b140" }
-          : null,
-      );
+      onActiveChange(active && urls[active.id] ? { imageUrl: urls[active.id] } : null);
     }
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,8 +94,6 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
       storage_path: path,
       file_name: file.name,
       file_size: file.size,
-      mode: uploadMode,
-      chroma_key_color: uploadMode === "chromakey" ? "#00b140" : null,
     } as any);
     setUploading(false);
     if (insErr) {
@@ -130,24 +118,6 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
     await load();
   };
 
-  const setChromaColor = async (id: string, chromaKeyColor: string) => {
-    const { error } = await supabase
-      .from("studio_backgrounds" as any)
-      .update({ mode: "chromakey", chroma_key_color: chromaKeyColor } as any)
-      .eq("id", id);
-    if (error) { toast({ title: "Couldn't update color", description: error.message, variant: "destructive" }); return; }
-    await load();
-  };
-
-  const setRowMode = async (id: string, mode: BackgroundMode) => {
-    const { error } = await supabase
-      .from("studio_backgrounds" as any)
-      .update({ mode, chroma_key_color: mode === "chromakey" ? "#00b140" : null } as any)
-      .eq("id", id);
-    if (error) { toast({ title: "Couldn't update mode", description: error.message, variant: "destructive" }); return; }
-    await load();
-  };
-
   const remove = async (row: BackgroundRow) => {
     await supabase.storage.from(BUCKET).remove([row.storage_path]);
     await supabase.from("studio_backgrounds" as any).delete().eq("id", row.id);
@@ -155,35 +125,29 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
   };
 
   const activeRow = rows.find((r) => r.is_active);
+  const statusText: Record<EliteBackgroundStatus, string> = {
+    idle: activeRow ? "Applied automatically when you connect." : "Pick a background to use when you connect.",
+    unavailable: "Not available on the current studio provider.",
+    off: activeRow ? "Applying shortly…" : "Off. Pick a background to apply it live.",
+    starting: "Applying… it appears in about 10 seconds.",
+    on: "Live behind your character.",
+  };
 
   return (
     <div className="glass neon-border rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider flex items-center gap-1.5">
-          <ImageIcon className="w-3.5 h-3.5" /> Custom Background
+          <ImageIcon className="w-3.5 h-3.5" /> Elite AI Background
         </h2>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-heading font-semibold">PRO</span>
       </div>
       <p className="text-xs text-muted-foreground">
-        Upload an image to replace what's behind you in the output. AI Background detects you automatically; Green Screen needs a physical solid-colored backdrop pointed at the camera.
+        Upload a scene and Elite AI redraws it behind your swapped character, live. No green screen needed. Click a background to turn it on or off; switching while live takes a few seconds.
       </p>
-
-      <div className="flex rounded-lg border border-border overflow-hidden text-xs font-heading">
-        <button
-          type="button"
-          onClick={() => setUploadMode("segmentation")}
-          className={`flex-1 py-1.5 transition-colors ${uploadMode === "segmentation" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
-        >
-          AI Background
-        </button>
-        <button
-          type="button"
-          onClick={() => setUploadMode("chromakey")}
-          className={`flex-1 py-1.5 transition-colors ${uploadMode === "chromakey" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
-        >
-          Green Screen
-        </button>
-      </div>
+      <p className={`text-[11px] font-heading ${status === "on" ? "text-primary" : status === "unavailable" ? "text-destructive" : "text-muted-foreground"}`}>
+        {status === "on" && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary mr-1.5 align-middle animate-pulse" />}
+        {statusText[status]}
+      </p>
 
       <input type="file" ref={fileRef} onChange={handleUpload} accept="image/jpeg,image/png,image/webp" className="hidden" />
       <Button
@@ -209,7 +173,7 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
               className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-colors group ${
                 r.is_active ? "border-primary" : "border-border hover:border-primary/50"
               }`}
-              title={r.is_active ? "Click to disable" : "Click to activate"}
+              title={r.is_active ? "Click to turn off" : "Click to use this background"}
             >
               {thumbUrls[r.id] ? (
                 <img src={thumbUrls[r.id]} alt={r.file_name ?? "Background"} className="w-full h-full object-cover" />
@@ -230,41 +194,6 @@ export function StudioBackgroundPanel({ onActiveChange }: Props) {
               </span>
             </button>
           ))}
-        </div>
-      )}
-
-      {activeRow && (
-        <div className="pt-2 border-t border-border space-y-2">
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] text-muted-foreground font-heading">Mode</label>
-            <div className="flex rounded-md border border-border overflow-hidden text-[11px] font-heading">
-              <button
-                type="button"
-                onClick={() => setRowMode(activeRow.id, "segmentation")}
-                className={`px-2 py-1 transition-colors ${activeRow.mode === "segmentation" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
-              >
-                AI
-              </button>
-              <button
-                type="button"
-                onClick={() => setRowMode(activeRow.id, "chromakey")}
-                className={`px-2 py-1 transition-colors ${activeRow.mode === "chromakey" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
-              >
-                Green screen
-              </button>
-            </div>
-          </div>
-          {activeRow.mode === "chromakey" && (
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-muted-foreground font-heading">Green screen color</label>
-              <input
-                type="color"
-                value={activeRow.chroma_key_color ?? "#00b140"}
-                onChange={(e) => setChromaColor(activeRow.id, e.target.value)}
-                className="h-6 w-10 rounded border border-border bg-transparent cursor-pointer"
-              />
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -18,9 +18,7 @@ export default defineConfig(() => ({
   },
   plugins: [react()],
   // ES module format (not the default iife) so a worker bundle can contain a
-  // dynamic import() — backgroundSegmentation.worker.ts lazy-loads
-  // @mediapipe/tasks-vision so that ~9MB WASM runtime only ever downloads
-  // for sessions that actually turn the custom-background feature on.
+  // dynamic import().
   worker: {
     format: "es",
   },

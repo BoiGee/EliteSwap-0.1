@@ -7,8 +7,6 @@ import { CryptoPayment } from "./CryptoPayment";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { useAdmin } from "@/hooks/useAdmin";
-import { Switch } from "@/components/ui/switch";
 import { ToastAction } from "@/components/ui/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
@@ -24,8 +22,7 @@ import { buildPromptWithIdentityGuard } from "@/lib/lucyPromptGuard";
 import { DecartStudioEngine } from "@/lib/decartStudioEngine";
 import { ReferenceBlockedDialog } from "./studio/ReferenceBlockedDialog";
 import { PhotoTipsPopover } from "./studio/PhotoTipsPopover";
-import { StudioBackgroundPanel } from "./studio/StudioBackgroundPanel";
-import { useBackgroundCompositor, type BackgroundConfig } from "@/hooks/useBackgroundCompositor";
+import { StudioBackgroundPanel, type StudioBackground } from "./studio/StudioBackgroundPanel";
 
 // Feature flag; flip to false if thresholds prove too strict in production.
 const REFERENCE_GATE_ENABLED = true;
@@ -40,19 +37,12 @@ export function DeepfakeStudio() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
-  // Custom studio background (Professional/Enterprise only). planTier is
-  // looked up for whichever key is currently in the input, not the
-  // account overall, so a Basic key never surfaces the feature even if
-  // the same account also owns a Pro key. The compositor hook is a true
-  // no-op (no canvas, no worker) whenever backgroundConfig is null, which
-  // covers every session for every user who isn't using this feature.
+  // Elite AI background (Professional/Enterprise only). planTier is looked up for whichever
+  // key is currently in the input, not the account overall, so a Basic key never surfaces
+  // the feature even if the same account also owns a Pro key. The active background is
+  // applied by a second Vidu stream (background_replacement) chained after the character swap.
   const [planTier, setPlanTier] = useState<string | null>(null);
-  const [backgroundConfig, setBackgroundConfig] = useState<BackgroundConfig | null>(null);
-  // AI background (Vidu, beta, staff-only): a second Vidu stream replaces the background instead
-  // of the in-browser compositor. aiBgEngaged = that stream's output is live, so the compositor
-  // passes through.
-  const [aiBackground, setAiBackground] = useState(false);
-  const [aiBgEngaged, setAiBgEngaged] = useState(false);
+  const [backgroundConfig, setBackgroundConfig] = useState<StudioBackground | null>(null);
   const canUseCustomBackground = planTier === "Professional" || planTier === "Enterprise";
   useEffect(() => {
     const key = apiKey.trim();
@@ -238,18 +228,11 @@ export function DeepfakeStudio() {
     });
   }, []);
 
-  // Custom background compositor: a true pass-through when backgroundConfig
-  // is null (the common case), so this costs nothing for sessions that
-  // don't use it. `outputStream` mirrors into `remoteStream` below so every
-  // existing consumer (the output <video>, the OBS relay, diagnostics)
-  // automatically gets the composited feed with zero changes to that code.
-  const backgroundCompositor = useBackgroundCompositor(aiBgEngaged ? null : backgroundConfig, liteMode ? "lite" : "mid");
-  useEffect(() => {
-    setRemoteStream(backgroundCompositor.outputStream);
-  }, [backgroundCompositor.outputStream]);
+  // Every consumer (the output <video>, the OBS relay, diagnostics) reads remoteStream. With
+  // the Elite AI background on, Vidu's background stream replaces it in place.
   const handleRemoteStream = useCallback((transformed: MediaStream) => {
-    backgroundCompositor.setSource(transformed);
-  }, [backgroundCompositor]);
+    setRemoteStream(transformed);
+  }, []);
 
   // Restore the user's OBS preference per-key (set after handleStart commits).
   useEffect(() => {
@@ -1417,28 +1400,16 @@ export function DeepfakeStudio() {
   // rather than a guessed implementation.
   const viduRealtime = useViduRealtime();
   const activeProviderRef = useRef<"decart" | "vidu">("decart");
-  const { isAdmin } = useAdmin();
-  // AI background beta: admins, plus accounts granted it in user_beta_features.
-  const [aiBgBeta, setAiBgBeta] = useState(false);
-  useEffect(() => {
-    if (!user) return;
-    supabase
-      .from("user_beta_features" as any)
-      .select("feature")
-      .eq("user_id", user.id)
-      .eq("feature", "ai_background")
-      .maybeSingle()
-      .then(({ data }) => setAiBgBeta(!!data));
-  }, [user]);
-  const canUseAiBackground = isAdmin || aiBgBeta;
-
-  useEffect(() => { setAiBgEngaged(viduRealtime.backgroundState === "on"); }, [viduRealtime.backgroundState]);
-
-  // Start / switch / stop the Vidu AI background to follow the toggle and the chosen image.
+  // Elite AI background: applies the active background through a second Vidu stream once the
+  // character swap is live, switches it in place when another background is picked, and stops
+  // it when the background is turned off. A failure isn't retried for the same image in the
+  // same session (each try is a paid Vidu request); picking again or reconnecting retries.
   const aiBgUrlRef = useRef<string | null>(null);
+  const aiBgFailedRef = useRef<string | null>(null);
   useEffect(() => {
     const viduLive = activeProviderRef.current === "vidu" && viduRealtime.connectionState === "connected";
-    const want = aiBackground && viduLive && backgroundConfig?.imageUrl ? backgroundConfig.imageUrl : null;
+    if (!viduLive) aiBgFailedRef.current = null;
+    const want = viduLive && backgroundConfig?.imageUrl ? backgroundConfig.imageUrl : null;
     if (!want) {
       if (aiBgUrlRef.current) {
         aiBgUrlRef.current = null;
@@ -1446,8 +1417,13 @@ export function DeepfakeStudio() {
       }
       return;
     }
-    if (aiBgUrlRef.current === want) return;
+    if (aiBgUrlRef.current === want || aiBgFailedRef.current === want) return;
     aiBgUrlRef.current = want;
+    const fail = (message: string) => {
+      aiBgUrlRef.current = null;
+      aiBgFailedRef.current = want;
+      toast({ title: "Elite AI background didn't start", description: message, variant: "destructive" });
+    };
     (async () => {
       try {
         // Downscaled JPEG: keeps the data URI small (Vidu's control messages cap at 16 MB).
@@ -1459,21 +1435,18 @@ export function DeepfakeStudio() {
         canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
         const dataUri = canvas.toDataURL("image/jpeg", 0.9);
         if (aiBgUrlRef.current !== want) return;
-        toast({ title: "Starting AI background…", description: "It appears in about 10 seconds." });
-        const res = await viduRealtime.startBackground(dataUri, (reason) => {
+        toast({ title: "Applying Elite AI background…", description: "It appears in about 10 seconds." });
+        const res = await viduRealtime.startBackground(dataUri, () => {
           aiBgUrlRef.current = null;
-          toast({ title: "AI background stopped", description: `Back to the standard background (${reason}).`, variant: "destructive" });
+          aiBgFailedRef.current = want;
+          toast({ title: "Elite AI background stopped", description: "Your swap continues without it. Pick the background again to retry.", variant: "destructive" });
         });
-        if (!res.ok) {
-          aiBgUrlRef.current = null;
-          toast({ title: "AI background didn't start", description: res.message, variant: "destructive" });
-        }
+        if (!res.ok) fail(res.message);
       } catch (e: any) {
-        aiBgUrlRef.current = null;
-        toast({ title: "AI background didn't start", description: e?.message || "Couldn't load the background image", variant: "destructive" });
+        fail(e?.message || "Couldn't load the background image");
       }
     })();
-  }, [aiBackground, backgroundConfig?.imageUrl, viduRealtime.connectionState, viduRealtime, toast]);
+  }, [backgroundConfig?.imageUrl, viduRealtime.connectionState, viduRealtime, toast]);
   const connectionState = activeProviderRef.current === "vidu" ? viduRealtime.connectionState : decartConnectionState;
   const error = activeProviderRef.current === "vidu" ? viduRealtime.error : decartError;
 
@@ -2003,14 +1976,13 @@ export function DeepfakeStudio() {
     try { await disconnect(); } catch { /* noop */ }
     try { localStream?.getTracks().forEach(t => t.stop()); } catch { /* noop */ }
     setLocalStream(null);
-    backgroundCompositor.setSource(null);
     setRemoteStream(null);
     // Small settle window so ICE/DTLS close + camera release finish before
     // the user's next click. 600ms is generous for desktop, unnoticeable for UX.
     await new Promise((r) => setTimeout(r, 600));
     lastDisconnectAtRef.current = Date.now();
     setIsStarted(false);
-  }, [disconnect, localStream, pauseTimer, apiKey, backgroundCompositor]);
+  }, [disconnect, localStream, pauseTimer, apiKey]);
 
   // Keep ref in sync so the countdown effect can call the latest version
   useEffect(() => {
@@ -2580,25 +2552,11 @@ export function DeepfakeStudio() {
           {/* Custom Background: Professional/Enterprise only, gated on the
               key actually in use, not just the account. */}
           {canUseCustomBackground && (
-            <StudioBackgroundPanel onActiveChange={setBackgroundConfig} />
+            <StudioBackgroundPanel
+              onActiveChange={setBackgroundConfig}
+              status={!isConnected ? "idle" : activeProviderRef.current !== "vidu" ? "unavailable" : viduRealtime.backgroundState}
+            />
           )}
-          {canUseCustomBackground && canUseAiBackground && (
-            <div className="glass rounded-xl p-3 space-y-1.5 border border-amber-500/30">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-heading font-semibold text-foreground">
-                  Vidu AI background <span className="text-[10px] uppercase tracking-wider text-amber-400">beta</span>
-                </div>
-                <Switch checked={aiBackground} onCheckedChange={setAiBackground} />
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Optional upgrade to the AI Background above: Vidu itself redraws the scene behind the character instead of the in-browser cut-out. Uses a second Vidu stream (double the cost and one more of the 5 concurrent slots).
-                {aiBackground && !backgroundConfig && " Pick a background above."}
-                {aiBackground && viduRealtime.backgroundState === "starting" && " Starting…"}
-                {aiBackground && viduRealtime.backgroundState === "on" && " Live."}
-              </p>
-            </div>
-          )}
-
           {/* Reference Image */}
           <div className="glass border border-border rounded-xl p-4 space-y-3">
             <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">

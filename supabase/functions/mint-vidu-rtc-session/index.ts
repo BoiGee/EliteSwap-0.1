@@ -103,17 +103,6 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
-    // background_replacement is the AI background beta: a second paid Vidu stream on top of
-    // the character swap. Only admins and accounts granted the beta may start one.
-    if (editingType !== "subject_replacement") {
-      const [{ data: isAdmin }, { data: beta }] = await Promise.all([
-        admin.rpc("has_role", { _user_id: userId, _role: "admin" }),
-        admin.from("user_beta_features").select("feature").eq("user_id", userId).eq("feature", "ai_background").maybeSingle(),
-      ]);
-      if (!isAdmin && !beta) {
-        return json({ code: "FORBIDDEN", message: "The AI background is in private beta" }, 403);
-      }
-    }
 
     // Re-prove ownership of a session mint_studio_credentials really did
     // open for this user -- don't spend a pooled Vidu key on anyone's say-so.
@@ -126,6 +115,30 @@ Deno.serve(async (req) => {
     if (keyErr) return json({ code: "DB_ERROR", message: keyErr.message }, 500);
     if (!keyRow || keyRow.active_session_id !== sessionId) {
       return json({ code: "FORBIDDEN", message: "Not an active session for this key" }, 403);
+    }
+
+    // background_replacement is the Elite AI background: a second paid Vidu stream on top of
+    // the character swap. It's a Professional/Enterprise feature, matched to the key in use
+    // (as the studio's background panel is); admins and beta testers may use it on any key.
+    if (editingType !== "subject_replacement") {
+      // Same resolution as get_api_key_plan_tier(): key -> payment -> plan. Explicit lookups:
+      // there's no foreign key from api_keys.payment_id for PostgREST to embed through.
+      const planTier = async (): Promise<string | null> => {
+        const { data: k } = await admin.from("api_keys").select("payment_id").eq("id", keyRow.id).maybeSingle();
+        if (!k?.payment_id) return null;
+        const { data: p } = await admin.from("payments").select("plan_id").eq("id", k.payment_id).maybeSingle();
+        if (!p?.plan_id) return null;
+        const { data: plan } = await admin.from("pricing_plans").select("name").eq("id", p.plan_id).maybeSingle();
+        return plan?.name ?? null;
+      };
+      const [tier, { data: isAdmin }, { data: beta }] = await Promise.all([
+        planTier(),
+        admin.rpc("has_role", { _user_id: userId, _role: "admin" }),
+        admin.from("user_beta_features").select("feature").eq("user_id", userId).eq("feature", "ai_background").maybeSingle(),
+      ]);
+      if (tier !== "Professional" && tier !== "Enterprise" && !isAdmin && !beta) {
+        return json({ code: "FORBIDDEN", message: "Elite AI background needs a Professional or Enterprise key" }, 403);
+      }
     }
 
     const { data: sessionRow, error: sessionErr } = await admin
