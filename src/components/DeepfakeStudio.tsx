@@ -2586,12 +2586,12 @@ export function DeepfakeStudio() {
             <div className="glass rounded-xl p-3 space-y-1.5 border border-amber-500/30">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-heading font-semibold text-foreground">
-                  AI background <span className="text-[10px] uppercase tracking-wider text-amber-400">beta</span>
+                  Vidu AI background <span className="text-[10px] uppercase tracking-wider text-amber-400">beta</span>
                 </div>
                 <Switch checked={aiBackground} onCheckedChange={setAiBackground} />
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Vidu replaces the background with your chosen image, on top of the character swap. Uses a second Vidu stream (double the cost and one more of the 5 concurrent slots).
+                Optional upgrade to the AI Background above: Vidu itself redraws the scene behind the character instead of the in-browser cut-out. Uses a second Vidu stream (double the cost and one more of the 5 concurrent slots).
                 {aiBackground && !backgroundConfig && " Pick a background above."}
                 {aiBackground && viduRealtime.backgroundState === "starting" && " Starting…"}
                 {aiBackground && viduRealtime.backgroundState === "on" && " Live."}
