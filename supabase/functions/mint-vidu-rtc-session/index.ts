@@ -103,6 +103,18 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
+    // background_replacement is the AI background beta: a second paid Vidu stream on top of
+    // the character swap. Only admins and accounts granted the beta may start one.
+    if (editingType !== "subject_replacement") {
+      const [{ data: isAdmin }, { data: beta }] = await Promise.all([
+        admin.rpc("has_role", { _user_id: userId, _role: "admin" }),
+        admin.from("user_beta_features").select("feature").eq("user_id", userId).eq("feature", "ai_background").maybeSingle(),
+      ]);
+      if (!isAdmin && !beta) {
+        return json({ code: "FORBIDDEN", message: "The AI background is in private beta" }, 403);
+      }
+    }
+
     // Re-prove ownership of a session mint_studio_credentials really did
     // open for this user -- don't spend a pooled Vidu key on anyone's say-so.
     const { data: keyRow, error: keyErr } = await admin

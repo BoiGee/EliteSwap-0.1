@@ -1418,6 +1418,19 @@ export function DeepfakeStudio() {
   const viduRealtime = useViduRealtime();
   const activeProviderRef = useRef<"decart" | "vidu">("decart");
   const { isAdmin } = useAdmin();
+  // AI background beta: admins, plus accounts granted it in user_beta_features.
+  const [aiBgBeta, setAiBgBeta] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("user_beta_features" as any)
+      .select("feature")
+      .eq("user_id", user.id)
+      .eq("feature", "ai_background")
+      .maybeSingle()
+      .then(({ data }) => setAiBgBeta(!!data));
+  }, [user]);
+  const canUseAiBackground = isAdmin || aiBgBeta;
 
   useEffect(() => { setAiBgEngaged(viduRealtime.backgroundState === "on"); }, [viduRealtime.backgroundState]);
 
@@ -2569,11 +2582,11 @@ export function DeepfakeStudio() {
           {canUseCustomBackground && (
             <StudioBackgroundPanel onActiveChange={setBackgroundConfig} />
           )}
-          {canUseCustomBackground && isAdmin && (
+          {canUseCustomBackground && canUseAiBackground && (
             <div className="glass rounded-xl p-3 space-y-1.5 border border-amber-500/30">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-heading font-semibold text-foreground">
-                  AI background <span className="text-[10px] uppercase tracking-wider text-amber-400">beta · staff only</span>
+                  AI background <span className="text-[10px] uppercase tracking-wider text-amber-400">beta</span>
                 </div>
                 <Switch checked={aiBackground} onCheckedChange={setAiBackground} />
               </div>
