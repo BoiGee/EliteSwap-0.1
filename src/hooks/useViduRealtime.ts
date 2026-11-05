@@ -54,8 +54,16 @@ async function releaseEngine(engine: any) {
 }
 
 // Opened directly from the browser: the per-session client_secret authenticates it, no API key.
-// Envelope per Vidu's reference server: type 1 conn_init, 2 ack, 5 hangup (client), 6 hangup (server).
+// Envelope per Vidu's docs: type 1 conn_init, 2 ack, 5 hangup (client), 6 hangup (server),
+// 13 switch_prompt (change reference image / editing_type mid-session), 14 switch failure.
+// switch_prompt has no success ack, and Vidu doesn't dedupe it: never resend on silence.
+const SWITCH_FAILURE_WINDOW_MS = 4000;
+const MAX_WS_FRAME_BYTES = 16 * 1024 * 1024;
+
+type SwitchFailure = { error_code?: string; error_msg?: string };
+
 class ViduControlChannel {
+  private pendingSwitch: ((failure: SwitchFailure | null) => void) | null = null;
   private ws: WebSocket | null = null;
   private seq = 0;
   private connId = "";
@@ -103,9 +111,29 @@ class ViduControlChannel {
     setTimeout(() => { try { ws?.close(1000, "session ended"); } catch { /* noop */ } }, 300);
   }
 
-  private send(type: number, payload: Record<string, unknown>) {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
+  private send(type: number, payload: Record<string, unknown>): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
     this.ws.send(JSON.stringify({ type, live_id: this.liveId, conn_id: this.connId, seq_id: ++this.seq, payload }));
+    return true;
+  }
+
+  // Resolves null if Vidu raised no type=14 failure within the window (it sends nothing on success).
+  switchPrompt(opts: { imageDataUri?: string; editingType?: string }): Promise<SwitchFailure | null> {
+    const switchPrompt: Record<string, unknown> = {};
+    if (opts.imageDataUri) switchPrompt.prompts = [{ type: "image", content: opts.imageDataUri }];
+    if (opts.editingType) switchPrompt.editing_type = opts.editingType;
+    if (opts.imageDataUri && opts.imageDataUri.length > MAX_WS_FRAME_BYTES - 1024) {
+      return Promise.resolve({ error_code: "TOO_LARGE", error_msg: "The photo is too large to send. Use a smaller image." });
+    }
+    if (this.pendingSwitch) this.pendingSwitch(null);
+    return new Promise((resolve) => {
+      if (!this.send(13, { switch_prompt: switchPrompt })) {
+        resolve({ error_code: "NOT_CONNECTED", error_msg: "The session's control connection isn't open right now." });
+        return;
+      }
+      const timer = setTimeout(() => { this.pendingSwitch = null; resolve(null); }, SWITCH_FAILURE_WINDOW_MS);
+      this.pendingSwitch = (failure) => { clearTimeout(timer); this.pendingSwitch = null; resolve(failure); };
+    });
   }
 
   private handleMessage(data: unknown) {
@@ -123,6 +151,12 @@ class ViduControlChannel {
       }
       return;
     }
+    if (msg?.type === 14) {
+      const failure = (msg.payload && (Object.values(msg.payload)[0] as SwitchFailure)) || {};
+      console.error("[useViduRealtime] switch_prompt failed", failure);
+      this.pendingSwitch?.(failure);
+      return;
+    }
     if (msg?.type === 6) this.end(msg.payload?.hangup?.hangup_reason || "server_hangup");
   }
 
@@ -133,6 +167,136 @@ class ViduControlChannel {
     this.ws = null;
     try { ws?.close(); } catch { /* noop */ }
     this.onEnded(reason);
+  }
+}
+
+// Decodes the base64 rtc.token Vidu returns into AliRTC's joinChannel auth object.
+function parseAuthInfo(rtcToken: string) {
+  const decoded = JSON.parse(atob(rtcToken));
+  const authInfo = {
+    appId: decoded.appid as string,
+    channelId: decoded.channelid as string,
+    userId: decoded.userid as string,
+    nonce: (decoded.nonce as string) || undefined,
+    timestamp: decoded.timestamp as number,
+    token: decoded.token as string,
+  };
+  if (!authInfo.appId || !authInfo.channelId || !authInfo.userId || !authInfo.token) throw new Error("incomplete");
+  return authInfo;
+}
+
+// AI background, chained after the character swap (BETA, staff-only for now).
+// Vidu runs one editing_type per live stream, so the background is a second live stream
+// (editing_type=background_replacement) whose input is the first stream's swapped output,
+// published through AliRTC's switchCamera(…, track) instead of a camera. Its own output then
+// replaces the first stream's as the studio output. Costs a second Vidu stream per user.
+class ViduBackgroundLeg {
+  private engine: any = null;
+  private control: ViduControlChannel | null = null;
+  private renderUid: string | null = null;
+  private delivered: MediaStreamTrack | null = null;
+  private poll: ReturnType<typeof setInterval> | null = null;
+  private watchdog: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
+  // The SDK stops whatever track it was fed when the engine is destroyed, so this leg only ever
+  // gets a clone of the character output; stopping the background then leaves the original live
+  // (verified: feeding the original froze the output when the background was turned off).
+  private inputClone: MediaStreamTrack | null = null;
+
+  private cloneInput(track: MediaStreamTrack) {
+    const prev = this.inputClone;
+    this.inputClone = track.clone();
+    prev?.stop();
+    return this.inputClone as MediaStreamVideoTrack;
+  }
+
+  constructor(
+    private readonly onOutput: (track: MediaStreamTrack) => void,
+    private readonly onEnded: (reason: string) => void,
+  ) {}
+
+  async start(params: { pKey: string; sessionId: string; backgroundDataUri: string; input: MediaStreamTrack }) {
+    const { data: session, error } = await supabase.functions.invoke("mint-vidu-rtc-session", {
+      body: { p_key: params.pKey, p_session_id: params.sessionId, image_url: params.backgroundDataUri, editing_type: "background_replacement" },
+    });
+    if (error) throw new Error(error.message || "Could not start the AI background");
+    if (!session?.ok || !session.rtc?.token || !session.render_uid || !session.live_id || !session.client_secret) {
+      throw new Error(session?.message || "Vidu rejected the AI background request");
+    }
+    if (this.stopped) return;
+    this.renderUid = session.render_uid;
+    this.control = new ViduControlChannel(session.control_url || DEFAULT_CONTROL_URL, session.live_id, session.client_secret, (r) => this.fail(r));
+    this.control.open();
+
+    const AliRtc = await loadAliRtc();
+    const engine = AliRtc.default.createInstance();
+    this.engine = engine;
+    const isRender = (uid: string) => uid === this.renderUid;
+    engine.on("remoteTrackAvailableNotify", (uid: string) => { if (isRender(uid)) void this.tryDeliver(); });
+    engine.on("videoSubscribeStateChanged", (uid: string, _p: number, next: number) => {
+      if (isRender(uid) && next === AliRtc.AliRtcSubscribeState.AliRtcStateSubscribed) void this.tryDeliver();
+    });
+    engine.on("remoteUserOffLineNotify", (uid: string, reason: number) => {
+      if (isRender(uid) && reason === USER_OFFLINE_QUIT && this.delivered) this.fail("render_left");
+    });
+    engine.on("connectionStatusChange", (status: number) => {
+      if (status === AliRtc.AliRtcConnectionStatus.AliRtcConnectionStatusFailed) this.fail("connection_failed");
+    });
+    engine.setDefaultSubscribeAllRemoteAudioStreams(false);
+
+    // Feed the character-swapped track in place of a camera. No microphone on this leg.
+    await withTimeout(engine.switchCamera(undefined, this.cloneInput(params.input)), PREVIEW_TIMEOUT_MS, "Couldn't feed the swapped video to the AI background");
+    await withTimeout(engine.joinChannel(parseAuthInfo(session.rtc.token), "eliteswap-bg"), JOIN_TIMEOUT_MS, "AI background connection timed out");
+    try { await engine.publishLocalAudioStream(false); } catch { /* noop */ }
+    try { await engine.publishLocalVideoStream(true); } catch { /* noop */ }
+
+    void this.tryDeliver();
+    this.poll = setInterval(() => void this.tryDeliver(), REMOTE_POLL_MS);
+    this.watchdog = setTimeout(() => { if (!this.delivered) this.fail("no_output"); }, OUTPUT_TIMEOUT_MS);
+  }
+
+  // The character leg's output track can be replaced on re-subscription; keep feeding the new one.
+  async setInput(track: MediaStreamTrack) {
+    if (this.stopped || !this.engine) return;
+    try { await this.engine.switchCamera(undefined, this.cloneInput(track)); } catch (e) { console.warn("[useViduRealtime] bg setInput failed", e); }
+  }
+
+  switchBackground(dataUri: string): Promise<SwitchFailure | null> {
+    return this.control ? this.control.switchPrompt({ imageDataUri: dataUri }) : Promise.resolve({ error_code: "NOT_CONNECTED" });
+  }
+
+  private async tryDeliver() {
+    if (this.stopped || !this.engine || !this.renderUid) return;
+    try {
+      const { AliRtcRawDataStreamType } = await loadAliRtc();
+      const track: MediaStreamTrack | undefined = await this.engine.getVideoTrack({ userId: this.renderUid, streamType: AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture });
+      if (!track || this.stopped || track === this.delivered) return;
+      this.delivered = track;
+      if (this.poll) { clearInterval(this.poll); this.poll = null; }
+      if (this.watchdog) { clearTimeout(this.watchdog); this.watchdog = null; }
+      this.onOutput(track);
+    } catch { /* not ready yet */ }
+  }
+
+  private fail(reason: string) {
+    if (this.stopped) return;
+    console.warn("[useViduRealtime] AI background ended:", reason);
+    void this.stop();
+    this.onEnded(reason);
+  }
+
+  async stop() {
+    this.stopped = true;
+    if (this.poll) clearInterval(this.poll);
+    if (this.watchdog) clearTimeout(this.watchdog);
+    this.control?.hangup();
+    this.control = null;
+    const engine = this.engine;
+    this.engine = null;
+    try { await engine?.leaveChannel?.(); } catch { /* noop */ }
+    try { await engine?.destroy?.(); } catch { /* noop */ }
+    this.inputClone?.stop();
+    this.inputClone = null;
   }
 }
 
@@ -148,6 +312,16 @@ export function useViduRealtime() {
   const remotePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const outputWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endingRef = useRef(false);
+  const sessionParamsRef = useRef<{ pKey: string; sessionId: string } | null>(null);
+  const bgLegRef = useRef<ViduBackgroundLeg | null>(null);
+  const [backgroundState, setBackgroundState] = useState<"off" | "starting" | "on">("off");
+
+  const stopBackgroundLeg = useCallback(async () => {
+    const leg = bgLegRef.current;
+    bgLegRef.current = null;
+    setBackgroundState("off");
+    if (leg) await leg.stop();
+  }, []);
 
   const stopTimers = useCallback(() => {
     if (remotePollRef.current) { clearInterval(remotePollRef.current); remotePollRef.current = null; }
@@ -159,6 +333,7 @@ export function useViduRealtime() {
     endingRef.current = true;
     console.warn("[useViduRealtime] session ended by Vidu:", reason);
     stopTimers();
+    void stopBackgroundLeg();
     controlRef.current?.hangup();
     controlRef.current = null;
     void releaseEngine(engineRef.current);
@@ -168,7 +343,7 @@ export function useViduRealtime() {
     const onEnded = onEndedRef.current;
     onEndedRef.current = null;
     onEnded?.(reason);
-  }, [stopTimers]);
+  }, [stopTimers, stopBackgroundLeg]);
 
   const tryDeliverRemoteStream = useCallback(async () => {
     const engine = engineRef.current;
@@ -185,7 +360,10 @@ export function useViduRealtime() {
       // A re-subscription hands back a new track object; re-deliver so output isn't left on a dead one.
       if (videoTrack === deliveredTrackRef.current) return;
       deliveredTrackRef.current = videoTrack;
-      onRemoteStreamRef.current?.(new MediaStream([videoTrack]));
+      // With the AI background on, the character output feeds the background stream instead of
+      // the studio output.
+      if (bgLegRef.current) void bgLegRef.current.setInput(videoTrack);
+      else onRemoteStreamRef.current?.(new MediaStream([videoTrack]));
       setConnectionState("connected");
     } catch (err) {
       console.warn("[useViduRealtime] Failed to materialize the remote stream", err);
@@ -195,6 +373,7 @@ export function useViduRealtime() {
   const connect = useCallback(async (params: ViduConnectParams) => {
     const { pKey, sessionId, referenceImageDataUri, editingType, onRemoteStream, onEnded } = params;
     endingRef.current = false;
+    sessionParamsRef.current = { pKey, sessionId };
     setConnectionState("connecting");
     setError(null);
     deliveredTrackRef.current = null;
@@ -310,8 +489,63 @@ export function useViduRealtime() {
     }
   }, [handleEnded, stopTimers, tryDeliverRemoteStream]);
 
+  // Change the reference photo (and optionally the editing mode) without reconnecting.
+  // The picture switches within a few seconds; no extra Vidu charge.
+  const switchReference = useCallback(async (imageDataUri: string, editingType?: string) => {
+    const control = controlRef.current;
+    if (!control) return { ok: false, message: "Not connected to Vidu" };
+    const failure = await control.switchPrompt({ imageDataUri, editingType });
+    if (failure) return { ok: false, message: failure.error_msg || failure.error_code || "Vidu couldn't switch the photo" };
+    return { ok: true as const };
+  }, []);
+
+  // Start the chained AI background (second Vidu stream) on a live character session.
+  // onFallback runs if it stops on its own; the character-only output is restored first.
+  const startBackground = useCallback(async (backgroundDataUri: string, onFallback?: (reason: string) => void) => {
+    const input = deliveredTrackRef.current;
+    const params = sessionParamsRef.current;
+    if (!input || !params || endingRef.current) return { ok: false, message: "Connect first, then turn on the AI background." };
+    if (bgLegRef.current) {
+      const failure = await bgLegRef.current.switchBackground(backgroundDataUri);
+      return failure ? { ok: false, message: failure.error_msg || failure.error_code || "Couldn't switch the background" } : { ok: true as const };
+    }
+    setBackgroundState("starting");
+    const leg = new ViduBackgroundLeg(
+      (track) => {
+        if (bgLegRef.current !== leg) return;
+        setBackgroundState("on");
+        onRemoteStreamRef.current?.(new MediaStream([track]));
+      },
+      (reason) => {
+        if (bgLegRef.current !== leg) return;
+        bgLegRef.current = null;
+        setBackgroundState("off");
+        const characterTrack = deliveredTrackRef.current;
+        if (characterTrack && !endingRef.current) onRemoteStreamRef.current?.(new MediaStream([characterTrack]));
+        onFallback?.(reason);
+      },
+    );
+    bgLegRef.current = leg;
+    try {
+      await leg.start({ ...params, backgroundDataUri, input });
+      return { ok: true as const };
+    } catch (e: any) {
+      if (bgLegRef.current === leg) { bgLegRef.current = null; setBackgroundState("off"); }
+      await leg.stop();
+      return { ok: false, message: e?.message || "Couldn't start the AI background" };
+    }
+  }, []);
+
+  // Back to the character-only output; ends the second Vidu stream.
+  const stopBackground = useCallback(async () => {
+    const characterTrack = deliveredTrackRef.current;
+    await stopBackgroundLeg();
+    if (characterTrack && !endingRef.current) onRemoteStreamRef.current?.(new MediaStream([characterTrack]));
+  }, [stopBackgroundLeg]);
+
   const disconnect = useCallback(async () => {
     endingRef.current = true;
+    await stopBackgroundLeg();
     stopTimers();
     controlRef.current?.hangup();
     controlRef.current = null;
@@ -322,10 +556,10 @@ export function useViduRealtime() {
     onRemoteStreamRef.current = null;
     onEndedRef.current = null;
     setConnectionState("disconnected");
-  }, [stopTimers]);
+  }, [stopTimers, stopBackgroundLeg]);
 
   useEffect(() => {
-    const onPageHide = () => controlRef.current?.hangup();
+    const onPageHide = () => { controlRef.current?.hangup(); void bgLegRef.current?.stop(); };
     window.addEventListener("pagehide", onPageHide);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
@@ -333,6 +567,7 @@ export function useViduRealtime() {
       if (remotePollRef.current) clearInterval(remotePollRef.current);
       if (outputWatchdogRef.current) clearTimeout(outputWatchdogRef.current);
       controlRef.current?.hangup();
+      void bgLegRef.current?.stop();
       void releaseEngine(engineRef.current);
     };
   }, []);
@@ -342,5 +577,9 @@ export function useViduRealtime() {
     error,
     connect,
     disconnect,
+    switchReference,
+    backgroundState,
+    startBackground,
+    stopBackground,
   };
 }

@@ -7,6 +7,8 @@ import { CryptoPayment } from "./CryptoPayment";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useAdmin } from "@/hooks/useAdmin";
+import { Switch } from "@/components/ui/switch";
 import { ToastAction } from "@/components/ui/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
@@ -46,6 +48,11 @@ export function DeepfakeStudio() {
   // covers every session for every user who isn't using this feature.
   const [planTier, setPlanTier] = useState<string | null>(null);
   const [backgroundConfig, setBackgroundConfig] = useState<BackgroundConfig | null>(null);
+  // AI background (Vidu, beta, staff-only): a second Vidu stream replaces the background instead
+  // of the in-browser compositor. aiBgEngaged = that stream's output is live, so the compositor
+  // passes through.
+  const [aiBackground, setAiBackground] = useState(false);
+  const [aiBgEngaged, setAiBgEngaged] = useState(false);
   const canUseCustomBackground = planTier === "Professional" || planTier === "Enterprise";
   useEffect(() => {
     const key = apiKey.trim();
@@ -236,7 +243,7 @@ export function DeepfakeStudio() {
   // don't use it. `outputStream` mirrors into `remoteStream` below so every
   // existing consumer (the output <video>, the OBS relay, diagnostics)
   // automatically gets the composited feed with zero changes to that code.
-  const backgroundCompositor = useBackgroundCompositor(backgroundConfig, liteMode ? "lite" : "mid");
+  const backgroundCompositor = useBackgroundCompositor(aiBgEngaged ? null : backgroundConfig, liteMode ? "lite" : "mid");
   useEffect(() => {
     setRemoteStream(backgroundCompositor.outputStream);
   }, [backgroundCompositor.outputStream]);
@@ -1410,6 +1417,50 @@ export function DeepfakeStudio() {
   // rather than a guessed implementation.
   const viduRealtime = useViduRealtime();
   const activeProviderRef = useRef<"decart" | "vidu">("decart");
+  const { isAdmin } = useAdmin();
+
+  useEffect(() => { setAiBgEngaged(viduRealtime.backgroundState === "on"); }, [viduRealtime.backgroundState]);
+
+  // Start / switch / stop the Vidu AI background to follow the toggle and the chosen image.
+  const aiBgUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    const viduLive = activeProviderRef.current === "vidu" && viduRealtime.connectionState === "connected";
+    const want = aiBackground && viduLive && backgroundConfig?.imageUrl ? backgroundConfig.imageUrl : null;
+    if (!want) {
+      if (aiBgUrlRef.current) {
+        aiBgUrlRef.current = null;
+        void viduRealtime.stopBackground();
+      }
+      return;
+    }
+    if (aiBgUrlRef.current === want) return;
+    aiBgUrlRef.current = want;
+    (async () => {
+      try {
+        // Downscaled JPEG: keeps the data URI small (Vidu's control messages cap at 16 MB).
+        const bitmap = await createImageBitmap(await (await fetch(want)).blob());
+        const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(bitmap.width * scale);
+        canvas.height = Math.round(bitmap.height * scale);
+        canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        const dataUri = canvas.toDataURL("image/jpeg", 0.9);
+        if (aiBgUrlRef.current !== want) return;
+        toast({ title: "Starting AI background…", description: "It appears in about 10 seconds." });
+        const res = await viduRealtime.startBackground(dataUri, (reason) => {
+          aiBgUrlRef.current = null;
+          toast({ title: "AI background stopped", description: `Back to the standard background (${reason}).`, variant: "destructive" });
+        });
+        if (!res.ok) {
+          aiBgUrlRef.current = null;
+          toast({ title: "AI background didn't start", description: res.message, variant: "destructive" });
+        }
+      } catch (e: any) {
+        aiBgUrlRef.current = null;
+        toast({ title: "AI background didn't start", description: e?.message || "Couldn't load the background image", variant: "destructive" });
+      }
+    })();
+  }, [aiBackground, backgroundConfig?.imageUrl, viduRealtime.connectionState, viduRealtime, toast]);
   const connectionState = activeProviderRef.current === "vidu" ? viduRealtime.connectionState : decartConnectionState;
   const error = activeProviderRef.current === "vidu" ? viduRealtime.error : decartError;
 
@@ -2125,13 +2176,11 @@ export function DeepfakeStudio() {
     // Always clear the input value so the same file can be re-picked after a block.
     input.value = "";
 
-    // Vidu fixes the reference when the session starts, so a mid-session pick would only
-    // change the panel, not the swap.
-    if (activeProviderRef.current === "vidu" && connectionState !== "disconnected") {
-      toast({
-        title: "Disconnect to change the photo",
-        description: "On this provider the reference photo is set when the session starts. Disconnect, pick the new photo, then reconnect.",
-      });
+    // Vidu: a live session switches photos over its control channel (switch_prompt). Only the
+    // short connecting window can't take a switch yet.
+    const viduLive = activeProviderRef.current === "vidu" && connectionState !== "disconnected";
+    if (viduLive && connectionState !== "connected") {
+      toast({ title: "Still connecting", description: "Wait for the swapped video to appear, then pick the new photo." });
       return;
     }
 
@@ -2163,6 +2212,31 @@ export function DeepfakeStudio() {
       }
     }
 
+    if (viduLive) {
+      const dataUri = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => (typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("read failed")));
+        reader.onerror = () => reject(new Error("read failed"));
+        reader.readAsDataURL(file);
+      }).catch(() => null);
+      if (!dataUri) {
+        toast({ title: "Couldn't read that photo", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Switching character…", description: "The new face appears in a few seconds." });
+      const res = await viduRealtime.switchReference(dataUri);
+      if (!res.ok) {
+        toast({ title: "Couldn't switch the photo", description: res.message, variant: "destructive" });
+        return;
+      }
+      // Only update the panel once Vidu accepted it, so it never shows a photo that isn't live.
+      setReferenceImage(file);
+      appliedReferenceRef.current = file;
+      if (referencePreview) URL.revokeObjectURL(referencePreview);
+      setReferencePreview(URL.createObjectURL(file));
+      return;
+    }
+
     setReferenceImage(file);
     appliedReferenceRef.current = null;
     const url = URL.createObjectURL(file);
@@ -2182,13 +2256,14 @@ export function DeepfakeStudio() {
     } else {
       toast({ title: "Reference ready", description: "It will apply automatically as soon as you connect." });
     }
-  }, [toast, connectionState, setImage, buildPrompt, verifyReferenceApplied]);
+  }, [toast, connectionState, setImage, buildPrompt, verifyReferenceApplied, viduRealtime, referencePreview]);
 
   const handleClearImage = useCallback(async () => {
     if (activeProviderRef.current === "vidu" && connectionState !== "disconnected") {
+      // A Vidu session always needs a reference; switching is done by picking another photo.
       toast({
-        title: "Disconnect to change the photo",
-        description: "On this provider the reference photo is set when the session starts. Disconnect, pick the new photo, then reconnect.",
+        title: "Pick a new photo instead",
+        description: "This provider needs a reference photo while live. Upload a different photo to switch characters.",
       });
       return;
     }
@@ -2493,6 +2568,22 @@ export function DeepfakeStudio() {
               key actually in use, not just the account. */}
           {canUseCustomBackground && (
             <StudioBackgroundPanel onActiveChange={setBackgroundConfig} />
+          )}
+          {canUseCustomBackground && isAdmin && (
+            <div className="glass rounded-xl p-3 space-y-1.5 border border-amber-500/30">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-heading font-semibold text-foreground">
+                  AI background <span className="text-[10px] uppercase tracking-wider text-amber-400">beta · staff only</span>
+                </div>
+                <Switch checked={aiBackground} onCheckedChange={setAiBackground} />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Vidu replaces the background with your chosen image, on top of the character swap. Uses a second Vidu stream (double the cost and one more of the 5 concurrent slots).
+                {aiBackground && !backgroundConfig && " Pick a background above."}
+                {aiBackground && viduRealtime.backgroundState === "starting" && " Starting…"}
+                {aiBackground && viduRealtime.backgroundState === "on" && " Live."}
+              </p>
+            </div>
           )}
 
           {/* Reference Image */}
