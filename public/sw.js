@@ -40,9 +40,19 @@ self.addEventListener('fetch', (event) => {
   // leak onto every other route. A site-wide isolated document blocks any
   // future popup-based flow (OAuth, a payment provider popup, an embedded
   // widget) via window.opener, breakage that would show up far from here.
-  if (new URL(event.request.url).pathname.indexOf('/studio') !== 0) return;
+  //
+  // GitHub Pages has no /studio file: it answers with 404.html, which redirects to
+  // "/?/studio" (index.html restores the path). The document that finally loads is "/",
+  // so stamping only "/studio" responses never isolated anything and the AI background
+  // segmenter never started. For /studio, serve index.html directly (no 404 detour), and
+  // also stamp the "/?/studio" redirect landing for visits made before this worker took over.
+  const url = new URL(event.request.url);
+  const isStudio = url.pathname.indexOf('/studio') === 0;
+  const isStudioRedirect = url.pathname === '/' && url.search.indexOf('?/studio') === 0;
+  if (!isStudio && !isStudioRedirect) return;
+  const upstream = isStudio ? new Request('/index.html', { credentials: 'same-origin' }) : event.request;
   event.respondWith(
-    fetch(event.request)
+    fetch(upstream)
       .then((response) => {
         if (response.status === 0 || response.type === 'opaque' || response.type === 'opaqueredirect') {
           return response;
