@@ -34,6 +34,16 @@ export type BackgroundSegmentationResponse =
 let segmenter: ImageSegmenterType | null = null;
 let initPromise: Promise<void> | null = null;
 
+// This is a module worker, which has no importScripts. MediaPipe then falls back to
+// self.import(url) if defined, else a dynamic import(), which keeps the WASM glue's
+// `var ModuleFactory` module-scoped, so MediaPipe throws "ModuleFactory not set." (verified
+// live). Running the glue script with a global (indirect) eval makes ModuleFactory a global.
+(self as unknown as { import?: (url: string) => Promise<void> }).import = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load ${url}: HTTP ${res.status}`);
+  (0, eval)(await res.text());
+};
+
 async function ensureSegmenter(): Promise<void> {
   if (segmenter) return;
   if (initPromise) return initPromise;
