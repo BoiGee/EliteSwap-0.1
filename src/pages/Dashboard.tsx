@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { getSafeErrorMessage } from "@/lib/errors";
 import ProfileSection from "@/components/dashboard/ProfileSection";
-import PricingSection, { type SelectedPlanInfo } from "@/components/dashboard/PricingSection";
+import PricingSection, { selectionFor, type SelectedPlanInfo } from "@/components/dashboard/PricingSection";
+import { PUBLIC_PLAN_COLUMNS, listPrice, quote, type BillingPeriod, type PublicPlan } from "@/lib/planPricing";
 import TutorialSection from "@/components/dashboard/TutorialSection";
 import TutorialGuideModal from "@/components/dashboard/TutorialGuideModal";
 import PromoBanner from "@/components/PromoBanner";
@@ -52,6 +53,7 @@ interface Payment {
   created_at: string;
   plan_id?: string | null;
   payment_method?: string | null;
+  billing_period?: string | null;
 }
 
 // What a customer should know about each payment, in plain words instead of a raw status.
@@ -104,8 +106,9 @@ export default function Dashboard() {
   // Lightweight list of active plans for the inline "Submit Transaction Hash"
   // form. Lets users pick which plan they paid for without first opening the
   // wallet modal (otherwise the submit toasts "Choose a plan first").
-  const [inlinePlans, setInlinePlans] = useState<{ id: string; name: string; price_usd: number }[]>([]);
+  const [inlinePlans, setInlinePlans] = useState<PublicPlan[]>([]);
   const [inlinePlanId, setInlinePlanId] = useState<string>("");
+  const [inlinePeriod, setInlinePeriod] = useState<BillingPeriod>("monthly");
   const [showTutorialGuide, setShowTutorialGuide] = useState(false);
 
   // ?topup=1 comes from the studio's low-time "Top up" button: open the plans straight away.
@@ -125,11 +128,11 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase
-        .from("pricing_plans_public")
-        .select("id,name,price_usd,sort_order")
+        .from("pricing_plans_public" as any)
+        .select(PUBLIC_PLAN_COLUMNS)
         .gt("price_usd", 0)
         .order("sort_order", { ascending: true });
-      if (data) setInlinePlans(data as any);
+      if (data) setInlinePlans(data as unknown as PublicPlan[]);
     })();
   }, []);
 
@@ -139,14 +142,10 @@ export default function Dashboard() {
     if (!inlinePlanId) return;
     const p = inlinePlans.find((x) => x.id === inlinePlanId);
     if (!p) return;
-    setSelectedPlanForCrypto({
-      id: p.id,
-      name: p.name,
-      priceUsd: Number(p.price_usd),
-      billingLabel: "monthly",
-      discount: null,
-    });
-  }, [inlinePlanId, inlinePlans]);
+    // Includes the running sale, so the credited amount matches what the server expects.
+    const sel = selectionFor(p, inlinePeriod);
+    if (sel) setSelectedPlanForCrypto(sel);
+  }, [inlinePlanId, inlinePeriod, inlinePlans]);
 
   useEffect(() => {
     if (!user) return;
@@ -358,10 +357,12 @@ export default function Dashboard() {
       tx_hash: effectiveHash,
       status: "pending",
       plan_id: planForPayment?.id ?? null,
-      amount_usd: planForPayment?.priceUsd ?? null,
-      discount_code: discountForPayment?.code ?? null,
+      billing_period: planForPayment?.billingLabel ?? "monthly",
+      // The server re-prices every payment (sale, code, period); these are just hints.
+      amount_usd: discountForPayment?.final_usd ?? planForPayment?.priceUsd ?? null,
+      discount_code: discountForPayment?.code || null,
       discount_amount_usd: discountForPayment?.discount_usd ?? null,
-    }).select("id").maybeSingle();
+    } as any).select("id").maybeSingle();
     let success = false;
     if (error) {
       console.error('[internal]', error);
@@ -599,18 +600,37 @@ export default function Dashboard() {
                             <label className="block text-[10px] font-heading uppercase tracking-wider text-muted-foreground mb-1">
                               Plan you paid for
                             </label>
-                            <select
-                              value={inlinePlanId || selectedPlanForCrypto?.id || ""}
-                              onChange={(e) => setInlinePlanId(e.target.value)}
-                              className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
-                            >
-                              <option value="">Select the plan you paid for</option>
-                              {inlinePlans.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} (${Number(p.price_usd).toFixed(0)})
-                                </option>
-                              ))}
-                            </select>
+                            <div className="flex gap-2">
+                              <select
+                                value={inlinePlanId || selectedPlanForCrypto?.id || ""}
+                                onChange={(e) => setInlinePlanId(e.target.value)}
+                                className="flex-1 bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
+                              >
+                                <option value="">Select the plan you paid for</option>
+                                {inlinePlans.map((p) => {
+                                  const q = quote(p, inlinePeriod);
+                                  return q ? (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} (${q.final.toFixed(2)}{q.percent > 0 ? `, ${q.percent}% off` : ""})
+                                    </option>
+                                  ) : null;
+                                })}
+                              </select>
+                              {inlinePlans.some((p) => listPrice(p, "annual") != null) && (
+                                <select
+                                  value={inlinePeriod}
+                                  onChange={(e) => {
+                                    const next = e.target.value as BillingPeriod;
+                                    setInlinePeriod(next);
+                                    if (!inlinePlanId && selectedPlanForCrypto) setInlinePlanId(selectedPlanForCrypto.id);
+                                  }}
+                                  className="bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-heading text-foreground"
+                                >
+                                  <option value="monthly">Monthly pack</option>
+                                  <option value="annual">Annual</option>
+                                </select>
+                              )}
+                            </div>
                           </div>
                           <div className="flex gap-2">
                             <select
@@ -647,7 +667,7 @@ export default function Dashboard() {
                             <div key={p.id} className="bg-muted/20 rounded-lg px-3 py-2 text-xs space-y-1">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="font-heading font-semibold">{plan?.name ?? p.currency}</span>
+                                  <span className="font-heading font-semibold">{plan?.name ?? p.currency}{p.billing_period === "annual" ? " (Annual)" : ""}</span>
                                   {p.amount_usd != null && <span className="text-muted-foreground">${Number(p.amount_usd).toFixed(2)}</span>}
                                   <span className="text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</span>
                                 </div>

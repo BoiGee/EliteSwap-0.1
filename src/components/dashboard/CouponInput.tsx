@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export interface AppliedDiscount {
+  /** The discount code; "" when the discount is the running sale rather than a code. */
   code: string;
+  /** Display name for a sale discount (e.g. "Elite Sale"). */
+  label?: string;
   percent_off: number;
   discount_usd: number;
   final_usd: number;
@@ -13,11 +16,12 @@ export interface AppliedDiscount {
 interface Props {
   planId: string | null;
   planUsd: number | null;
+  billingPeriod?: "monthly" | "annual";
   applied: AppliedDiscount | null;
   onApply: (d: AppliedDiscount | null) => void;
 }
 
-export default function CouponInput({ planId, planUsd, applied, onApply }: Props) {
+export default function CouponInput({ planId, planUsd, billingPeriod = "monthly", applied, onApply }: Props) {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,6 +38,7 @@ export default function CouponInput({ planId, planUsd, applied, onApply }: Props
     const { data, error: rpcErr } = await supabase.rpc("validate_discount_code" as any, {
       p_code: code.trim(),
       p_plan_id: planId,
+      p_billing_period: billingPeriod,
     });
     setLoading(false);
     if (rpcErr) {

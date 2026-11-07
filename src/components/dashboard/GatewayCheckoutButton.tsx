@@ -9,6 +9,7 @@ interface Props {
   planId: string;
   planName: string;
   discountCode?: string | null;
+  billingPeriod?: "monthly" | "annual";
   className?: string;
   onPaid?: () => void;
 }
@@ -18,7 +19,7 @@ type Phase = "idle" | "opening" | "waiting" | "paid" | "failed";
 // Mobile Money (MTN, Telecel, AirtelTigo) or card through OGateway's hosted checkout, in GHS.
 // The checkout opens in a new tab; this dialog waits for the payment, asking the server to read
 // its status from OGateway every few seconds, so it doesn't depend on the webhook arriving.
-export default function GatewayCheckoutButton({ planId, planName, discountCode, className, onPaid }: Props) {
+export default function GatewayCheckoutButton({ planId, planName, discountCode, billingPeriod = "monthly", className, onPaid }: Props) {
   const { toast } = useToast();
   const [phase, setPhase] = useState<Phase>("idle");
   const [info, setInfo] = useState<{ paymentId: string; url: string; ghs: number } | null>(null);
@@ -37,7 +38,7 @@ export default function GatewayCheckoutButton({ planId, planName, discountCode, 
     setPhase("opening");
     setMessage(null);
     const { data, error } = await supabase.functions.invoke("create-plan-checkout", {
-      body: { plan_id: planId, discount_code: discountCode ?? null },
+      body: { plan_id: planId, discount_code: discountCode ?? null, billing_period: billingPeriod },
     });
     if (error || !data?.checkout_url) {
       tab?.close();

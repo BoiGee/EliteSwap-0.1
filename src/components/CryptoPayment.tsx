@@ -94,6 +94,7 @@ function formatCrypto(amount: number, decimals: number): string {
 
 interface AppliedDiscount {
   code: string;
+  label?: string;
   percent_off: number;
   discount_usd: number;
   final_usd: number;
@@ -176,7 +177,7 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
           {selectedPlan ? (
             <p className="text-xs text-muted-foreground">
               {selectedPlan.name}
-              {selectedPlan.billingLabel ? ` · ${selectedPlan.billingLabel}` : ""}
+              {selectedPlan.billingLabel === "annual" ? " · Annual (12 months' minutes on one key)" : selectedPlan.billingLabel ? " · Monthly pack" : ""}
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">Select your preferred currency below</p>
@@ -230,7 +231,7 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
               </div>
               {discount && (
                 <div className="flex justify-between text-emerald-400">
-                  <span>Discount ({discount.code} · −{discount.percent_off}%)</span>
+                  <span>{discount.code ? `Discount (${discount.code}` : `${discount.label || "Sale"} (`} · −{discount.percent_off}%)</span>
                   <span>−{formatUsd(discount.discount_usd)}</span>
                 </div>
               )}

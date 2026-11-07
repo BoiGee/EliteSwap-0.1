@@ -118,11 +118,12 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
   const [newPaymentTxHash, setNewPaymentTxHash] = useState("");
   const [newPaymentAmount, setNewPaymentAmount] = useState("");
   const [newPaymentPlanId, setNewPaymentPlanId] = useState("");
-  const [paymentPlans, setPaymentPlans] = useState<{ id: string; name: string; price_usd: number; commission_base_usd: number | null; key_duration_minutes: number | null }[]>([]);
+  const [newPaymentPeriod, setNewPaymentPeriod] = useState<"monthly" | "annual">("monthly");
+  const [paymentPlans, setPaymentPlans] = useState<{ id: string; name: string; price_usd: number; price_usd_annual: number | null; commission_base_usd: number | null; key_duration_minutes: number | null }[]>([]);
   useEffect(() => {
     supabase
       .from("pricing_plans")
-      .select("id, name, price_usd, commission_base_usd, key_duration_minutes")
+      .select("id, name, price_usd, price_usd_annual, commission_base_usd, key_duration_minutes")
       .eq("is_active", true)
       .gt("price_usd", 0)
       .order("sort_order")
@@ -581,13 +582,20 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       toast({ title: "Choose the plan they paid for", description: "The plan sets the key's studio time and the partner commission.", variant: "destructive" });
       return;
     }
-    const amt = newPaymentAmount.trim() ? parseFloat(newPaymentAmount) : Number(plan.price_usd);
+    const annual = newPaymentPeriod === "annual";
+    if (annual && !(Number(plan.price_usd_annual) > 0)) {
+      toast({ title: "This plan has no annual price", description: "Set one in the Pricing tab, or record a monthly pack.", variant: "destructive" });
+      return;
+    }
+    const listUsd = annual ? Number(plan.price_usd_annual) : Number(plan.price_usd);
+    const amt = newPaymentAmount.trim() ? parseFloat(newPaymentAmount) : listUsd;
     if (!Number.isFinite(amt) || amt <= 0) {
       toast({ title: "Enter the amount they paid", variant: "destructive" });
       return;
     }
     const matchedPlanId = plan.id;
-    const commissionBase = plan.commission_base_usd;
+    // Annual = 12 packs' worth of minutes, so partners get 12x the plan's shared profit.
+    const commissionBase = plan.commission_base_usd != null ? Number(plan.commission_base_usd) * (annual ? 12 : 1) : null;
     // Admin inserts skip payments_enforce_financials, so lock the base here as checkout does;
     // otherwise a later base change would retroactively change this payment's commission.
     const { error } = await supabase.from("payments").insert({
@@ -597,9 +605,10 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       tx_hash: newPaymentTxHash.trim() || null,
       amount_usd: amt,
       plan_id: matchedPlanId,
+      billing_period: newPaymentPeriod,
       commission_base_usd_snapshot: commissionBase,
       status: newPaymentStatus,
-    });
+    } as any);
     if (error) {
       console.error("[UserManager.createPaymentForUser]", error);
       toast({
@@ -612,6 +621,7 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       setNewPaymentTxHash("");
       setNewPaymentAmount("");
       setNewPaymentPlanId("");
+      setNewPaymentPeriod("monthly");
       setNewPaymentUserId(null);
       onRefresh();
     }
@@ -1053,7 +1063,23 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
 
                     {newPaymentUserId === p.user_id && (
                       <div className="bg-muted/20 rounded-lg p-3 space-y-2">
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                          <div>
+                            <span className="text-xs text-muted-foreground font-heading">Billing</span>
+                            <select
+                              value={newPaymentPeriod}
+                              onChange={(e) => {
+                                const next = e.target.value as "monthly" | "annual";
+                                setNewPaymentPeriod(next);
+                                const pl = paymentPlans.find((x) => x.id === newPaymentPlanId);
+                                if (pl) setNewPaymentAmount(String(Number(next === "annual" ? pl.price_usd_annual ?? "" : pl.price_usd)));
+                              }}
+                              className="w-full bg-muted/30 border border-border rounded-lg px-2 py-1 text-xs font-heading text-foreground mt-0.5"
+                            >
+                              <option value="monthly">Monthly pack</option>
+                              <option value="annual">Annual (12x minutes)</option>
+                            </select>
+                          </div>
                           <div>
                             <span className="text-xs text-muted-foreground font-heading">Plan</span>
                             <select
@@ -1061,14 +1087,14 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                               onChange={(e) => {
                                 setNewPaymentPlanId(e.target.value);
                                 const pl = paymentPlans.find((x) => x.id === e.target.value);
-                                if (pl && !newPaymentAmount) setNewPaymentAmount(String(Number(pl.price_usd)));
+                                if (pl && !newPaymentAmount) setNewPaymentAmount(String(Number(newPaymentPeriod === "annual" ? pl.price_usd_annual ?? "" : pl.price_usd)));
                               }}
                               className="w-full bg-muted/30 border border-border rounded-lg px-2 py-1 text-xs font-heading text-foreground mt-0.5"
                             >
                               <option value="">Choose plan…</option>
                               {paymentPlans.map((pl) => (
                                 <option key={pl.id} value={pl.id}>
-                                  {pl.name} (${Number(pl.price_usd)}{pl.key_duration_minutes ? `, ${pl.key_duration_minutes} min` : ""})
+                                  {pl.name} (${Number(newPaymentPeriod === "annual" ? pl.price_usd_annual ?? 0 : pl.price_usd)}{pl.key_duration_minutes ? `, ${pl.key_duration_minutes * (newPaymentPeriod === "annual" ? 12 : 1)} min` : ""})
                                 </option>
                               ))}
                             </select>

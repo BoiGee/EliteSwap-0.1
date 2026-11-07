@@ -25,11 +25,13 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const planId = String(body?.plan_id ?? "");
   const discountCode = body?.discount_code ? String(body.discount_code).slice(0, 64) : null;
+  const billingPeriod = body?.billing_period === "annual" ? "annual" : "monthly";
   if (!/^[0-9a-f-]{36}$/i.test(planId)) return json({ code: "BAD_REQUEST", message: "Choose a plan to pay for" }, 400);
 
   const { data: payment, error: createErr } = await userClient.rpc("create_gateway_payment", {
     p_plan_id: planId,
     p_discount_code: discountCode,
+    p_billing_period: billingPeriod,
   });
   if (createErr || !payment) {
     return json({ code: "CANNOT_CREATE", message: createErr?.message ?? "Couldn't start the payment" }, 400);

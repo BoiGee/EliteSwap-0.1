@@ -93,6 +93,7 @@ interface PricingPlan {
   id: string;
   name: string;
   price_usd: number;
+  price_usd_annual: number | null;
 }
 
 interface Props {
@@ -129,7 +130,7 @@ export default function PaymentActionDialog({
     if (!open) return;
     supabase
       .from("pricing_plans")
-      .select("id, name, price_usd")
+      .select("id, name, price_usd, price_usd_annual")
       .eq("is_active", true)
       .order("sort_order", { ascending: true })
       .then(({ data }) => setPlans((data ?? []) as unknown as PricingPlan[]));
@@ -179,6 +180,8 @@ export default function PaymentActionDialog({
     return off > 0 && paid + off > 0 ? off / (paid + off) : 0;
   })();
 
+  const isAnnual = (payment as any).billing_period === "annual";
+
   const handlePlanChange = (id: string) => {
     setSelectedPlanId(id);
     const plan = plans.find((p) => p.id === id);
@@ -187,7 +190,8 @@ export default function PaymentActionDialog({
       setAmountUsd(String(Number(payment.amount_usd)));
       return;
     }
-    const price = Number(plan.price_usd);
+    // An annual payment stays annual: price it from the plan's annual price.
+    const price = Number(isAnnual && plan.price_usd_annual ? plan.price_usd_annual : plan.price_usd);
     setAmountUsd(String(Math.round(price * (1 - discountRate) * 100) / 100));
   };
 
@@ -339,7 +343,7 @@ export default function PaymentActionDialog({
                   <SelectContent>
                     {plans.map((p) => (
                       <SelectItem key={p.id} value={p.id} className="text-sm">
-                        {p.name}: ${Number(p.price_usd).toFixed(2)}
+                        {p.name}{isAnnual ? " (Annual)" : ""}: ${Number(isAnnual && p.price_usd_annual ? p.price_usd_annual : p.price_usd).toFixed(2)}
                       </SelectItem>
                     ))}
                   </SelectContent>

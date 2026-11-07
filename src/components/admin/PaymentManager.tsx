@@ -19,6 +19,8 @@ interface Payment {
   updated_at?: string;
   discount_code?: string | null;
   discount_amount_usd?: number | null;
+  billing_period?: string | null;
+  promotion_id?: string | null;
 }
 
 interface Profile {
@@ -157,7 +159,8 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                   <TableCell className="font-heading font-semibold text-xs">{p.currency}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : "—"}
-                    {p.discount_code && <div className="text-[10px] text-muted-foreground">{p.discount_code}{p.discount_amount_usd ? ` −$${Number(p.discount_amount_usd).toFixed(2)}` : ""}</div>}
+                    {(p.discount_code || p.promotion_id) && <div className="text-[10px] text-muted-foreground">{p.discount_code || "Sale"}{p.discount_amount_usd ? ` −$${Number(p.discount_amount_usd).toFixed(2)}` : ""}</div>}
+                    {p.billing_period === "annual" && <div className="text-[10px] font-heading font-semibold text-primary">Annual (12x minutes)</div>}
                   </TableCell>
                   <TableCell className="font-mono text-xs max-w-[140px] truncate">
                     {p.tx_hash ?? "—"}

@@ -2,114 +2,81 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, X, Sparkles } from "lucide-react";
-
-const PROMO_CODE = "ES966900";
-const DISMISS_KEY = `promo_dismissed_${PROMO_CODE}`;
+import { Sparkles, X } from "lucide-react";
+import { PUBLIC_PLAN_COLUMNS, formatSaleEnd, salePercent, type PublicPlan } from "@/lib/planPricing";
 
 interface Props {
   variant?: "hero" | "compact";
-  /** Dashboard: called when user clicks CTA so parent can scroll + prefill coupon */
+  /** Dashboard: called when the user clicks the CTA so the parent can scroll to the plans. */
   onApplyToPlan?: (code: string) => void;
 }
 
+// Advertises the running plan sale (plan_promotions). Shows nothing when no sale is active.
+// The sale applies automatically at checkout, so there's no code to copy.
 export default function PromoBanner({ variant = "hero", onApplyToPlan }: Props) {
-  const [percentOff, setPercentOff] = useState<number | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [dismissed, setDismissed] = useState<boolean>(() => {
-    try { return localStorage.getItem(DISMISS_KEY) === "1"; } catch { return false; }
-  });
-  const [copied, setCopied] = useState(false);
+  const [plans, setPlans] = useState<PublicPlan[]>([]);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
     supabase
-      .rpc("get_promo_code_status" as any, { p_code: PROMO_CODE })
-      .then(({ data }) => {
-        if (cancelled) return;
-        const row = Array.isArray(data) ? data[0] : data;
-        if (row?.percent_off) setPercentOff(row.percent_off);
-        setLoaded(true);
-      });
+      .from("pricing_plans_public" as any)
+      .select(PUBLIC_PLAN_COLUMNS)
+      .then(({ data }) => { if (!cancelled && data) setPlans(data as unknown as PublicPlan[]); });
     return () => { cancelled = true; };
   }, []);
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(PROMO_CODE);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-      toast({ title: "Code copied! 📋", description: `${PROMO_CODE} is in your clipboard.` });
-    } catch {
-      toast({ title: "Couldn't copy", description: "Please copy the code manually.", variant: "destructive" });
-    }
-  };
+  const onSale = plans.filter((p) => salePercent(p) > 0);
+  const best = Math.max(0, ...onSale.map((p) => salePercent(p)));
+  const endsIso = onSale[0]?.promo_ends_at ?? null;
+  // Dismissal is remembered per sale (keyed by its end time), so the next sale shows again.
+  const dismissKey = endsIso ? `promo_dismissed_sale_${endsIso}` : null;
+  useEffect(() => {
+    if (!dismissKey) return;
+    try { if (localStorage.getItem(dismissKey) === "1") setDismissedKey(dismissKey); } catch { /* noop */ }
+  }, [dismissKey]);
+
+  if (best <= 0 || !dismissKey || dismissedKey === dismissKey) return null;
+
+  const label = onSale[0]?.promo_label || "Sale";
+  const ends = formatSaleEnd(endsIso);
+  const perPlan = onSale
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((p) => `${p.name} ${salePercent(p)}% off`)
+    .join(" · ");
 
   const handleDismiss = () => {
-    setDismissed(true);
-    try { localStorage.setItem(DISMISS_KEY, "1"); } catch {}
+    setDismissedKey(dismissKey);
+    try { localStorage.setItem(dismissKey, "1"); } catch { /* noop */ }
   };
-
   const handleCta = () => {
     if (variant === "compact" && onApplyToPlan) {
-      onApplyToPlan(PROMO_CODE);
+      onApplyToPlan("");
       return;
     }
-    if (user) {
-      navigate("/dashboard");
-    } else {
-      navigate("/auth?redirect=pricing");
-    }
+    navigate(user ? "/dashboard" : "/pricing");
   };
-
-  if (!loaded || percentOff == null || dismissed) return null;
-
-  const headline =
-    variant === "hero"
-      ? `Limited offer: ${percentOff}% off your first plan`
-      : `Save ${percentOff}% on any plan today`;
 
   if (variant === "compact") {
     return (
       <div className="relative glass neon-border rounded-2xl px-4 py-3 bg-gradient-to-r from-primary/25 via-primary/15 to-primary/5 overflow-hidden">
-        <button
-          onClick={handleDismiss}
-          aria-label="Dismiss promo"
-          className="absolute top-2 right-2 text-muted-foreground hover:text-foreground transition-colors"
-        >
+        <button onClick={handleDismiss} aria-label="Dismiss" className="absolute top-2 right-2 text-muted-foreground hover:text-foreground transition-colors">
           <X className="w-4 h-4" />
         </button>
         <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 pr-6">
-          <div className="flex items-center gap-2 shrink-0">
-            <Sparkles className="w-4 h-4 text-primary animate-pulse-neon" />
-            <span className="text-sm font-heading font-bold text-foreground">{headline}</span>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary animate-pulse-neon" />
+              <span className="text-sm font-heading font-bold text-foreground">{label}: up to {best}% off every plan</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">{perPlan}{ends ? ` · ends ${ends}` : ""} · applied automatically, monthly and annual</p>
           </div>
-          <div className="flex items-center gap-2 flex-1">
-            <button
-              onClick={handleCopy}
-              className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background/60 border border-primary/50 hover:border-primary transition-colors"
-              aria-label="Copy discount code"
-            >
-              <span className="font-mono text-sm font-bold tracking-wider text-primary">{PROMO_CODE}</span>
-              {copied ? (
-                <Check className="w-3.5 h-3.5 text-primary" />
-              ) : (
-                <Copy className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />
-              )}
-            </button>
-            <Button
-              onClick={handleCta}
-              size="sm"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-xs neon-glow"
-            >
-              Apply to a plan ↓
-            </Button>
-          </div>
+          <Button onClick={handleCta} size="sm" className="md:ml-auto bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-xs neon-glow">
+            See sale prices ↓
+          </Button>
         </div>
       </div>
     );
@@ -118,42 +85,20 @@ export default function PromoBanner({ variant = "hero", onApplyToPlan }: Props) 
   // hero variant, landing page
   return (
     <div className="relative w-full bg-gradient-to-r from-primary/30 via-primary/20 to-primary/10 border-b border-primary/40">
-      <button
-        onClick={handleDismiss}
-        aria-label="Dismiss promo"
-        className="absolute top-2 right-3 text-muted-foreground hover:text-foreground transition-colors z-10"
-      >
+      <button onClick={handleDismiss} aria-label="Dismiss" className="absolute top-2 right-3 text-muted-foreground hover:text-foreground transition-colors z-10">
         <X className="w-4 h-4" />
       </button>
-      <div className="max-w-6xl mx-auto px-4 py-3 md:py-3.5 flex flex-col md:flex-row items-center justify-center gap-3 md:gap-5 text-center md:text-left">
+      <div className="max-w-6xl mx-auto px-4 py-3 md:py-3.5 flex flex-col md:flex-row items-center justify-center gap-2 md:gap-5 text-center md:text-left">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-primary animate-pulse-neon" />
           <span className="text-sm md:text-base font-heading font-bold text-foreground">
-            {headline}
+            {label}: up to {best}% off every plan{ends ? `, ends ${ends}` : ""}
           </span>
         </div>
-        <button
-          onClick={handleCopy}
-          className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background/70 border border-primary/60 hover:border-primary transition-colors"
-          aria-label="Copy discount code"
-        >
-          <span className="font-mono text-sm md:text-base font-bold tracking-wider text-primary">{PROMO_CODE}</span>
-          {copied ? (
-            <Check className="w-4 h-4 text-primary" />
-          ) : (
-            <Copy className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
-          )}
-        </button>
-        <Button
-          onClick={handleCta}
-          size="sm"
-          className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-xs md:text-sm neon-glow"
-        >
-          Claim & start now →
+        <span className="text-[11px] md:text-xs text-muted-foreground font-heading">{perPlan} · no code needed</span>
+        <Button onClick={handleCta} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-semibold text-xs md:text-sm neon-glow">
+          See sale prices →
         </Button>
-        <span className="text-[10px] md:text-xs text-muted-foreground font-heading">
-          Apply at checkout · Limited redemptions
-        </span>
       </div>
     </div>
   );

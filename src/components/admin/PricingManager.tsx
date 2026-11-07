@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { getSafeErrorMessage } from "@/lib/errors";
+import PlanSalesManager from "./PlanSalesManager";
 
 interface PricingPlan {
   id: string;
@@ -133,6 +134,7 @@ export default function PricingManager() {
   return (
     <div className="space-y-4">
       <GatewayCheckoutToggle />
+      <PlanSalesManager />
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-bold text-foreground">Pricing Plans</h2>
         {!showForm && (

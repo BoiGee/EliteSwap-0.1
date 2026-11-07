@@ -4,48 +4,42 @@ import { Helmet } from "react-helmet-async";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useFiatRates } from "@/hooks/useFiatRates";
-import { CurrencySelector, formatFiat } from "@/components/CurrencySelector";
+import { CurrencySelector } from "@/components/CurrencySelector";
 import { useDisplayLocale } from "@/i18n/useDisplayLocale";
 import AppHeader from "@/components/AppHeader";
-
-
-interface PricingPlan {
-  id: string;
-  name: string;
-  description: string | null;
-  price_usd: number;
-  price_usd_annual: number | null;
-  features: string[];
-  sort_order: number;
-}
+import PlanPriceBlock, { BillingPeriodToggle } from "@/components/pricing/PlanPriceBlock";
+import {
+  PUBLIC_PLAN_COLUMNS,
+  annualSavingsPercent,
+  formatSaleEnd,
+  hasAnnual,
+  salePercent,
+  type BillingPeriod,
+  type PublicPlan,
+} from "@/lib/planPricing";
 
 export default function Pricing() {
   const navigate = useNavigate();
-  const [plans, setPlans] = useState<PricingPlan[]>([]);
+  const [plans, setPlans] = useState<PublicPlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const { currency, locale } = useDisplayLocale();
-  const { convert, lastUpdated, loading: ratesLoading } = useFiatRates();
+  const [period, setPeriod] = useState<BillingPeriod>("monthly");
+  const { currency } = useDisplayLocale();
+  const { lastUpdated, loading: ratesLoading } = useFiatRates();
 
   useEffect(() => {
     supabase
       .from("pricing_plans_public" as any)
-      .select("id, name, description, price_usd, price_usd_annual, features, sort_order")
+      .select(PUBLIC_PLAN_COLUMNS)
       .order("sort_order", { ascending: true })
       .then(({ data }) => {
-        if (data) setPlans(data as unknown as PricingPlan[]);
+        if (data) setPlans(data as unknown as PublicPlan[]);
         setLoading(false);
       });
   }, []);
 
-  const displayPrice = (plan: PricingPlan) => {
-    const usd = plan.price_usd;
-    if (!(Number(usd) > 0)) return { display: "Custom", usdSubtext: "Priced for your volume" };
-    const converted = convert(usd, currency);
-    return {
-      display: formatFiat(converted, currency, locale),
-      usdSubtext: currency !== "USD" ? `≈ $${usd.toFixed(2)} USD` : null,
-    };
-  };
+  const bestSale = Math.max(0, ...plans.map((p) => salePercent(p)));
+  const saleEnd = formatSaleEnd(plans.find((p) => salePercent(p) > 0)?.promo_ends_at ?? null);
+  const bestAnnualSaving = Math.max(0, ...plans.map((p) => annualSavingsPercent(p) ?? 0)) || null;
 
 
   return (
@@ -65,11 +59,17 @@ export default function Pricing() {
 
         {/* Header */}
         <div className="text-center space-y-4">
+          {bestSale > 0 && (
+            <div className="inline-block rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-1.5 text-sm font-heading font-semibold text-emerald-400">
+              Elite Sale: up to {bestSale}% off every plan{saleEnd ? ` · ends ${saleEnd}` : ""}
+            </div>
+          )}
           <h1 className="text-4xl md:text-5xl font-heading font-bold text-foreground">Choose Your Plan</h1>
           <p className="text-muted-foreground max-w-md mx-auto">
-            Unlock realtime AI character swap with the plan that fits your needs.
+            Realtime AI character swap for your streams and calls. Buy minutes once; they never expire.
           </p>
-          <div className="flex flex-col items-center gap-2 pt-2">
+          <div className="flex flex-col items-center gap-3 pt-2">
+            {hasAnnual(plans) && <BillingPeriodToggle value={period} onChange={setPeriod} bestSavings={bestAnnualSaving} />}
             <CurrencySelector />
             {currency !== "USD" && (
               <p className="text-[11px] text-muted-foreground font-heading">
@@ -91,7 +91,6 @@ export default function Pricing() {
           <div className={`grid gap-6 ${plans.length === 1 ? "max-w-sm mx-auto" : plans.length === 2 ? "grid-cols-1 md:grid-cols-2 max-w-2xl mx-auto" : "grid-cols-1 md:grid-cols-3"}`}>
             {plans.map((plan, i) => {
               const isHighlighted = plans.length >= 3 ? i === 1 : i === plans.length - 1;
-              const { display, usdSubtext } = displayPrice(plan);
               return (
                 <div
                   key={plan.id}
@@ -110,12 +109,7 @@ export default function Pricing() {
                       <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>
                     )}
                   </div>
-                  <div>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-4xl font-heading font-bold text-foreground">{display}</span>
-                    </div>
-                    {usdSubtext && <p className="text-xs text-muted-foreground mt-1">{usdSubtext}</p>}
-                  </div>
+                  <PlanPriceBlock plan={plan} period={period} size="lg" />
                   {plan.features?.length > 0 && (
                     <ul className="flex-1 space-y-2">
                       {plan.features.map((f, fi) => (
