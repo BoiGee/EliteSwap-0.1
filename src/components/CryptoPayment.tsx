@@ -231,7 +231,7 @@ function CryptoPaymentImpl({ onClose, selectedPlan, onSubmitHash }: Props) {
               </div>
               {discount && (
                 <div className="flex justify-between text-emerald-400">
-                  <span>{discount.code ? `Discount (${discount.code}` : `${discount.label || "Sale"} (`} · −{discount.percent_off}%)</span>
+                  <span>{discount.code ? `Discount (${discount.code} · −${discount.percent_off}%)` : `${discount.label || "Sale"} (−${discount.percent_off}%)`}</span>
                   <span>−{formatUsd(discount.discount_usd)}</span>
                 </div>
               )}
