@@ -19,7 +19,10 @@ import ReferralCodeInput from "@/components/dashboard/ReferralCodeInput";
 import { trackFunnel } from "@/lib/paymentFunnel";
 import { notifyAdminPaymentEvent } from "@/lib/adminNotify";
 import { useCryptoPrices } from "@/hooks/useCryptoPrices";
-import { attachPendingPartnerCode } from "@/lib/partnerCode";
+import { attachPendingPartnerCode, clearPendingPartnerCode } from "@/lib/partnerCode";
+import { attachPendingResellerCode, attachResellerMessage, fmtUsd, rpc, type ResellerPurchase } from "@/lib/reseller";
+import { useMyReseller, useResellerAccount } from "@/hooks/useReseller";
+import ResellerOfferCard from "@/components/dashboard/ResellerOfferCard";
 import { ApiKeyTimer } from "@/components/dashboard/ApiKeyTimer";
 import { usePartner } from "@/hooks/usePartner";
 import SystemAnnouncementModal from "@/components/SystemAnnouncementModal";
@@ -97,6 +100,12 @@ export default function Dashboard() {
   const [reviewModalOpen, setReviewModalOpen] = useState<boolean>(false);
   const [repurchaseMode, setRepurchaseMode] = useState<boolean>(false);
   const { partner, loading: partnerLoading } = usePartner();
+  // Customers of an active reseller buy plans from him, not from Elite Swap: his offer replaces
+  // the plan checkout (the server refuses their plan payments too). The $10 trial stays direct.
+  const { reseller: myReseller, refresh: refreshMyReseller } = useMyReseller();
+  const isResellerCustomer = !!myReseller;
+  const { account: resellerAccount } = useResellerAccount();
+  const [resellerPurchases, setResellerPurchases] = useState<Map<string, ResellerPurchase>>(new Map());
   const [partnerPromoDismissed, setPartnerPromoDismissed] = useState<boolean>(false);
   // Get Started stepper (Payment / Keys / Launch), defaults to the step the
   // user actually needs next, but stops auto-advancing once they click a tab
@@ -182,9 +191,16 @@ export default function Dashboard() {
   const canUseStudio = hasConfirmedPayment || hasActiveFreeTrialKey || usableApiKeys.length > 0;
 
   useEffect(() => {
-    // Best-effort: attach any pending referral code now that user is authed.
+    // Best-effort: attach any pending reseller link, then referral code, now that user is authed.
+    // Sequential: a reseller's customer can't also be a partner referral.
     if (user) {
-      attachPendingPartnerCode("link").then((r) => {
+      attachPendingResellerCode().then((rr) => {
+        if (!rr) return;
+        const msg = attachResellerMessage(rr);
+        if (msg) toast({ ...msg, variant: rr.ok ? undefined : "destructive" });
+        if (rr.ok) { clearPendingPartnerCode(); refreshMyReseller(); }
+      }).catch(() => {}).then(() => attachPendingPartnerCode("link")).then((r) => {
+        if (!r) return;
         const res = r.result;
         if (res?.reason === "already_attributed") {
           toast({
@@ -282,6 +298,11 @@ export default function Dashboard() {
     // "view all" RLS policy on payments too.
     const { data } = await supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setPayments(data);
+    // Plans bought through a reseller: show what the customer paid them, not Elite Swap's share.
+    if (data?.some((p: Payment) => p.payment_method === "reseller")) {
+      const { data: rp } = await rpc<ResellerPurchase[]>("my_reseller_purchases");
+      setResellerPurchases(new Map((rp ?? []).map((x) => [x.payment_id, x])));
+    }
   };
 
   // Check if user has already left a review (for secondary banner)
@@ -419,6 +440,7 @@ export default function Dashboard() {
         active="dashboard"
         isStaff={isStaff}
         isPartner={!!partner}
+        isReseller={!!resellerAccount}
         showNotifications
         rightExtra={
           <Button
@@ -480,8 +502,8 @@ export default function Dashboard() {
             account + community on the right, instead of one long stack. */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2 space-y-6">
-            {/* Promo banner: hides automatically once paid */}
-            {!hasConfirmedPayment && (
+            {/* Promo banner: hides automatically once paid (and for reseller customers: Elite Swap's sale isn't theirs to use) */}
+            {!hasConfirmedPayment && !isResellerCustomer && (
               <PromoBanner
                 variant="compact"
                 onApplyToPlan={(code) => {
@@ -506,6 +528,7 @@ export default function Dashboard() {
 
             {/* Pricing Plans */}
             <div id="pricing-section">
+              {isResellerCustomer ? <ResellerOfferCard store={myReseller} /> : (
               <PricingSection
                 onSelectPlan={(plan) => {
                   setSelectedPlanForCrypto(plan);
@@ -517,6 +540,7 @@ export default function Dashboard() {
                 repurchaseRequested={repurchaseMode}
                 onGatewayPaid={() => { fetchPayments(); fetchApiKeys(); setTimeout(fetchApiKeys, 3000); setRepurchaseMode(false); }}
               />
+              )}
             </div>
 
             {/* Get Started: Payment / Unique Keys / Launch as a single stepper
@@ -556,7 +580,15 @@ export default function Dashboard() {
                       {hasConfirmedPayment && <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading">✓ Paid</span>}
                     </div>
 
-                    {(!hasConfirmedPayment || repurchaseMode) && (
+                    {isResellerCustomer && myReseller && (
+                      <p className="text-sm text-muted-foreground">
+                        You buy plans from <span className="text-foreground font-semibold">{myReseller.display_name}</span>
+                        {myReseller.contact ? <> ({myReseller.contact})</> : null}. Pay them, and your key appears in Step 2 as
+                        soon as they record your purchase.
+                      </p>
+                    )}
+
+                    {(!hasConfirmedPayment || repurchaseMode) && !isResellerCustomer && (
                       <>
                         <p className="text-sm text-muted-foreground">
                           Send BTC, BNB, or USDT (BEP-20 / TRC20) to our wallet, then submit your transaction hash below for verification.
@@ -663,12 +695,17 @@ export default function Dashboard() {
                         {payments.map((p) => {
                           const d = describePayment(p);
                           const plan = inlinePlans.find((pl) => pl.id === p.plan_id);
+                          const viaReseller = p.payment_method === "reseller" ? resellerPurchases.get(p.id) : undefined;
                           return (
                             <div key={p.id} className="bg-muted/20 rounded-lg px-3 py-2 text-xs space-y-1">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="font-heading font-semibold">{plan?.name ?? p.currency}{p.billing_period === "annual" ? " (Annual)" : ""}</span>
-                                  {p.amount_usd != null && <span className="text-muted-foreground">${Number(p.amount_usd).toFixed(2)}</span>}
+                                  <span className="font-heading font-semibold">{viaReseller?.plan_name ?? plan?.name ?? p.currency}{p.billing_period === "annual" ? " (Annual)" : ""}</span>
+                                  {viaReseller ? (
+                                    <span className="text-muted-foreground">{fmtUsd(viaReseller.price_usd)} via {viaReseller.reseller_name}</span>
+                                  ) : p.payment_method === "reseller" ? (
+                                    <span className="text-muted-foreground">via your reseller</span>
+                                  ) : p.amount_usd != null && <span className="text-muted-foreground">${Number(p.amount_usd).toFixed(2)}</span>}
                                   <span className="text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</span>
                                 </div>
                                 <span className={`font-heading font-semibold px-2 py-0.5 rounded-full shrink-0 ${
@@ -809,7 +846,7 @@ export default function Dashboard() {
           {/* Sidebar: account + community, out of the main flow's way */}
           <div className="space-y-6">
             <ProfileSection />
-            <ReferralCodeInput />
+            {!isResellerCustomer && <ReferralCodeInput onResellerLinked={refreshMyReseller} />}
             <CommunityTile />
             <PartnersLoungeTile />
 

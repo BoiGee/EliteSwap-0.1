@@ -23,6 +23,7 @@ import { DecartStudioEngine } from "@/lib/decartStudioEngine";
 import { ReferenceBlockedDialog } from "./studio/ReferenceBlockedDialog";
 import { PhotoTipsPopover } from "./studio/PhotoTipsPopover";
 import { StudioBackgroundPanel, type StudioBackground } from "./studio/StudioBackgroundPanel";
+import { useMyReseller } from "@/hooks/useReseller";
 
 // Feature flag; flip to false if thresholds prove too strict in production.
 const REFERENCE_GATE_ENABLED = true;
@@ -170,6 +171,8 @@ export function DeepfakeStudio() {
   const lastDisconnectAtRef = useRef<number>(0);
   const { toast } = useToast();
   const { user } = useAuth();
+  // Reseller customers buy minutes from their reseller; "Pay" tells them how instead of opening checkout.
+  const { reseller: myReseller } = useMyReseller();
   const [showReviewPrompt, setShowReviewPrompt] = useState(false);
   const debugMode =
     typeof window !== "undefined" &&
@@ -2485,7 +2488,18 @@ export function DeepfakeStudio() {
             Lite
           </button>
           <Button
-            onClick={() => setShowPayment(true)}
+            onClick={() => {
+              if (myReseller) {
+                toast({
+                  title: `Buy minutes from ${myReseller.display_name}`,
+                  description: myReseller.contact
+                    ? `Contact them: ${myReseller.contact}. Your new key appears in your dashboard once they record your purchase.`
+                    : "Your new key appears in your dashboard once they record your purchase.",
+                });
+                return;
+              }
+              setShowPayment(true);
+            }}
             size="sm"
             className="bg-warning text-warning-foreground hover:bg-warning/90 font-heading text-xs"
           >

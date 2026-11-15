@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { attachPartnerCodeManual } from "@/lib/partnerCode";
+import { attachResellerCodeManual, attachResellerMessage } from "@/lib/reseller";
 
-export default function ReferralCodeInput() {
+/** Partner referral codes, plus reseller codes as a fallback (codes never overlap). */
+export default function ReferralCodeInput({ onResellerLinked }: { onResellerLinked?: () => void } = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [hasAttribution, setHasAttribution] = useState<boolean | null>(null);
@@ -61,6 +63,16 @@ export default function ReferralCodeInput() {
       setHasAttribution(true);
       setPartnerCode(res.partner_code ?? code.toUpperCase());
       return;
+    }
+    if (res.reason === "invalid_code") {
+      // Not a partner: maybe it's a reseller's code.
+      const rr = await attachResellerCodeManual(code);
+      if (rr.reason !== "invalid_code") {
+        const m = attachResellerMessage(rr) ?? { title: "Could not apply code" };
+        toast({ ...m, variant: rr.ok ? undefined : "destructive" });
+        if (rr.ok || rr.reason === "already_linked") onResellerLinked?.();
+        return;
+      }
     }
     const msg =
       res.reason === "invalid_code" ? "Invalid or inactive code" :

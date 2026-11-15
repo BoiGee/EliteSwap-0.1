@@ -27,6 +27,8 @@ const OBSOutput = lazy(() => import("./pages/OBSOutput"));
 const Reviews = lazy(() => import("./pages/Reviews"));
 const Unsubscribe = lazy(() => import("./pages/Unsubscribe"));
 const Partner = lazy(() => import("./pages/Partner"));
+const Reseller = lazy(() => import("./pages/Reseller"));
+const ResellerLanding = lazy(() => import("./pages/ResellerLanding"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const ForumHome = lazy(() => import("./pages/Forum/ForumHome"));
 const ForumCategory = lazy(() => import("./pages/Forum/ForumCategory"));
@@ -154,6 +156,8 @@ const App = () => (
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/unsubscribe" element={<Unsubscribe />} />
                   <Route path="/partner" element={<ProtectedRoute><Partner /></ProtectedRoute>} />
+                  <Route path="/reseller" element={<ProtectedRoute><Reseller /></ProtectedRoute>} />
+                  <Route path="/r/:code" element={<ResellerLanding />} />
                   <Route path="/forum" element={<ForumHome />} />
                   <Route path="/forum/guidelines" element={<ForumGuidelines />} />
                   <Route path="/forum/me" element={<ProtectedRoute><MyForum /></ProtectedRoute>} />

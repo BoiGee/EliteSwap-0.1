@@ -6,13 +6,14 @@ import LanguageSwitcher from "@/components/LanguageSwitcher";
 import NotificationBell from "@/components/NotificationBell";
 import logo from "@/assets/logo.jpg";
 
-type NavKey = "dashboard" | "pricing" | "forum" | "partner";
+type NavKey = "dashboard" | "pricing" | "forum" | "partner" | "reseller";
 
 const NAV_ITEMS: { key: NavKey; label: string; to: string }[] = [
   { key: "dashboard", label: "Dashboard", to: "/dashboard" },
   { key: "pricing", label: "Pricing", to: "/pricing" },
   { key: "forum", label: "Forum", to: "/forum" },
   { key: "partner", label: "Partner", to: "/partner" },
+  { key: "reseller", label: "Reseller", to: "/reseller" },
 ];
 
 interface AppHeaderProps {
@@ -21,6 +22,8 @@ interface AppHeaderProps {
   isStaff?: boolean;
   /** Only pass this where the caller already fetches partner status; this component never queries it itself, to avoid duplicating that fetch. */
   isPartner?: boolean;
+  /** Same contract as isPartner: shows the Reseller link only where the caller already knows. */
+  isReseller?: boolean;
   showNotifications?: boolean;
   /** Page-specific badge/label rendered right next to the logo (e.g. Partner's "PARTNER" pill). */
   leftExtra?: ReactNode;
@@ -28,7 +31,7 @@ interface AppHeaderProps {
   rightExtra?: ReactNode;
 }
 
-export default function AppHeader({ active, isStaff, isPartner, showNotifications, leftExtra, rightExtra }: AppHeaderProps) {
+export default function AppHeader({ active, isStaff, isPartner, isReseller, showNotifications, leftExtra, rightExtra }: AppHeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -43,7 +46,7 @@ export default function AppHeader({ active, isStaff, isPartner, showNotification
       </div>
 
       <nav className="flex items-center gap-1 flex-wrap justify-end">
-        {NAV_ITEMS.filter((item) => item.key !== "partner" || isPartner).map((item) => (
+        {NAV_ITEMS.filter((item) => (item.key !== "partner" || isPartner) && (item.key !== "reseller" || isReseller)).map((item) => (
           <Link
             key={item.key}
             to={item.to}

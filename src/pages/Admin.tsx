@@ -24,6 +24,7 @@ const DiscountManager = lazy(() => import("@/components/admin/DiscountManager"))
 const MailerManager = lazy(() => import("@/components/admin/MailerManager"));
 const PaymentFunnelManager = lazy(() => import("@/components/admin/PaymentFunnelManager"));
 const PartnerManager = lazy(() => import("@/components/admin/PartnerManager"));
+const ResellerManager = lazy(() => import("@/components/admin/ResellerManager"));
 const FinanceManager = lazy(() => import("@/components/admin/FinanceManager"));
 const LiveConnectionsManager = lazy(() => import("@/components/admin/LiveConnectionsManager"));
 const UsageManager = lazy(() => import("@/components/admin/UsageManager"));
@@ -84,7 +85,7 @@ interface FreeTrialAssignment {
   created_at: string;
 }
 
-type Tab = "analytics" | "payments" | "users" | "paid_users" | "api_keys" | "key_pool" | "key_activity" | "pricing" | "support" | "activity" | "reviews" | "free_trial" | "discounts" | "mailer" | "funnel" | "partners" | "finance" | "trials" | "live" | "usage" | "time_ledger" | "announcements" | "deletions" | "backups" | "forum" | "audit";
+type Tab = "analytics" | "payments" | "users" | "paid_users" | "api_keys" | "key_pool" | "key_activity" | "pricing" | "support" | "activity" | "reviews" | "free_trial" | "discounts" | "mailer" | "funnel" | "partners" | "resellers" | "finance" | "trials" | "live" | "usage" | "time_ledger" | "announcements" | "deletions" | "backups" | "forum" | "audit";
 
 export default function Admin() {
   const { user, signOut } = useAuth();
@@ -332,6 +333,7 @@ export default function Admin() {
     { id: "key_activity", label: "Key Activity", icon: "📜" },
     { id: "pricing", label: "Pricing", icon: "💎" },
     { id: "partners", label: "Partners", icon: "🤝" },
+    { id: "resellers", label: "Resellers", icon: "🏪" },
     { id: "reviews", label: "Reviews", icon: "⭐" },
     { id: "free_trial", label: "Trial Key Pool", icon: "🎁" },
     { id: "discounts", label: "Discounts", icon: "🏷️" },
@@ -566,6 +568,7 @@ export default function Admin() {
           {tab === "forum" && <ForumManager />}
 
           {tab === "partners" && <PartnerManager profiles={profiles} onRefresh={fetchAll} />}
+          {tab === "resellers" && <ResellerManager profiles={profiles} />}
 
           {tab === "funnel" && <PaymentFunnelManager />}
 

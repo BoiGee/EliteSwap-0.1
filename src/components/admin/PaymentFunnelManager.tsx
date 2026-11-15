@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fromTable } from "@/lib/reseller";
 import { useToast } from "@/hooks/use-toast";
 import { fetchAllRows } from "@/lib/adminData";
 import { Button } from "@/components/ui/button";
@@ -64,14 +65,17 @@ export default function PaymentFunnelManager() {
     try {
       // Payments and nudges are paginated too: past 1,000 rows each, buyers would start showing
       // as "abandoned" and nudge counts would undercount.
-      const [pRows, payRes, nudgeRes] = await Promise.all([
+      const [pRows, payRes, nudgeRes, resellerCustRes] = await Promise.all([
         fetchAllProfiles(),
         fetchAllRows<ConfirmedPayment>(() => supabase.from("payments").select("user_id").eq("status", "confirmed").order("id")),
         fetchAllRows<{ user_id: string }>(() => supabase.from("payment_nudge_history").select("user_id").order("id")),
+        fetchAllRows<{ user_id: string }>(() => fromTable("reseller_customers").select("user_id").order("user_id")),
       ]);
       if (payRes.error) throw payRes.error;
       if (nudgeRes.error) throw nudgeRes.error;
-      setProfiles(pRows);
+      // A reseller's customers buy from him, not from us: they're not ours to nudge toward checkout.
+      const resellerCustomerIds = new Set((resellerCustRes.data ?? []).map((r) => r.user_id));
+      setProfiles(pRows.filter((p) => !resellerCustomerIds.has(p.user_id)));
       setConfirmedUserIds(new Set(payRes.data.map((p) => p.user_id)));
       const counts: Record<string, number> = {};
       for (const row of nudgeRes.data) {

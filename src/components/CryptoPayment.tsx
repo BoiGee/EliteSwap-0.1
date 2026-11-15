@@ -10,7 +10,7 @@ import { trackFunnel } from "@/lib/paymentFunnel";
 
 export type PayCurrency = "BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20";
 
-type Wallet = {
+export type Wallet = {
   name: string;
   symbol: string;
   ticker: string; // short label on tab
@@ -25,7 +25,8 @@ type Wallet = {
   decimals: number;
 };
 
-const WALLETS: Wallet[] = [
+// Also used by the reseller console for balance top-ups.
+export const WALLETS: Wallet[] = [
   {
     name: "Bitcoin",
     symbol: "BTC",
