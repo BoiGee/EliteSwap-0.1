@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitSale } from "./reseller";
+import { splitSale } from "./resellerSplit";
 
 describe("splitSale", () => {
   it("gives Elite Swap the list price plus half the markup", () => {
