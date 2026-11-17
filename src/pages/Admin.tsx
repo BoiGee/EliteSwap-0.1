@@ -32,6 +32,7 @@ const PaidUsersManager = lazy(() => import("@/components/admin/PaidUsersManager"
 const DecartPoolManager = lazy(() => import("@/components/admin/DecartPoolManager"));
 const KeyActivityManager = lazy(() => import("@/components/admin/KeyActivityManager"));
 const AnnouncementManager = lazy(() => import("@/components/admin/AnnouncementManager"));
+const SiteLinksCard = lazy(() => import("@/components/admin/SiteLinksCard"));
 const AuditLogManager = lazy(() => import("@/components/admin/AuditLogManager"));
 const AccountDeletionQueue = lazy(() => import("@/components/admin/AccountDeletionQueue"));
 const BackupManager = lazy(() => import("@/components/admin/BackupManager"));
@@ -559,7 +560,7 @@ export default function Admin() {
 
           {tab === "key_activity" && <KeyActivityManager />}
 
-          {tab === "announcements" && <AnnouncementManager />}
+          {tab === "announcements" && <>{isAdmin && <SiteLinksCard />}<AnnouncementManager /></>}
 
           {tab === "deletions" && <AccountDeletionQueue />}
 

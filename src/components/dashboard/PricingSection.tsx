@@ -7,6 +7,7 @@ import { useDisplayLocale } from "@/i18n/useDisplayLocale";
 import CouponInput, { type AppliedDiscount } from "@/components/dashboard/CouponInput";
 import { trackFunnel } from "@/lib/paymentFunnel";
 import GatewayCheckoutButton from "@/components/dashboard/GatewayCheckoutButton";
+import MomoPlanCheckout, { type MomoPlanTarget } from "@/components/dashboard/MomoPlanCheckout";
 import PlanPriceBlock, { BillingPeriodToggle } from "@/components/pricing/PlanPriceBlock";
 import {
   PUBLIC_PLAN_COLUMNS,
@@ -56,6 +57,8 @@ interface Props {
 
 export default function PricingSection({ onSelectPlan, hasConfirmedPayment, prefillCode, onRepurchaseModeChange, repurchaseRequested, onGatewayPaid }: Props) {
   const [gatewayEnabled, setGatewayEnabled] = useState(false);
+  // Mobile Money for plans (manual, admin-approved): priced in cedis on the server at today's rate.
+  const [momoTarget, setMomoTarget] = useState<MomoPlanTarget | null>(null);
   useEffect(() => {
     supabase.rpc("payment_options" as any).then(({ data }) => setGatewayEnabled(!!(data as any)?.gateway_checkout));
   }, []);
@@ -245,8 +248,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                   <Button
                     onClick={() => {
                       trackFunnel("funnel_plan_selected", { plan_id: plan.id, plan_name: plan.name });
-                      trackFunnel("funnel_payment_method_chosen", { method: "crypto", plan_id: plan.id });
-                      onSelectPlan(selection);
+                      setMomoTarget({ planId: plan.id, planName: plan.name, billingPeriod: period, discountCode: codeWins ? planDiscount?.code ?? null : null });
                     }}
                     size="sm"
                     className={`w-full font-heading font-semibold text-xs ${
@@ -254,6 +256,18 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
                         ? "bg-primary text-primary-foreground hover:bg-primary/90"
                         : "bg-muted/50 text-foreground hover:bg-muted"
                     }`}
+                  >
+                    Pay with Mobile Money (GHS)
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      trackFunnel("funnel_plan_selected", { plan_id: plan.id, plan_name: plan.name });
+                      trackFunnel("funnel_payment_method_chosen", { method: "crypto", plan_id: plan.id });
+                      onSelectPlan(selection);
+                    }}
+                    size="sm"
+                    variant="outline"
+                    className="w-full font-heading font-semibold text-xs"
                   >
                     Pay with Crypto: ${(selection.discount?.final_usd ?? selection.priceUsd).toFixed(2)}
                   </Button>
@@ -295,6 +309,7 @@ export default function PricingSection({ onSelectPlan, hasConfirmedPayment, pref
           )}
         </div>
       )}
+      <MomoPlanCheckout target={momoTarget} onClose={() => setMomoTarget(null)} onSubmitted={() => onGatewayPaid?.()} />
     </div>
   );
 }

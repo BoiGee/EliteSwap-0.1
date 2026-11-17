@@ -21,6 +21,12 @@ interface Payment {
   discount_amount_usd?: number | null;
   billing_period?: string | null;
   promotion_id?: string | null;
+  // Mobile Money (manual) plan payments: cedis expected at the locked rate, and who it came from.
+  amount_local?: number | null;
+  fx_rate?: number | null;
+  provider_reference?: string | null;
+  momo_sender_phone?: string | null;
+  momo_sender_name?: string | null;
 }
 
 interface Profile {
@@ -63,7 +69,7 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
     if (filter !== "all" && p.status !== filter) return false;
     if (!q) return true;
     const prof = p.user_id ? profileById.get(p.user_id) : null;
-    return [prof?.email, prof?.display_name, p.tx_hash, p.id, p.user_id, p.discount_code]
+    return [prof?.email, prof?.display_name, p.tx_hash, p.id, p.user_id, p.discount_code, p.momo_sender_phone, p.momo_sender_name, p.provider_reference]
       .some((v) => (v ?? "").toLowerCase().includes(q));
   });
 
@@ -156,14 +162,24 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                   <TableCell className="text-xs">
                     <div className="font-heading">{emailForUser(p.user_id)}</div>
                   </TableCell>
-                  <TableCell className="font-heading font-semibold text-xs">{p.currency}</TableCell>
+                  <TableCell className="font-heading font-semibold text-xs">
+                    {p.payment_method === "momo_manual" ? <>MoMo<div className="text-[10px] font-normal text-muted-foreground">manual</div></> : p.currency}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : "—"}
+                    {p.payment_method === "momo_manual" && p.amount_local != null && (
+                      <div className="text-[11px] font-heading font-semibold text-amber-300">expect GHS {Number(p.amount_local).toLocaleString()}</div>
+                    )}
                     {(p.discount_code || p.promotion_id) && <div className="text-[10px] text-muted-foreground">{p.discount_code || "Sale"}{p.discount_amount_usd ? ` −$${Number(p.discount_amount_usd).toFixed(2)}` : ""}</div>}
                     {p.billing_period === "annual" && <div className="text-[10px] font-heading font-semibold text-primary">Annual (12x minutes)</div>}
                   </TableCell>
-                  <TableCell className="font-mono text-xs max-w-[140px] truncate">
-                    {p.tx_hash ?? "—"}
+                  <TableCell className="font-mono text-xs max-w-[160px] truncate">
+                    {p.payment_method === "momo_manual" ? (
+                      <div className="whitespace-normal font-sans">
+                        {p.momo_sender_phone && <div>from {p.momo_sender_phone}{p.momo_sender_name ? ` (${p.momo_sender_name})` : ""}</div>}
+                        {p.provider_reference && <div className="font-mono text-[10px] text-muted-foreground">ref {p.provider_reference}</div>}
+                      </div>
+                    ) : (p.tx_hash ?? "—")}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1 items-start">
@@ -235,6 +251,16 @@ export default function PaymentManager({ payments, profiles, onRefresh }: Paymen
                             {p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : "Not set"}
                           </span>
                         </div>
+                        {p.payment_method === "momo_manual" && (
+                          <div className="col-span-2 md:col-span-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 space-y-1">
+                            <p className="text-[11px] text-amber-300 font-heading">
+                              Mobile Money (manual): approve only once GHS {p.amount_local != null ? Number(p.amount_local).toLocaleString() : "?"} has
+                              arrived{p.momo_sender_phone ? ` from ${p.momo_sender_phone}` : ""}{p.momo_sender_name ? ` (${p.momo_sender_name})` : ""}.
+                              Rate locked at 1 USD = {p.fx_rate != null ? Number(p.fx_rate).toFixed(2) : "?"} GHS.
+                              {p.provider_reference ? ` Transaction ID: ${p.provider_reference}.` : ""}
+                            </p>
+                          </div>
+                        )}
                         <div className="col-span-2 md:col-span-3">
                           <span className="text-muted-foreground font-heading block">Transaction Hash</span>
                           <span className="font-mono text-foreground break-all">{p.tx_hash ?? "Not provided"}</span>

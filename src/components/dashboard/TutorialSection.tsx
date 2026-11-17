@@ -99,8 +99,9 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
                     <li className="flex gap-3">
                       <span className="shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-heading font-bold text-xs">2</span>
                       <div>
-                        <span className="font-semibold text-foreground">Pay with crypto:</span>
+                        <span className="font-semibold text-foreground">Pay by Mobile Money or crypto:</span>
                         <ul className="mt-1 list-disc pl-5 space-y-1 text-foreground/70">
+                          <li><span className="text-foreground/90 font-semibold">Mobile Money</span>: tap "Pay with Mobile Money" on the plan, send the cedi amount shown (today's rate), then tap "I've sent it".</li>
                           <li><span className="text-foreground/90 font-semibold">BTC, BNB, or USDT (BEP-20 / TRC20)</span>: send to the displayed wallet, then paste the tx hash in Step 1.</li>
                         </ul>
                       </div>
@@ -110,6 +111,7 @@ export default function TutorialSection({ isFirstTimer, trialExhaustedNoPayment 
                       <div>
                         <span className="font-semibold text-foreground">Wait for activation:</span>
                         <ul className="mt-1 list-disc pl-5 space-y-1 text-foreground/70">
+                          <li>Mobile Money: our team matches your payment, usually within the hour.</li>
                           <li>Crypto: usually confirmed automatically within minutes of you submitting your tx hash; the odd one goes to our team for a manual check.</li>
                           <li>You'll get a confirmation email when your key is ready.</li>
                         </ul>

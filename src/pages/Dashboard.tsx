@@ -24,6 +24,7 @@ import { attachPendingResellerCode, attachResellerMessage, fmtUsd, rpc, type Res
 import { useMyReseller, useResellerAccount } from "@/hooks/useReseller";
 import ResellerOfferCard from "@/components/dashboard/ResellerOfferCard";
 import NewUserHero from "@/components/dashboard/NewUserHero";
+import CommunityGroupCard from "@/components/dashboard/CommunityGroupCard";
 import { useDisplayLocale } from "@/i18n/useDisplayLocale";
 import { ApiKeyTimer } from "@/components/dashboard/ApiKeyTimer";
 import { usePartner } from "@/hooks/usePartner";
@@ -59,6 +60,8 @@ interface Payment {
   plan_id?: string | null;
   payment_method?: string | null;
   billing_period?: string | null;
+  amount_local?: number | null;
+  momo_sender_phone?: string | null;
 }
 
 // What a customer should know about each payment, in plain words instead of a raw status.
@@ -68,6 +71,9 @@ function describePayment(p: Payment): { label: string; detail: string; tone: "ok
     return { label: "Not verified", detail: "We couldn't match this payment. Message support from the chat button with your transaction details.", tone: "bad" };
   }
   const ageH = (Date.now() - new Date(p.created_at).getTime()) / 3_600_000;
+  if (p.payment_method === "momo_manual") {
+    return { label: "Confirming", detail: "We're matching your Mobile Money payment, usually within the hour. Your key appears in Step 2 as soon as it's confirmed.", tone: "wait" };
+  }
   if (p.payment_method === "ogateway") {
     return { label: "Waiting", detail: "Waiting for your Mobile Money or card payment to complete. Unfinished checkouts close by themselves after a day.", tone: "wait" };
   }
@@ -618,7 +624,10 @@ export default function Dashboard() {
                     {(!hasConfirmedPayment || repurchaseMode) && !isResellerCustomer && (
                       <>
                         <p className="text-sm text-muted-foreground">
-                          Send BTC, BNB, or USDT (BEP-20 / TRC20) to our wallet, then submit your transaction hash below for verification.
+                          Paying by Mobile Money? Use the "Pay with Mobile Money" button on any plan above; it's priced in cedis at today's rate.
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Paying with crypto: send BTC, BNB, or USDT (BEP-20 / TRC20) to our wallet, then submit your transaction hash below for verification.
                         </p>
                         <Button
                           onClick={() => {
@@ -732,6 +741,8 @@ export default function Dashboard() {
                                     <span className="text-muted-foreground">{fmtUsd(viaReseller.price_usd)} via {viaReseller.reseller_name}</span>
                                   ) : p.payment_method === "reseller" ? (
                                     <span className="text-muted-foreground">via your reseller</span>
+                                  ) : p.payment_method === "momo_manual" && p.amount_local != null ? (
+                                    <span className="text-muted-foreground">GHS {Number(p.amount_local).toLocaleString()} · Mobile Money</span>
                                   ) : p.amount_usd != null && <span className="text-muted-foreground">${Number(p.amount_usd).toFixed(2)}</span>}
                                   <span className="text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</span>
                                 </div>
@@ -873,6 +884,7 @@ export default function Dashboard() {
 
           {/* Sidebar: account + community, out of the main flow's way */}
           <div className="space-y-6">
+            <CommunityGroupCard />
             <ProfileSection />
             {!isResellerCustomer && <ReferralCodeInput onResellerLinked={refreshMyReseller} />}
             <CommunityTile />
