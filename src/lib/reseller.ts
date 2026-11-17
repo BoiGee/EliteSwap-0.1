@@ -1,17 +1,10 @@
-import { supabase } from "@/integrations/supabase/client";
+import { rpc } from "./db";
 
 // Reseller program (see supabase/migrations/20261115120000_reseller_program.sql).
 // A reseller sells plans to his own customers at his own prices; Elite Swap takes the list price
 // plus half his markup on each sale, debited from his prepaid balance.
 
-// The generated client types (integrations/supabase/types.ts) predate the reseller tables and
-// functions, so they go through this one untyped handle; results are cast at each call site.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const untyped = supabase as any;
-export type RpcError = { message: string } | null;
-export const rpc = <T = unknown>(fn: string, args?: Record<string, unknown>): Promise<{ data: T | null; error: RpcError }> =>
-  untyped.rpc(fn, args);
-export const fromTable = (table: string) => untyped.from(table);
+export { rpc, fromTable, rpcErrorMessage, type RpcError } from "./db";
 
 export interface StorefrontPlan {
   plan_id: string;
@@ -112,10 +105,4 @@ export async function attachResellerCodeManual(code: string): Promise<AttachRese
   if (error) return { ok: false, reason: "error" };
   clearPendingResellerCode();
   return data as AttachResellerResult;
-}
-
-/** Turn a Postgres exception from the reseller functions into its message (they're written for users). */
-export function rpcErrorMessage(error: { message?: string } | null | undefined, fallback = "Something went wrong") {
-  const m = error?.message?.trim();
-  return m && m.length < 300 ? m : fallback;
 }

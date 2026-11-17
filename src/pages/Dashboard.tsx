@@ -23,6 +23,8 @@ import { attachPendingPartnerCode, clearPendingPartnerCode } from "@/lib/partner
 import { attachPendingResellerCode, attachResellerMessage, fmtUsd, rpc, type ResellerPurchase } from "@/lib/reseller";
 import { useMyReseller, useResellerAccount } from "@/hooks/useReseller";
 import ResellerOfferCard from "@/components/dashboard/ResellerOfferCard";
+import NewUserHero from "@/components/dashboard/NewUserHero";
+import { useDisplayLocale } from "@/i18n/useDisplayLocale";
 import { ApiKeyTimer } from "@/components/dashboard/ApiKeyTimer";
 import { usePartner } from "@/hooks/usePartner";
 import SystemAnnouncementModal from "@/components/SystemAnnouncementModal";
@@ -106,6 +108,14 @@ export default function Dashboard() {
   const isResellerCustomer = !!myReseller;
   const { account: resellerAccount } = useResellerAccount();
   const [resellerPurchases, setResellerPurchases] = useState<Map<string, ResellerPurchase>>(new Map());
+  // New accounts (nothing bought or submitted yet) get a focused first view: the demo and one
+  // button (the trial). Plans and crypto steps stay behind "See all plans" until they ask.
+  const [keysLoaded, setKeysLoaded] = useState(false);
+  const [paymentsLoaded, setPaymentsLoaded] = useState(false);
+  const [showAllPlans, setShowAllPlans] = useState(false);
+  // The trial's real prices: GHS 150 by Mobile Money, or $10 in USDT (never an FX estimate).
+  const { currency: displayCurrency } = useDisplayLocale();
+  const trialPriceLabel = displayCurrency === "GHS" ? "GHS 150" : "$10";
   const [partnerPromoDismissed, setPartnerPromoDismissed] = useState<boolean>(false);
   // Get Started stepper (Payment / Keys / Launch), defaults to the step the
   // user actually needs next, but stops auto-advancing once they click a tab
@@ -216,6 +226,9 @@ export default function Dashboard() {
   }, [toast, user]);
 
   const [trialsRemaining, setTrialsRemaining] = useState<number | null>(null);
+  const isNewUser = keysLoaded && paymentsLoaded && apiKeys.length === 0 && payments.length === 0
+    && !isResellerCustomer && trialsRemaining !== null && trialsRemaining > 0;
+  const focusMode = isNewUser && !showAllPlans;
 
   const fetchTrialsRemaining = async () => {
     if (!user) return;
@@ -290,6 +303,7 @@ export default function Dashboard() {
     // here would leak every user's key into a staff member's own Dashboard.
     const { data } = await supabase.from("api_keys").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setApiKeys(data);
+    setKeysLoaded(true);
   };
 
   const fetchPayments = async () => {
@@ -298,6 +312,7 @@ export default function Dashboard() {
     // "view all" RLS policy on payments too.
     const { data } = await supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (data) setPayments(data);
+    setPaymentsLoaded(true);
     // Plans bought through a reseller: show what the customer paid them, not Elite Swap's share.
     if (data?.some((p: Payment) => p.payment_method === "reseller")) {
       const { data: rp } = await rpc<ResellerPurchase[]>("my_reseller_purchases");
@@ -502,8 +517,18 @@ export default function Dashboard() {
             account + community on the right, instead of one long stack. */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2 space-y-6">
+            {isNewUser && (
+              <NewUserHero
+                trialPrice={trialPriceLabel}
+                onSeePlans={() => {
+                  setShowAllPlans(true);
+                  setTimeout(() => document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                }}
+              />
+            )}
+
             {/* Promo banner: hides automatically once paid (and for reseller customers: Elite Swap's sale isn't theirs to use) */}
-            {!hasConfirmedPayment && !isResellerCustomer && (
+            {!hasConfirmedPayment && !isResellerCustomer && !focusMode && (
               <PromoBanner
                 variant="compact"
                 onApplyToPlan={(code) => {
@@ -519,6 +544,7 @@ export default function Dashboard() {
             {!hasConfirmedPayment && (
               <TrialPurchaseCard
                 remaining={trialsRemaining}
+                compact={isNewUser}
                 onTrialActivated={() => {
                   fetchApiKeys();
                   fetchTrialsRemaining();
@@ -526,6 +552,7 @@ export default function Dashboard() {
               />
             )}
 
+            {!focusMode && (<>
             {/* Pricing Plans */}
             <div id="pricing-section">
               {isResellerCustomer ? <ResellerOfferCard store={myReseller} /> : (
@@ -821,6 +848,7 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+            </>)}
 
             {/* Tutorial */}
             {canUseStudio && (

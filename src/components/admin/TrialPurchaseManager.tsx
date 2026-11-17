@@ -55,6 +55,11 @@ interface TrialRow {
   confirmed_at: string | null;
   created_at: string;
   needs_admin_review: boolean;
+  // Mobile Money: who the customer says they paid from ("I've sent it"), to match on the
+  // MoMo statement when they don't have the transaction ID.
+  momo_sender_phone?: string | null;
+  momo_sender_name?: string | null;
+  customer_marked_sent_at?: string | null;
 }
 
 const binanceDepositUrl = (ref: string) =>
@@ -89,7 +94,7 @@ export default function TrialPurchaseManager() {
     const [tri, prof] = await Promise.all([
       fetchAllRows<TrialRow>(() =>
         supabase.from("trial_purchases" as any)
-          .select("id,user_id,payment_method,amount_usd,amount_local,currency,status,provider_reference,usdt_network,assigned_key_id,confirmed_at,created_at,needs_admin_review")
+          .select("id,user_id,payment_method,amount_usd,amount_local,currency,status,provider_reference,usdt_network,assigned_key_id,confirmed_at,created_at,needs_admin_review,momo_sender_phone,momo_sender_name,customer_marked_sent_at")
           .order("created_at", { ascending: false })
           .order("id")),
       fetchAllRows<{ user_id: string; email: string | null; display_name: string | null }>(() =>
@@ -156,7 +161,7 @@ export default function TrialPurchaseManager() {
         const q = trialSearch.toLowerCase().trim();
         const email = (profiles[t.user_id] || "").toLowerCase();
         const name = (profileNames[t.user_id] || "").toLowerCase();
-        const ref = (t.provider_reference || "").toLowerCase();
+        const ref = `${t.provider_reference || ""} ${t.momo_sender_phone || ""} ${t.momo_sender_name || ""}`.toLowerCase();
         const uid = t.user_id.toLowerCase();
         const keyId = (t.assigned_key_id || "").toLowerCase();
         const net = (t.usdt_network || "").toLowerCase();
@@ -417,7 +422,12 @@ export default function TrialPurchaseManager() {
                   <TableCell className="text-xs text-right">{fmtUsd(t.amount_usd)}</TableCell>
                   <TableCell className="text-xs">{t.amount_local ? `${t.amount_local} ${t.currency || ""}` : "—"}</TableCell>
                   <TableCell className="text-xs font-mono truncate max-w-[160px]">
-                    {t.provider_reference || "—"}
+                    {t.provider_reference || (t.momo_sender_phone ? "" : "—")}
+                    {t.momo_sender_phone && (
+                      <div className="font-sans text-[10px] text-amber-300 whitespace-normal" title="The number and name the customer says they paid from">
+                        Sent from {t.momo_sender_phone}{t.momo_sender_name ? ` (${t.momo_sender_name})` : ""}
+                      </div>
+                    )}
                     {t.needs_admin_review && t.provider_reference && t.payment_method === "usdt" && (
                       <a
                         href={binanceDepositUrl(t.provider_reference)}
