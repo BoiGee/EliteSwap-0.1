@@ -45,6 +45,9 @@
 //   - client_secret authenticates the session's control WebSocket on its
 //     own (no API key), so the browser opens it directly -- see
 //     useViduRealtime.ts. control_url tells it where, matching VIDU_API_HOST.
+//   - Added 2026-11 from Vidu's 2026-10 API update: `resolution` (output size,
+//     chosen per plan below) and `rtmp_urls` (Vidu relays the swapped output
+//     straight to the user's YouTube/Twitch/TikTok ingest -- "Go live").
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -61,6 +64,46 @@ const json = (b: unknown, s = 200) =>
 
 const VIDU_API_HOST = Deno.env.get("VIDU_API_HOST") || "https://api.vidu.com";
 const VIDU_CONTROL_URL = `${VIDU_API_HOST.replace(/^http/, "ws")}/live/ws/live/connect`;
+
+// Output resolution (Vidu's `resolution` create parameter, added 2026-10). Live-checked
+// 2026-11-18: Vidu bills editing streams a flat 1 credit/sec at every resolution (24 s = 24
+// credits at 540p, 720p and 1080p). Output for a 16:9 camera: 952x544 / 1268x724 / 1904x1088,
+// at roughly 2.7 / 3.6 / 4.7 Mbps download -- so the user may pick a lower one ("Data saver").
+// Each plan has a ceiling; the env vars are a no-redeploy lever
+// (`supabase secrets set VIDU_RESOLUTION_DEFAULT=540p` restores the old output for everyone).
+const RESOLUTION_ORDER = ["540p", "720p", "1080p", "2K"];
+const envResolution = (name: string, fallback: string) => {
+  const v = (Deno.env.get(name) || "").trim();
+  return RESOLUTION_ORDER.includes(v) ? v : fallback;
+};
+const RESOLUTION_DEFAULT = envResolution("VIDU_RESOLUTION_DEFAULT", "720p");
+const RESOLUTION_PRO = envResolution("VIDU_RESOLUTION_PRO", "1080p");
+const PRO_TIERS = new Set(["Professional", "Enterprise"]);
+// The requested resolution, capped at the plan's ceiling; no (or an unknown) request gets the ceiling.
+function pickResolution(requested: unknown, ceiling: string): string {
+  const r = RESOLUTION_ORDER.indexOf(String(requested ?? ""));
+  return r >= 0 && r < RESOLUTION_ORDER.indexOf(ceiling) ? RESOLUTION_ORDER[r] : ceiling;
+}
+
+// Direct streaming: Vidu relays the swapped output to the user's own RTMP ingest addresses.
+// Vidu only takes plain rtmp:// (no rtmps://), at most 5 entries of <= 2048 chars. Stream
+// keys are secrets: they are passed straight through, never stored, and never logged.
+const MAX_RTMP_URLS = 2;
+// Admin-only until a relay to a real platform has been confirmed; `supabase secrets set
+// VIDU_GO_LIVE=all` opens it to every paid key without a redeploy.
+const GO_LIVE_FOR_ALL = (Deno.env.get("VIDU_GO_LIVE") || "").trim().toLowerCase() === "all";
+function parseRtmpUrls(raw: unknown): string[] | { error: string } {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return { error: "rtmp_urls must be a list" };
+  const urls = [...new Set(raw.map((u) => String(u ?? "").trim()).filter(Boolean))];
+  if (urls.length > MAX_RTMP_URLS) return { error: `At most ${MAX_RTMP_URLS} streaming destinations` };
+  for (const u of urls) {
+    if (!/^rtmp:\/\/[^\s/]+\/\S+$/i.test(u) || u.length > 2048) {
+      return { error: "Each streaming destination must be an rtmp:// server URL followed by your stream key" };
+    }
+  }
+  return urls;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -100,6 +143,8 @@ Deno.serve(async (req) => {
     if (!imageDataUri || typeof imageDataUri !== "string" || !imageDataUri.startsWith("data:image/")) {
       return json({ code: "BAD_REQUEST", message: "image_url must be an inline data:image/...;base64,... URI" }, 400);
     }
+    const rtmpUrls = parseRtmpUrls(body?.rtmp_urls);
+    if (!Array.isArray(rtmpUrls)) return json({ code: "RTMP_INVALID", message: rtmpUrls.error }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
@@ -117,39 +162,48 @@ Deno.serve(async (req) => {
       return json({ code: "FORBIDDEN", message: "Not an active session for this key" }, 403);
     }
 
+    // Plan tier of the key in use: key -> payment -> plan, as get_api_key_plan_tier() does.
+    // Explicit lookups: there's no foreign key from api_keys.payment_id for PostgREST to embed.
+    const planTier = async (): Promise<string | null> => {
+      const { data: k } = await admin.from("api_keys").select("payment_id").eq("id", keyRow.id).maybeSingle();
+      if (!k?.payment_id) return null;
+      const { data: p } = await admin.from("payments").select("plan_id").eq("id", k.payment_id).maybeSingle();
+      if (!p?.plan_id) return null;
+      const { data: plan } = await admin.from("pricing_plans").select("name").eq("id", p.plan_id).maybeSingle();
+      return plan?.name ?? null;
+    };
+    const [tier, { data: isAdmin }] = await Promise.all([
+      planTier(),
+      admin.rpc("has_role", { _user_id: userId, _role: "admin" }),
+    ]);
+    const isPro = PRO_TIERS.has(tier ?? "") || !!isAdmin;
+
     // background_replacement is the Elite AI background: a second paid Vidu stream on top of
     // the character swap. It's a Professional/Enterprise feature, matched to the key in use
     // (as the studio's background panel is); admins and beta testers may use it on any key.
-    if (editingType !== "subject_replacement") {
-      // Same resolution as get_api_key_plan_tier(): key -> payment -> plan. Explicit lookups:
-      // there's no foreign key from api_keys.payment_id for PostgREST to embed through.
-      const planTier = async (): Promise<string | null> => {
-        const { data: k } = await admin.from("api_keys").select("payment_id").eq("id", keyRow.id).maybeSingle();
-        if (!k?.payment_id) return null;
-        const { data: p } = await admin.from("payments").select("plan_id").eq("id", k.payment_id).maybeSingle();
-        if (!p?.plan_id) return null;
-        const { data: plan } = await admin.from("pricing_plans").select("name").eq("id", p.plan_id).maybeSingle();
-        return plan?.name ?? null;
-      };
-      const [tier, { data: isAdmin }, { data: beta }] = await Promise.all([
-        planTier(),
-        admin.rpc("has_role", { _user_id: userId, _role: "admin" }),
-        admin.from("user_beta_features").select("feature").eq("user_id", userId).eq("feature", "ai_background").maybeSingle(),
-      ]);
-      if (tier !== "Professional" && tier !== "Enterprise" && !isAdmin && !beta) {
-        return json({ code: "FORBIDDEN", message: "Elite AI background needs a Professional or Enterprise key" }, 403);
-      }
+    if (editingType !== "subject_replacement" && !isPro) {
+      const { data: beta } = await admin.from("user_beta_features").select("feature").eq("user_id", userId).eq("feature", "ai_background").maybeSingle();
+      if (!beta) return json({ code: "FORBIDDEN", message: "Elite AI background needs a Professional or Enterprise key" }, 403);
     }
+    const resolution = pickResolution(body?.resolution, isPro ? RESOLUTION_PRO : RESOLUTION_DEFAULT);
 
     const { data: sessionRow, error: sessionErr } = await admin
       .from("studio_sessions")
-      .select("session_id, ended_at")
+      .select("session_id, ended_at, is_trial")
       .eq("session_id", sessionId)
       .eq("user_id", userId)
       .is("ended_at", null)
       .maybeSingle();
     if (sessionErr) return json({ code: "DB_ERROR", message: sessionErr.message }, 500);
     if (!sessionRow) return json({ code: "FORBIDDEN", message: "Session is not active" }, 403);
+    // The free-trial watermark is drawn by the studio page, so a direct stream would go out
+    // without it: Go live is for paid keys.
+    if (rtmpUrls.length && !isAdmin && !GO_LIVE_FOR_ALL) {
+      return json({ code: "RTMP_NOT_AVAILABLE", message: "Go live isn't available on your account yet. Switch it off under Go live to connect." }, 403);
+    }
+    if (rtmpUrls.length && (sessionRow as any).is_trial && !isAdmin) {
+      return json({ code: "RTMP_NOT_ON_TRIAL", message: "Go live is available on paid plans. Switch it off under Go live to use your free trial." }, 403);
+    }
 
     const { data: config } = await admin
       .from("studio_pricing_config")
@@ -184,6 +238,8 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           image_url: imageDataUri,
           editing_type: editingType,
+          resolution,
+          ...(rtmpUrls.length ? { rtmp_urls: rtmpUrls } : {}),
         }),
       });
     } catch (fetchErr) {
@@ -193,20 +249,28 @@ Deno.serve(async (req) => {
 
     const viduBody = await viduRes.json().catch(() => null);
     if (!viduRes.ok || !viduBody) {
-      console.error("[mint-vidu-rtc-session] Vidu returned an error", viduRes.status, viduBody);
-      // Vidu's error shape (confirmed live): { code, reason, message, metadata }.
-      // CreditInsufficient specifically means the pooled key's account is out
-      // of balance -- surface it distinctly so an admin sees "top up Vidu"
-      // rather than a generic failure indistinguishable from a bad request.
+      // Vidu's error shape (confirmed live): { code, reason, message, metadata }. Logged without
+      // the request, which can carry a user's stream key.
+      console.error("[mint-vidu-rtc-session] Vidu returned an error", viduRes.status,
+        JSON.stringify({ reason: viduBody?.reason, message: viduBody?.message, trace_id: viduBody?.metadata?.trace_id, rtmp: rtmpUrls.length > 0, resolution, editingType }));
+      // CreditInsufficient means the pooled key's account is out of balance -- surface it
+      // distinctly so an admin sees "top up Vidu" rather than a generic failure.
       if (viduBody?.reason === "CreditInsufficient") {
-        return json({ code: "VIDU_CREDIT_INSUFFICIENT", message: "The pooled Vidu account is out of credit" }, 502);
+        return json({ code: "VIDU_CREDIT_INSUFFICIENT", message: "The studio is briefly at capacity. Please try again in a few minutes." }, 502);
+      }
+      // 429 = the Vidu account is running its maximum number of simultaneous streams (5 per account).
+      if (viduRes.status === 429) {
+        return json({ code: "VIDU_BUSY", message: "The studio is busy right now. Please try again in a minute." }, 503);
+      }
+      if (viduRes.status === 400 && rtmpUrls.length && /rtmp/i.test(`${viduBody?.reason} ${viduBody?.message}`)) {
+        return json({ code: "RTMP_INVALID", message: "Your streaming server URL or stream key wasn't accepted. Check it under Go live and try again." }, 400);
       }
       return json({ code: "VIDU_ERROR", message: "Vidu rejected the session request" }, 502);
     }
 
     const rtc = viduBody.rtc || {};
     if (!rtc.token || !rtc.user_id || !rtc.app_id || !rtc.channel_id) {
-      console.error("[mint-vidu-rtc-session] Vidu response missing rtc credentials", viduBody);
+      console.error("[mint-vidu-rtc-session] Vidu response missing rtc credentials", Object.keys(viduBody), Object.keys(rtc));
       return json({ code: "VIDU_ERROR", message: "Vidu did not return join credentials" }, 502);
     }
 
@@ -237,6 +301,8 @@ Deno.serve(async (req) => {
       render_uid: viduBody.render_uid ?? null,
       client_secret: viduBody.client_secret ?? null,
       control_url: VIDU_CONTROL_URL,
+      resolution,
+      relaying: rtmpUrls.length > 0,
     });
   } catch (e) {
     console.error("[mint-vidu-rtc-session]", e);

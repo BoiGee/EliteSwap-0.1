@@ -16,6 +16,10 @@ export interface ViduConnectParams {
   /** data:image/...;base64 -- Vidu's external image_url fetch is broken server-side. */
   referenceImageDataUri: string;
   editingType?: string;
+  /** "Go live": rtmp:// ingest URLs (server + stream key) Vidu relays the swapped output to. */
+  rtmpUrls?: string[];
+  /** Requested output resolution (540p/720p/1080p); the server caps it at the plan's ceiling. */
+  resolution?: string;
   onRemoteStream: (stream: MediaStream) => void;
   /** Vidu ended the session on its side (render worker left, server hangup, control lost, no output). */
   onEnded?: (reason: string) => void;
@@ -32,12 +36,45 @@ const REMOTE_POLL_MS = 1000;
 const CONTROL_RECONNECT_DELAYS_MS = [500, 1500, 3000, 5000];
 const DEFAULT_CONTROL_URL = "wss://api.vidu.com/live/ws/live/connect";
 const USER_OFFLINE_QUIT = 0; // AliRtcUserOfflineReason.AliRtcUserOfflineQuit (not exported at runtime)
+const RTMP_ADDRESS_COOLDOWN_MS = 12000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
   ]);
+}
+
+/** An error carrying the mint function's machine-readable code (e.g. VIDU_BUSY, RTMP_INVALID). */
+export class ViduSessionError extends Error {
+  constructor(message: string, readonly code: string) { super(message); this.name = "ViduSessionError"; }
+}
+
+// supabase.functions.invoke() reports any non-2xx as a bare "Edge Function returned a non-2xx
+// status code"; the function's own { code, message } body is on error.context (a Response).
+async function mintViduSession(body: Record<string, unknown>, fallback: string) {
+  const { data, error } = await supabase.functions.invoke("mint-vidu-rtc-session", { body });
+  if (error) {
+    let parsed: { code?: string; message?: string } | null = null;
+    try { parsed = await (error as { context?: Response }).context?.json?.(); } catch { /* not JSON */ }
+    throw new ViduSessionError(parsed?.message || fallback, parsed?.code || "MINT_FAILED");
+  }
+  if (!data?.ok) throw new ViduSessionError(data?.message || fallback, data?.code || "MINT_FAILED");
+  return data;
+}
+
+/** User-facing text for why Vidu ended a session (hangup reasons, conn_init errors, our own). */
+export function describeViduEnd(reason: string): string {
+  const r = reason.toLowerCase();
+  if (r === "no_output" || r === "start_failed") return "Vidu didn't start sending the swapped video. Please reconnect.";
+  if (r === "relay_start_failed") return "The session stopped before your live stream started. Check the server URL and stream key under Go live, then reconnect. If they're right, switch Go live off to test the swap on its own.";
+  if (/audit|violation|moderat/.test(r)) return "Vidu's content check stopped this session. Use a different reference photo and keep the camera framing to one adult person.";
+  if (/credit|balance/.test(r)) return "The studio is briefly at capacity. Please try again in a few minutes.";
+  if (/rtmp|relay|push/.test(r)) return "Your live stream couldn't start: the streaming platform didn't accept the server URL or stream key. Check them under Go live, then reconnect.";
+  if (/timeout|expired/.test(r) && !/reconnect|ready/.test(r)) return "The session reached its time limit. Reconnect to continue.";
+  if (/not_ready|sip_ready|render/.test(r)) return "Vidu's swap service didn't get ready in time. Please reconnect.";
+  if (/control_lost|connection_failed|reconnect/.test(r)) return "Your connection to the studio dropped. Check your network and reconnect.";
+  return "The swap session ended on Vidu's side. Reconnect to continue.";
 }
 
 // A timed-out getUserMedia() isn't cancelled; stop the track or the camera stays locked.
@@ -58,6 +95,8 @@ async function releaseEngine(engine: any) {
 // 13 switch_prompt (change reference image / editing_type mid-session), 14 switch failure.
 // switch_prompt has no success ack, and Vidu doesn't dedupe it: never resend on silence.
 const SWITCH_FAILURE_WINDOW_MS = 4000;
+const NOT_READY_RETRY_MS = 1000;
+const NOT_READY_MAX_RETRIES = 30;
 const MAX_WS_FRAME_BYTES = 16 * 1024 * 1024;
 
 type SwitchFailure = { error_code?: string; error_msg?: string };
@@ -68,6 +107,7 @@ class ViduControlChannel {
   private seq = 0;
   private connId = "";
   private attempts = 0;
+  private notReadyRetries = 0;
   private closed = false;
 
   constructor(
@@ -143,9 +183,19 @@ class ViduControlChannel {
     if (ack) {
       if (ack.success) {
         this.attempts = 0;
+        this.notReadyRetries = 0;
         console.info("[useViduRealtime] control channel ready");
-      } else if (ack.error_code !== "NOT_READY") {
-        // NOT_READY is transient for editing sessions; anything else (e.g. LIVE_ENDED) is final.
+      } else if (ack.error_code === "NOT_READY") {
+        // Per Vidu's docs: resend conn_init after a short wait. Vidu caps the retries on its side
+        // and then answers SIP_READY_TIMEOUT, which lands in the final branch below.
+        if (this.notReadyRetries++ < NOT_READY_MAX_RETRIES) {
+          const ws = this.ws;
+          setTimeout(() => { if (!this.closed && this.ws === ws) this.send(1, { conn_init: { version: 1 } }); }, NOT_READY_RETRY_MS);
+        } else {
+          this.end("control_rejected:NOT_READY");
+        }
+      } else {
+        // Anything else (SIP_READY_TIMEOUT, LIVE_ENDED, LIVE_CONN_INIT_FAILED) is final.
         console.error("[useViduRealtime] control channel rejected", ack);
         this.end(`control_rejected:${ack.error_code || "unknown"}`);
       }
@@ -215,13 +265,13 @@ class ViduBackgroundLeg {
     private readonly onEnded: (reason: string) => void,
   ) {}
 
-  async start(params: { pKey: string; sessionId: string; backgroundDataUri: string; input: MediaStreamTrack }) {
-    const { data: session, error } = await supabase.functions.invoke("mint-vidu-rtc-session", {
-      body: { p_key: params.pKey, p_session_id: params.sessionId, image_url: params.backgroundDataUri, editing_type: "background_replacement" },
-    });
-    if (error) throw new Error(error.message || "Could not start the Elite AI background");
-    if (!session?.ok || !session.rtc?.token || !session.render_uid || !session.live_id || !session.client_secret) {
-      throw new Error(session?.message || "The Elite AI background request was rejected");
+  async start(params: { pKey: string; sessionId: string; resolution?: string; backgroundDataUri: string; input: MediaStreamTrack }) {
+    const session = await mintViduSession(
+      { p_key: params.pKey, p_session_id: params.sessionId, resolution: params.resolution, image_url: params.backgroundDataUri, editing_type: "background_replacement" },
+      "Could not start the Elite AI background",
+    );
+    if (!session.rtc?.token || !session.render_uid || !session.live_id || !session.client_secret) {
+      throw new Error("The Elite AI background request was rejected");
     }
     if (this.stopped) return;
     this.renderUid = session.render_uid;
@@ -312,9 +362,13 @@ export function useViduRealtime() {
   const remotePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const outputWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endingRef = useRef(false);
-  const sessionParamsRef = useRef<{ pKey: string; sessionId: string } | null>(null);
+  const sessionParamsRef = useRef<{ pKey: string; sessionId: string; resolution?: string } | null>(null);
   const bgLegRef = useRef<ViduBackgroundLeg | null>(null);
   const [backgroundState, setBackgroundState] = useState<"off" | "starting" | "on">("off");
+  // Vidu won't reuse an RTMP push address for ~10s after the stream that used it ends; a relay
+  // that fails to start ends the whole session, so a quick reconnect waits that out first.
+  const relayingRef = useRef(false);
+  const relayEndedAtRef = useRef(0);
 
   const stopBackgroundLeg = useCallback(async () => {
     const leg = bgLegRef.current;
@@ -328,17 +382,26 @@ export function useViduRealtime() {
     if (outputWatchdogRef.current) { clearTimeout(outputWatchdogRef.current); outputWatchdogRef.current = null; }
   }, []);
 
-  const handleEnded = useCallback((reason: string) => {
+  const handleEnded = useCallback((rawReason: string) => {
     if (endingRef.current) return;
     endingRef.current = true;
-    console.warn("[useViduRealtime] session ended by Vidu:", reason);
+    console.warn("[useViduRealtime] session ended by Vidu:", rawReason);
+    // Vidu sometimes ends a stream ~14s in without ever publishing output (hangup "live_ended",
+    // close_reason "user_end", 0s billed; seen live 2026-11-18). A relay that can't reach its
+    // RTMP address ends the same way, with nothing more specific. Report both distinctly so the
+    // studio can retry the first and point at the Go live settings for the second.
+    const beforeOutput = !deliveredTrackRef.current && !/audit|violation|credit/i.test(rawReason);
+    const reason = !beforeOutput || rawReason === "no_output"
+      ? rawReason
+      : relayingRef.current ? "relay_start_failed" : "start_failed";
     stopTimers();
     void stopBackgroundLeg();
     controlRef.current?.hangup();
     controlRef.current = null;
     void releaseEngine(engineRef.current);
     engineRef.current = null;
-    setError(reason === "no_output" ? "Vidu didn't start sending the swapped video" : "The Vidu session ended");
+    if (relayingRef.current) { relayingRef.current = false; relayEndedAtRef.current = Date.now(); }
+    setError(describeViduEnd(reason));
     setConnectionState("disconnected");
     const onEnded = onEndedRef.current;
     onEndedRef.current = null;
@@ -371,9 +434,9 @@ export function useViduRealtime() {
   }, [stopTimers]);
 
   const connect = useCallback(async (params: ViduConnectParams) => {
-    const { pKey, sessionId, referenceImageDataUri, editingType, onRemoteStream, onEnded } = params;
+    const { pKey, sessionId, referenceImageDataUri, editingType, rtmpUrls, resolution, onRemoteStream, onEnded } = params;
     endingRef.current = false;
-    sessionParamsRef.current = { pKey, sessionId };
+    sessionParamsRef.current = { pKey, sessionId, resolution };
     setConnectionState("connecting");
     setError(null);
     deliveredTrackRef.current = null;
@@ -382,16 +445,20 @@ export function useViduRealtime() {
     onEndedRef.current = null;
 
     try {
-      const { data: session, error: sessionErr } = await supabase.functions.invoke("mint-vidu-rtc-session", {
-        body: {
-          p_key: pKey,
-          p_session_id: sessionId,
-          image_url: referenceImageDataUri,
-          editing_type: editingType,
-        },
-      });
-      if (sessionErr) throw new Error(sessionErr.message || "Could not start the Vidu session");
-      if (!session?.ok) throw new Error(session?.message || "Vidu rejected the session request");
+      if (rtmpUrls?.length) {
+        const wait = relayEndedAtRef.current + RTMP_ADDRESS_COOLDOWN_MS - Date.now();
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      }
+      const session = await mintViduSession({
+        p_key: pKey,
+        p_session_id: sessionId,
+        image_url: referenceImageDataUri,
+        editing_type: editingType,
+        resolution,
+        ...(rtmpUrls?.length ? { rtmp_urls: rtmpUrls } : {}),
+      }, "Could not start the Vidu session");
+      // The background leg uses what the server actually granted, so both streams match.
+      if (session.resolution) sessionParamsRef.current = { pKey, sessionId, resolution: session.resolution };
 
       const rtc = session.rtc;
       renderUidRef.current = session.render_uid || null;
@@ -400,6 +467,7 @@ export function useViduRealtime() {
 
       const control = new ViduControlChannel(session.control_url || DEFAULT_CONTROL_URL, session.live_id, session.client_secret, handleEnded);
       controlRef.current = control;
+      relayingRef.current = !!session.relaying;
       control.open();
 
       let authInfo: { appId: string; channelId: string; userId: string; nonce?: string; timestamp: number; token: string };
@@ -475,12 +543,19 @@ export function useViduRealtime() {
 
       if (endingRef.current) throw new Error("The Vidu session ended before it finished connecting");
       onEndedRef.current = onEnded ?? null;
-      return { engine, liveId: session.live_id as string, stream: localStream };
+      return {
+        engine,
+        liveId: session.live_id as string,
+        stream: localStream,
+        resolution: (session.resolution as string | undefined) ?? null,
+        relaying: !!session.relaying,
+      };
     } catch (err: any) {
       endingRef.current = true;
       stopTimers();
       controlRef.current?.hangup();
       controlRef.current = null;
+      if (relayingRef.current) { relayingRef.current = false; relayEndedAtRef.current = Date.now(); }
       await releaseEngine(engineRef.current);
       engineRef.current = null;
       setError(err?.message || "Failed to connect to Vidu realtime");
@@ -549,6 +624,7 @@ export function useViduRealtime() {
     stopTimers();
     controlRef.current?.hangup();
     controlRef.current = null;
+    if (relayingRef.current) { relayingRef.current = false; relayEndedAtRef.current = Date.now(); }
     await releaseEngine(engineRef.current);
     engineRef.current = null;
     renderUidRef.current = null;

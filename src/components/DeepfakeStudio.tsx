@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useDecartRealtime } from "@/hooks/useDecartRealtime";
-import { useViduRealtime } from "@/hooks/useViduRealtime";
+import { useViduRealtime, describeViduEnd, ViduSessionError } from "@/hooks/useViduRealtime";
+import { GoLivePanel } from "./studio/GoLivePanel";
+import { loadGoLiveSettings, goLiveProblem, goLiveRtmpUrl, goLivePlatformLabel, type GoLiveSettings } from "@/lib/goLive";
 import { VideoDisplay, type Orientation } from "./VideoDisplay";
 import { CharacterPresets } from "./CharacterPresets";
 import { CryptoPayment } from "./CryptoPayment";
@@ -12,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
 import { Monitor, Smartphone, Copy, Download, GripVertical, Zap, TimerOff, ImagePlus, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAdmin } from "@/hooks/useAdmin";
 import { ReviewPromptModal } from "./dashboard/ReviewPromptModal";
 import { StudioDiagnostics, type DiagnosticsState } from "./StudioDiagnostics";
 import { StudioCountdown } from "./StudioCountdown";
@@ -45,6 +48,23 @@ export function DeepfakeStudio() {
   const [planTier, setPlanTier] = useState<string | null>(null);
   const [backgroundConfig, setBackgroundConfig] = useState<StudioBackground | null>(null);
   const canUseCustomBackground = planTier === "Professional" || planTier === "Enterprise";
+  // Go live: Vidu relays the swap to the user's RTMP destination (set before Connect).
+  // Admin-only until a relay to a real platform is confirmed (the server enforces this too).
+  const { isAdmin: canGoLive } = useAdmin();
+  const [goLiveSaved, setGoLive] = useState<GoLiveSettings>(loadGoLiveSettings);
+  const goLive = useMemo(() => (canGoLive ? goLiveSaved : { ...goLiveSaved, enabled: false }), [canGoLive, goLiveSaved]);
+  const [viduRelaying, setViduRelaying] = useState<boolean | null>(null);
+  // Output quality. Vidu charges the same at every resolution; higher ones only cost the
+  // viewer more data (~2.7 / 3.6 / 4.7 Mbps). "best" asks for the plan's ceiling (HD, or
+  // Full HD on Professional/Enterprise); the server enforces the ceiling either way.
+  const [videoQuality, setVideoQuality] = useState<"best" | "540p" | "720p">(() => {
+    try { const v = localStorage.getItem("eliteswap-video-quality"); if (v === "540p" || v === "720p") return v; } catch { /* noop */ }
+    return "best";
+  });
+  const pickVideoQuality = (q: "best" | "540p" | "720p") => {
+    setVideoQuality(q);
+    try { localStorage.setItem("eliteswap-video-quality", q); } catch { /* noop */ }
+  };
   useEffect(() => {
     const key = apiKey.trim();
     if (!key) { setPlanTier(null); return; }
@@ -1619,6 +1639,12 @@ export function DeepfakeStudio() {
       });
       return;
     }
+    // Go live settings are sent at session creation; catch a bad address before a session opens.
+    const goLiveIssue = goLive.enabled ? goLiveProblem(goLive) : null;
+    if (goLiveIssue) {
+      toast({ title: "Check your Go live settings", description: `${goLiveIssue} Or switch Go live off to connect without streaming.`, variant: "destructive" });
+      return;
+    }
     setIsLaunching(true);
 
     // Pre-clean: if the user just disconnected in this same tab, the browser
@@ -1760,22 +1786,43 @@ export function DeepfakeStudio() {
           reader.onerror = () => reject(new Error("Failed to read reference image"));
           reader.readAsDataURL(referenceImage as File);
         });
-        const viduConnectResult = await viduRealtime.connect({
+        const viduSessionId = sessionIdRef.current || "";
+        let autoRetried = false;
+        const viduParams: Parameters<typeof viduRealtime.connect>[0] = {
           pKey: trimmedKey,
-          sessionId: sessionIdRef.current || "",
+          sessionId: viduSessionId,
           referenceImageDataUri,
+          rtmpUrls: goLive.enabled ? [goLiveRtmpUrl(goLive)] : undefined,
+          resolution: videoQuality === "best" ? undefined : videoQuality,
           onRemoteStream: handleRemoteStream,
           onEnded: (reason) => {
+            // Vidu occasionally drops a stream before its first frame. Retry once on the same
+            // studio session (still open: only the Vidu stream ended) before giving up.
+            if ((reason === "start_failed" || reason === "no_output") && !autoRetried && sessionIdRef.current === viduSessionId) {
+              autoRetried = true;
+              toast({ title: "Restarting the swap", description: "Vidu didn't start on the first try. Trying once more…" });
+              viduRealtime.connect(viduParams).then(
+                (r) => { if (r?.stream) setLocalStream(r.stream); },
+                (e) => {
+                  toast({ title: "Swap didn't start", description: e?.message || describeViduEnd(reason), variant: "destructive" });
+                  void handleDisconnectRef.current();
+                },
+              );
+              return;
+            }
             toast({
-              title: reason === "no_output" ? "Swap didn't start" : "Swap session ended",
-              description: reason === "no_output"
-                ? "Vidu didn't start sending the swapped video. Please try again."
-                : "The swap session ended on Vidu's side. Reconnect to continue.",
+              title: reason === "no_output" || reason.endsWith("start_failed") ? "Swap didn't start" : "Swap session ended",
+              description: describeViduEnd(reason),
               variant: "destructive",
             });
             void handleDisconnectRef.current();
           },
-        });
+        };
+        const viduConnectResult = await viduRealtime.connect(viduParams);
+        setViduRelaying(!!viduConnectResult?.relaying);
+        if (viduConnectResult?.relaying) {
+          toast({ title: `Going live on ${goLivePlatformLabel(goLive)}`, description: "Your stream appears there in 10–20 seconds. Disconnect to end it." });
+        }
         // Mirrors the Decart branch below (connectResult.stream ->
         // setLocalStream): without this, the studio's own camera-feed panel
         // has nothing to show even when the camera and connection are fine,
@@ -1789,7 +1836,11 @@ export function DeepfakeStudio() {
         try { await supabase.rpc("pause_studio_session", { p_key: trimmedKey, p_session_id: sessionIdRef.current } as any); } catch { /* noop */ }
         setSession(null);
         setTimerAnchor(null);
-        toast({ title: "Studio could not open", description: e?.message || "Could not connect to Vidu. Please try again.", variant: "destructive" });
+        const code = e instanceof ViduSessionError ? e.code : "";
+        const title = code === "VIDU_BUSY" || code === "VIDU_CREDIT_INSUFFICIENT"
+          ? "Studio is busy"
+          : code.startsWith("RTMP_") ? "Go live couldn't start" : "Studio could not open";
+        toast({ title, description: e?.message || "Could not connect to Vidu. Please try again.", variant: "destructive" });
         setIsLaunching(false);
         return;
       }
@@ -1952,7 +2003,7 @@ export function DeepfakeStudio() {
       }]).then(() => {}, () => {});
     });
     setIsLaunching(false);
-  }, [apiKey, decartConnect, viduRealtime, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop]);
+  }, [apiKey, decartConnect, viduRealtime, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop, goLive, videoQuality]);
 
   useEffect(() => {
     if (!autoStartPending || isStarted || !apiKey.trim()) return;
@@ -1980,6 +2031,7 @@ export function DeepfakeStudio() {
     try { localStream?.getTracks().forEach(t => t.stop()); } catch { /* noop */ }
     setLocalStream(null);
     setRemoteStream(null);
+    setViduRelaying(null);
     // Small settle window so ICE/DTLS close + camera release finish before
     // the user's next click. 600ms is generous for desktop, unnoticeable for UX.
     await new Promise((r) => setTimeout(r, 600));
@@ -2645,6 +2697,35 @@ export function DeepfakeStudio() {
             </div>
           </div>
 
+          <div className="rounded-lg border border-border/60 bg-background/60 p-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Video quality</span>
+              <div className="flex items-center gap-1">
+                {(canUseCustomBackground
+                  ? ([["540p", "Data saver"], ["720p", "HD"], ["best", "Full HD"]] as const)
+                  : ([["540p", "Data saver"], ["best", "HD"]] as const)
+                ).map(([q, label]) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => pickVideoQuality(q)}
+                    className={`rounded-full px-2.5 py-1 text-xs transition ${videoQuality === q || (!canUseCustomBackground && q === "best" && videoQuality === "720p") ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              {videoQuality === "540p"
+                ? "Uses about 1.2 GB an hour. Good for mobile data or a weak connection."
+                : videoQuality === "720p" || !canUseCustomBackground
+                  ? "HD (720p). Uses about 1.6 GB an hour."
+                  : "Full HD (1080p). Uses about 2.1 GB an hour."}
+              {isConnected ? " Applies the next time you connect." : ""}
+            </p>
+          </div>
+
           {/* Custom Prompt */}
           <div className="glass border border-border rounded-xl p-4 space-y-3">
             <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">
@@ -2686,6 +2767,16 @@ export function DeepfakeStudio() {
               Optional. Reinforces the reference image's hair &amp; outfit. Applied on the next prompt or preset change.
             </p>
           </div>
+
+          {/* Go live: direct RTMP streaming through Vidu */}
+          {canGoLive && (
+            <GoLivePanel
+              settings={goLive}
+              onChange={setGoLive}
+              relaying={isConnected && activeProviderRef.current === "vidu" ? !!viduRelaying : null}
+              backgroundOn={viduRealtime.backgroundState === "on"}
+            />
+          )}
 
           {/* OBS Integration */}
           <div className="glass border border-border rounded-xl p-4 space-y-3">
