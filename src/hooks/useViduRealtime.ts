@@ -22,6 +22,11 @@ export interface ViduConnectParams {
   resolution?: string;
   /** Phones: start on the rear camera. Omitted = the browser's default (front/webcam). */
   facing?: "front" | "rear";
+  /**
+   * Call mode (screen-sharing the swap into a WhatsApp/Telegram/Zoom call): never open the
+   * microphone, so the calling app keeps it. The output then carries no audio.
+   */
+  cameraOnly?: boolean;
   onRemoteStream: (stream: MediaStream) => void;
   /** Vidu ended the session on its side (render worker left, server hangup, control lost, no output). */
   onEnded?: (reason: string) => void;
@@ -454,7 +459,7 @@ export function useViduRealtime() {
   }, [stopTimers]);
 
   const connect = useCallback(async (params: ViduConnectParams) => {
-    const { pKey, sessionId, referenceImageDataUri, editingType, rtmpUrls, resolution, facing, onRemoteStream, onEnded } = params;
+    const { pKey, sessionId, referenceImageDataUri, editingType, rtmpUrls, resolution, facing, cameraOnly, onRemoteStream, onEnded } = params;
     endingRef.current = false;
     sessionParamsRef.current = { pKey, sessionId, resolution };
     setConnectionState("connecting");
@@ -544,7 +549,15 @@ export function useViduRealtime() {
         throw previewErr;
       }
 
+      // startPreview() opens only the camera; the SDK opens the microphone when it joins and
+      // publishes. Call mode turns that off first so the phone's calling app keeps the mic.
+      if (cameraOnly) {
+        try { await engine.publishLocalAudioStream(false); } catch { /* noop */ }
+      }
       await withTimeout(engine.joinChannel(authInfo, "eliteswap-user"), JOIN_TIMEOUT_MS, "Connection timed out");
+      if (cameraOnly) {
+        try { engine.stopAudioCapture(); } catch { /* noop */ }
+      }
 
       void tryDeliverRemoteStream();
       if (!deliveredTrackRef.current) {
@@ -556,7 +569,7 @@ export function useViduRealtime() {
 
       // DeepfakeStudio's camera panel expects the local stream back, like Decart's connect().
       const localVideoTrack = await engine.getVideoTrack({ streamType: AliRtc.AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture }).catch(() => undefined);
-      const localAudioTrack = await engine.getAudioTrack().catch(() => undefined);
+      const localAudioTrack = cameraOnly ? undefined : await engine.getAudioTrack().catch(() => undefined);
       const localTracks: MediaStreamTrack[] = [];
       if (localVideoTrack) localTracks.push(localVideoTrack);
       if (localAudioTrack) localTracks.push(localAudioTrack);

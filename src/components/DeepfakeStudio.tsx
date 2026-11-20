@@ -27,6 +27,7 @@ import { DecartStudioEngine } from "@/lib/decartStudioEngine";
 import { ReferenceBlockedDialog } from "./studio/ReferenceBlockedDialog";
 import { PhotoTipsPopover } from "./studio/PhotoTipsPopover";
 import { StudioBackgroundPanel, type StudioBackground } from "./studio/StudioBackgroundPanel";
+import { CallModePanel } from "./studio/CallModePanel";
 import { useMyReseller } from "@/hooks/useReseller";
 
 // Feature flag; flip to false if thresholds prove too strict in production.
@@ -39,6 +40,15 @@ export function DeepfakeStudio() {
   const inApp = useMemo(() => inAppBrowser(), []);
   const [cameraFacing, setCameraFacing] = useState<"front" | "rear">("front");
   const [obsPanelOpen, setObsPanelOpen] = useState(() => !isPhone());
+  // Call mode (phones): the swap is screen-shared into a WhatsApp/Telegram/Zoom call, so the
+  // studio runs camera-only and leaves the microphone to the calling app.
+  const [callMode, setCallMode] = useState<boolean>(() => {
+    try { return localStorage.getItem("eliteswap-call-mode") === "1"; } catch { return false; }
+  });
+  const pickCallMode = (on: boolean) => {
+    setCallMode(on);
+    try { localStorage.setItem("eliteswap-call-mode", on ? "1" : "0"); } catch { /* noop */ }
+  };
 
   const [showPayment, setShowPayment] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
@@ -1817,6 +1827,7 @@ export function DeepfakeStudio() {
           rtmpUrls: goLive.enabled ? [goLiveRtmpUrl(goLive)] : undefined,
           resolution: videoQuality === "best" ? undefined : videoQuality,
           facing: onPhone ? cameraFacing : undefined,
+          cameraOnly: onPhone && callMode,
           onRemoteStream: handleRemoteStream,
           onEnded: (reason) => {
             // Vidu occasionally drops a stream before its first frame. Retry once on the same
@@ -2026,7 +2037,7 @@ export function DeepfakeStudio() {
       }]).then(() => {}, () => {});
     });
     setIsLaunching(false);
-  }, [apiKey, decartConnect, viduRealtime, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop, goLive, videoQuality, inApp, onPhone, cameraFacing]);
+  }, [apiKey, decartConnect, viduRealtime, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop, goLive, videoQuality, inApp, onPhone, cameraFacing, callMode]);
 
   // Phones: flip between front and rear cameras. Before connecting it only picks the camera
   // the next session starts with.
@@ -2395,6 +2406,29 @@ export function DeepfakeStudio() {
     connectionState === "generating" ||
     connectionState === "preview_loop";
 
+  // Phones: keep the screen on while the swap runs (a locked screen stops the camera, and in a
+  // call the other person would see it freeze). The browser drops the lock when the page is
+  // hidden, so take it again on return.
+  useEffect(() => {
+    if (!onPhone || !isConnected) return;
+    type Sentinel = { release: () => Promise<void> };
+    const wl = (navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<Sentinel> } }).wakeLock;
+    if (!wl) return;
+    let sentinel: Sentinel | null = null;
+    let active = true;
+    const acquire = () => {
+      if (document.visibilityState !== "visible") return;
+      wl.request("screen").then((s) => { if (active) sentinel = s; else void s.release(); }, () => { /* denied or unsupported */ });
+    };
+    acquire();
+    document.addEventListener("visibilitychange", acquire);
+    return () => {
+      active = false;
+      document.removeEventListener("visibilitychange", acquire);
+      void sentinel?.release().catch(() => {});
+    };
+  }, [onPhone, isConnected]);
+
   // Auto-apply a pre-picked reference image the moment the session goes live.
   useEffect(() => {
     if (!isConnected) return;
@@ -2726,6 +2760,16 @@ export function DeepfakeStudio() {
                 )}
               </div>
             )}
+            {/* Call mode: the swap is about to be screen-shared, so offer full screen up front. */}
+            {onPhone && callMode && remoteStream && !outputFullscreen && (
+              <button
+                type="button"
+                onClick={handleFullscreen}
+                className="absolute bottom-10 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-heading font-semibold text-primary-foreground shadow-lg"
+              >
+                <Fullscreen className="w-3.5 h-3.5" /> Full screen for your call
+              </button>
+            )}
             {isFreeTrial && (
               <div className="pointer-events-none absolute bottom-3 right-3 px-3 py-1.5 rounded-md bg-background/70 backdrop-blur-sm border border-primary/40 z-10">
                 <div className="text-[10px] font-heading font-bold text-primary leading-tight">ELITE SWAP</div>
@@ -2737,6 +2781,14 @@ export function DeepfakeStudio() {
 
         {/* Controls sidebar */}
         <div className="w-full lg:w-80 space-y-4" style={{ contain: "layout paint" }}>
+          {onPhone && (
+            <CallModePanel
+              enabled={callMode}
+              onChange={pickCallMode}
+              ios={isIOS()}
+              connected={isConnected && activeProviderRef.current === "vidu"}
+            />
+          )}
           {/* Custom Background: Professional/Enterprise only, gated on the
               key actually in use, not just the account. */}
           {canUseCustomBackground && (
