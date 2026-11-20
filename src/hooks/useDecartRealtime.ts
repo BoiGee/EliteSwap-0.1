@@ -3,6 +3,7 @@ import { createDecartClient, models } from "@decartai/sdk";
 import type { SetInput } from "@decartai/sdk";
 import { buildPromptWithIdentityGuard } from "@/lib/lucyPromptGuard";
 import { DecartStudioEngine } from "@/lib/decartStudioEngine";
+import { brandMessage } from "@/lib/brandMessage";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "generating" | "reconnecting" | "preview_loop";
 
@@ -222,7 +223,7 @@ export function useDecartRealtime() {
         try {
           await next();
         } catch (err: any) {
-          setError(err?.message || "Failed to update");
+          setError(brandMessage(err?.message, "Couldn't update the swap. Please try again."));
         }
       }
     }, UPDATE_DEBOUNCE_MS);
@@ -316,7 +317,7 @@ export function useDecartRealtime() {
 
     if (!firstFrameReady) {
       const message = startupError || "Preview did not return a frame. Falling back is recommended.";
-      setError(message);
+      setError(brandMessage(message, "The preview didn't start. Please try again."));
       throw new Error(message);
     }
 
@@ -479,7 +480,7 @@ export function useDecartRealtime() {
       realtimeClient.on("error", (err: any) => {
         const message = err?.message || "Unknown error";
         console.error("Decart error:", err);
-        setError(message);
+        setError(brandMessage(message, "Studio connection problem. If the video stops, reconnect."));
       });
 
       // New in SDK 0.2.x: fires when the server ends the session on its own
@@ -491,7 +492,7 @@ export function useDecartRealtime() {
       // reality instead of sitting on a stale "connected" state.
       realtimeClient.on("sessionEnded", (payload: { reason?: string }) => {
         console.warn("[useDecartRealtime] session ended by server:", payload?.reason);
-        setError(payload?.reason ? `Studio session ended: ${payload.reason}` : "Studio session ended. Please reconnect.");
+        setError("Studio session ended. Please reconnect.");
         setConnectionState("disconnected");
         realtimeClientRef.current = null;
       });
@@ -504,8 +505,9 @@ export function useDecartRealtime() {
       return { stream, realtimeClient };
     } catch (err: any) {
       // Live connect must fail loudly so caller can release session lock + timer.
-      const message = err?.message || "Failed to connect to Decart realtime";
-      setError(message);
+      // Shown in the studio, so never the provider's name or raw SDK text. The original error is
+      // rethrown untouched: the studio's own error mapping reads it.
+      setError(brandMessage(err?.message, "Couldn't connect to the studio. Please try again."));
       // Clean up camera + SDK client on failure.
       try { stopAnimationRef.current?.(); stopAnimationRef.current = null; } catch {}
       try { capturedStream?.getTracks().forEach((t) => t.stop()); } catch {}
@@ -524,7 +526,7 @@ export function useDecartRealtime() {
     } catch (err: any) {
       const message = err?.message || "Failed to update";
       console.warn("[Lucy] realtime set failed", message);
-      setError(message);
+      setError(brandMessage(message, "Couldn't update the swap. Please try again."));
     }
   }, []);
 
@@ -639,7 +641,7 @@ export function useDecartRealtime() {
       }
 
       if (!result.success) {
-        setError(result.error ?? "Studio request failed");
+        setError(brandMessage(result.error, "Studio request failed. Please try again."));
       }
 
       return result;

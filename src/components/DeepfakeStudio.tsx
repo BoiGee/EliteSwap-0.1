@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useDecartRealtime } from "@/hooks/useDecartRealtime";
 import { useViduRealtime, describeViduEnd, ViduSessionError, checkViduBrowserSupport } from "@/hooks/useViduRealtime";
 import { isPhone, inAppBrowser, isIOS } from "@/lib/device";
+import { brandMessage } from "@/lib/brandMessage";
 import { GoLivePanel } from "./studio/GoLivePanel";
 import { loadGoLiveSettings, goLiveProblem, goLiveRtmpUrl, goLivePlatformLabel, type GoLiveSettings } from "@/lib/goLive";
 import { VideoDisplay, type Orientation } from "./VideoDisplay";
@@ -1462,7 +1463,7 @@ export function DeepfakeStudio() {
     const fail = (message: string) => {
       aiBgUrlRef.current = null;
       aiBgFailedRef.current = want;
-      toast({ title: "Elite AI background didn't start", description: message, variant: "destructive" });
+      toast({ title: "Elite AI background didn't start", description: brandMessage(message, "Please pick the background again to retry."), variant: "destructive" });
     };
     (async () => {
       try {
@@ -1501,8 +1502,8 @@ export function DeepfakeStudio() {
   const applyStudioRequest = useCallback(async (options: Parameters<typeof decartApplyStudioRequest>[0]) => {
     if (activeProviderRef.current === "vidu") {
       toast({
-        title: "Not available on this provider yet",
-        description: "Switching characters or prompts mid-session isn't supported while connected to Vidu.",
+        title: "Not available during a live swap",
+        description: "Style presets and custom prompts can't be changed mid-session. To swap into someone else, upload a new face photo.",
         variant: "destructive",
       });
       return { success: false, error: "not_supported_on_vidu", mode: options.mode ?? "live", outputUrl: null } as any;
@@ -1634,7 +1635,7 @@ export function DeepfakeStudio() {
         } catch { /* noop */ }
         setSession(null);
         setTimerAnchor(null);
-        toast({ title: "Preview failed", description: message, variant: "destructive" });
+        toast({ title: "Preview failed", description: brandMessage(message, "The preview didn't start. Please try again."), variant: "destructive" });
       } finally {
         setIsLaunching(false);
       }
@@ -1768,7 +1769,7 @@ export function DeepfakeStudio() {
           // image afterward via setImage) -- release the session mint just
           // opened before bailing, since nothing will come along and close it.
           try { await supabase.rpc("pause_studio_session", { p_key: trimmedKey, p_session_id: row.session_id } as any); } catch { /* noop */ }
-          toast({ title: "Upload a reference image first", description: "Vidu needs your reference image before connecting.", variant: "destructive" });
+          toast({ title: "Upload a reference image first", description: "Add the face you want to swap into, then connect.", variant: "destructive" });
           setIsLaunching(false);
           return;
         }
@@ -1834,11 +1835,11 @@ export function DeepfakeStudio() {
             // studio session (still open: only the Vidu stream ended) before giving up.
             if ((reason === "start_failed" || reason === "no_output") && !autoRetried && sessionIdRef.current === viduSessionId) {
               autoRetried = true;
-              toast({ title: "Restarting the swap", description: "Vidu didn't start on the first try. Trying once more…" });
+              toast({ title: "Restarting the swap", description: "The swap didn't start on the first try. Trying once more…" });
               viduRealtime.connect(viduParams).then(
                 (r) => { if (r?.stream) setLocalStream(r.stream); },
                 (e) => {
-                  toast({ title: "Swap didn't start", description: e?.message || describeViduEnd(reason), variant: "destructive" });
+                  toast({ title: "Swap didn't start", description: brandMessage(e?.message, describeViduEnd(reason)), variant: "destructive" });
                   void handleDisconnectRef.current();
                 },
               );
@@ -1874,7 +1875,7 @@ export function DeepfakeStudio() {
         const title = code === "VIDU_BUSY" || code === "VIDU_CREDIT_INSUFFICIENT"
           ? "Studio is busy"
           : code.startsWith("RTMP_") ? "Go live couldn't start" : "Studio could not open";
-        toast({ title, description: e?.message || "Could not connect to Vidu. Please try again.", variant: "destructive" });
+        toast({ title, description: brandMessage(e?.message, "Could not connect to the studio. Please try again."), variant: "destructive" });
         setIsLaunching(false);
         return;
       }

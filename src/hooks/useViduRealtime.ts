@@ -1,5 +1,10 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { brandMessage } from "@/lib/brandMessage";
+
+// User-facing copy says "studio", never the provider's name (see brandMessage).
+const CONNECT_FAILED = "Couldn't connect to the studio. Please try again.";
+const SESSION_START_FAILED = "The studio couldn't start your session. Please try again.";
 
 // Lazy-loaded: the SDK is ~1MB and a static import lands it in the main bundle.
 let aliRtcModulePromise: Promise<typeof import("aliyun-rtc-sdk")> | null = null;
@@ -65,9 +70,9 @@ async function mintViduSession(body: Record<string, unknown>, fallback: string) 
   if (error) {
     let parsed: { code?: string; message?: string } | null = null;
     try { parsed = await (error as { context?: Response }).context?.json?.(); } catch { /* not JSON */ }
-    throw new ViduSessionError(parsed?.message || fallback, parsed?.code || "MINT_FAILED");
+    throw new ViduSessionError(brandMessage(parsed?.message, fallback), parsed?.code || "MINT_FAILED");
   }
-  if (!data?.ok) throw new ViduSessionError(data?.message || fallback, data?.code || "MINT_FAILED");
+  if (!data?.ok) throw new ViduSessionError(brandMessage(data?.message, fallback), data?.code || "MINT_FAILED");
   return data;
 }
 
@@ -91,15 +96,15 @@ export async function checkViduBrowserSupport(): Promise<{ blocked: boolean; unl
 /** User-facing text for why Vidu ended a session (hangup reasons, conn_init errors, our own). */
 export function describeViduEnd(reason: string): string {
   const r = reason.toLowerCase();
-  if (r === "no_output" || r === "start_failed") return "Vidu didn't start sending the swapped video. Please reconnect.";
+  if (r === "no_output" || r === "start_failed") return "The swap didn't start. Please reconnect.";
   if (r === "relay_start_failed") return "The session stopped before your live stream started. Check the server URL and stream key under Go live, then reconnect. If they're right, switch Go live off to test the swap on its own.";
-  if (/audit|violation|moderat/.test(r)) return "Vidu's content check stopped this session. Use a different reference photo and keep the camera framing to one adult person.";
+  if (/audit|violation|moderat/.test(r)) return "Our content check stopped this session. Use a different reference photo and keep the camera framing to one adult person.";
   if (/credit|balance/.test(r)) return "The studio is briefly at capacity. Please try again in a few minutes.";
   if (/rtmp|relay|push/.test(r)) return "Your live stream couldn't start: the streaming platform didn't accept the server URL or stream key. Check them under Go live, then reconnect.";
   if (/timeout|expired/.test(r) && !/reconnect|ready/.test(r)) return "The session reached its time limit. Reconnect to continue.";
-  if (/not_ready|sip_ready|render/.test(r)) return "Vidu's swap service didn't get ready in time. Please reconnect.";
+  if (/not_ready|sip_ready|render/.test(r)) return "The swap service didn't get ready in time. Please reconnect.";
   if (/control_lost|connection_failed|reconnect/.test(r)) return "Your connection to the studio dropped. Check your network and reconnect.";
-  return "The swap session ended on Vidu's side. Reconnect to continue.";
+  return "The swap session ended unexpectedly. Reconnect to continue.";
 }
 
 // A timed-out getUserMedia() isn't cancelled; stop the track or the camera stays locked.
@@ -125,6 +130,13 @@ const NOT_READY_MAX_RETRIES = 30;
 const MAX_WS_FRAME_BYTES = 16 * 1024 * 1024;
 
 type SwitchFailure = { error_code?: string; error_msg?: string };
+
+// Our own failures (TOO_LARGE, NOT_CONNECTED) carry user-ready text; the provider's own type=14
+// failures carry raw protocol text, so those get the branded fallback.
+function switchFailureMessage(failure: SwitchFailure, fallback: string): string {
+  const ours = failure.error_code === "TOO_LARGE" || failure.error_code === "NOT_CONNECTED";
+  return ours ? brandMessage(failure.error_msg, fallback) : fallback;
+}
 
 class ViduControlChannel {
   private pendingSwitch: ((failure: SwitchFailure | null) => void) | null = null;
@@ -481,14 +493,14 @@ export function useViduRealtime() {
         editing_type: editingType,
         resolution,
         ...(rtmpUrls?.length ? { rtmp_urls: rtmpUrls } : {}),
-      }, "Could not start the Vidu session");
+      }, CONNECT_FAILED);
       // The background leg uses what the server actually granted, so both streams match.
       if (session.resolution) sessionParamsRef.current = { pKey, sessionId, resolution: session.resolution };
 
       const rtc = session.rtc;
       renderUidRef.current = session.render_uid || null;
-      if (!rtc?.token || !renderUidRef.current) throw new Error("Vidu did not return join credentials");
-      if (!session.live_id || !session.client_secret) throw new Error("Vidu did not return session control credentials");
+      if (!rtc?.token || !renderUidRef.current) throw new Error(SESSION_START_FAILED);
+      if (!session.live_id || !session.client_secret) throw new Error(SESSION_START_FAILED);
 
       const control = new ViduControlChannel(session.control_url || DEFAULT_CONTROL_URL, session.live_id, session.client_secret, handleEnded);
       controlRef.current = control;
@@ -510,7 +522,7 @@ export function useViduRealtime() {
           throw new Error("incomplete");
         }
       } catch {
-        throw new Error("Could not read Vidu session credentials");
+        throw new Error(SESSION_START_FAILED);
       }
 
       const AliRtc = await loadAliRtc();
@@ -532,7 +544,7 @@ export function useViduRealtime() {
       });
       engine.on("occurError", (err: any) => {
         console.error("[useViduRealtime] engine error", err);
-        setError(err?.message || "Vidu connection error");
+        setError("Studio connection problem. If the video stops, reconnect.");
       });
 
       engine.setDefaultSubscribeAllRemoteAudioStreams(false);
@@ -578,7 +590,7 @@ export function useViduRealtime() {
         console.warn("[useViduRealtime] joined successfully but no local track was available to return");
       }
 
-      if (endingRef.current) throw new Error("The Vidu session ended before it finished connecting");
+      if (endingRef.current) throw new Error("The session ended before it finished connecting. Please try again.");
       onEndedRef.current = onEnded ?? null;
       return {
         engine,
@@ -595,7 +607,7 @@ export function useViduRealtime() {
       if (relayingRef.current) { relayingRef.current = false; relayEndedAtRef.current = Date.now(); }
       await releaseEngine(engineRef.current);
       engineRef.current = null;
-      setError(err?.message || "Failed to connect to Vidu realtime");
+      setError(brandMessage(err?.message, CONNECT_FAILED));
       setConnectionState("disconnected");
       throw err;
     }
@@ -623,9 +635,9 @@ export function useViduRealtime() {
   // The picture switches within a few seconds; no extra Vidu charge.
   const switchReference = useCallback(async (imageDataUri: string, editingType?: string) => {
     const control = controlRef.current;
-    if (!control) return { ok: false, message: "Not connected to Vidu" };
+    if (!control) return { ok: false, message: "Connect first, then pick the new photo." };
     const failure = await control.switchPrompt({ imageDataUri, editingType });
-    if (failure) return { ok: false, message: failure.error_msg || failure.error_code || "Vidu couldn't switch the photo" };
+    if (failure) return { ok: false, message: switchFailureMessage(failure, "Couldn't switch to that photo. Try a different one.") };
     return { ok: true as const };
   }, []);
 
@@ -637,7 +649,7 @@ export function useViduRealtime() {
     if (!input || !params || endingRef.current) return { ok: false, message: "Connect first, then pick a background." };
     if (bgLegRef.current) {
       const failure = await bgLegRef.current.switchBackground(backgroundDataUri);
-      return failure ? { ok: false, message: failure.error_msg || failure.error_code || "Couldn't switch the background" } : { ok: true as const };
+      return failure ? { ok: false, message: switchFailureMessage(failure, "Couldn't switch the background. Try a different image.") } : { ok: true as const };
     }
     setBackgroundState("starting");
     const leg = new ViduBackgroundLeg(
@@ -662,7 +674,7 @@ export function useViduRealtime() {
     } catch (e: any) {
       if (bgLegRef.current === leg) { bgLegRef.current = null; setBackgroundState("off"); }
       await leg.stop();
-      return { ok: false, message: e?.message || "Couldn't start the Elite AI background" };
+      return { ok: false, message: brandMessage(e?.message, "Couldn't start the Elite AI background. Please try again.") };
     }
   }, []);
 

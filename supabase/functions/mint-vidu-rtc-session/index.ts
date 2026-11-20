@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
       .eq("id", true)
       .maybeSingle();
     if ((config as any)?.active_provider !== "vidu") {
-      return json({ code: "PROVIDER_MISMATCH", message: "Vidu is not the active provider right now" }, 409);
+      return json({ code: "PROVIDER_MISMATCH", message: "The studio was just updated. Reload the page and connect again." }, 409);
     }
 
     // Queried directly (not via assign_shared_vidu_key()) so the chosen
@@ -223,7 +223,7 @@ Deno.serve(async (req) => {
       .limit(50);
     if (poolErr) return json({ code: "DB_ERROR", message: poolErr.message }, 500);
     const activePool = (poolRow ?? []) as { id: string; vidu_api_key: string }[];
-    if (activePool.length === 0) return json({ code: "NO_SHARED_KEY_AVAILABLE", message: "No active Vidu key in the pool" }, 503);
+    if (activePool.length === 0) return json({ code: "NO_SHARED_KEY_AVAILABLE", message: "The studio is briefly at capacity. Please try again in a few minutes." }, 503);
     const chosen = activePool[Math.floor(Math.random() * activePool.length)];
     const viduKey = chosen.vidu_api_key;
 
@@ -244,7 +244,7 @@ Deno.serve(async (req) => {
       });
     } catch (fetchErr) {
       console.error("[mint-vidu-rtc-session] Vidu request failed", fetchErr);
-      return json({ code: "VIDU_UNREACHABLE", message: "Could not reach Vidu" }, 502);
+      return json({ code: "VIDU_UNREACHABLE", message: "The studio couldn't reach its video service. Please try again in a moment." }, 502);
     }
 
     const viduBody = await viduRes.json().catch(() => null);
@@ -265,13 +265,13 @@ Deno.serve(async (req) => {
       if (viduRes.status === 400 && rtmpUrls.length && /rtmp/i.test(`${viduBody?.reason} ${viduBody?.message}`)) {
         return json({ code: "RTMP_INVALID", message: "Your streaming server URL or stream key wasn't accepted. Check it under Go live and try again." }, 400);
       }
-      return json({ code: "VIDU_ERROR", message: "Vidu rejected the session request" }, 502);
+      return json({ code: "VIDU_ERROR", message: "The studio couldn't start your session. Please try again." }, 502);
     }
 
     const rtc = viduBody.rtc || {};
     if (!rtc.token || !rtc.user_id || !rtc.app_id || !rtc.channel_id) {
       console.error("[mint-vidu-rtc-session] Vidu response missing rtc credentials", Object.keys(viduBody), Object.keys(rtc));
-      return json({ code: "VIDU_ERROR", message: "Vidu did not return join credentials" }, 502);
+      return json({ code: "VIDU_ERROR", message: "The studio couldn't start your session. Please try again." }, 502);
     }
 
     try {
