@@ -14,6 +14,8 @@ interface Props {
   orientation?: Orientation;
   /** When true, the <video> stops decoding/painting (saves GPU). The track stays alive. */
   paused?: boolean;
+  /** Reports the decoded video size (on load and whenever it changes, e.g. a phone rotating). */
+  onVideoSize?: (width: number, height: number) => void;
 }
 
 export function VideoDisplay({
@@ -26,8 +28,20 @@ export function VideoDisplay({
   isMinimized = false,
   orientation = "landscape",
   paused = false,
+  onVideoSize,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const onVideoSizeRef = useRef(onVideoSize);
+  onVideoSizeRef.current = onVideoSize;
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const report = () => { if (v.videoWidth && v.videoHeight) onVideoSizeRef.current?.(v.videoWidth, v.videoHeight); };
+    v.addEventListener("loadedmetadata", report);
+    v.addEventListener("resize", report);
+    return () => { v.removeEventListener("loadedmetadata", report); v.removeEventListener("resize", report); };
+  }, [stream, paused, isMinimized]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -51,7 +65,9 @@ export function VideoDisplay({
     }
   }, [stream, paused, isOutput]);
 
-  const aspectClass = orientation === "portrait" ? "aspect-[9/16]" : "aspect-video";
+  // Portrait boxes are capped so a phone screen still shows the controls below them; the video
+  // inside keeps its shape (object-contain for the output).
+  const aspectClass = orientation === "portrait" ? "aspect-[9/16] max-h-[65vh] mx-auto" : "aspect-video";
 
   if (isMinimized) {
     return (

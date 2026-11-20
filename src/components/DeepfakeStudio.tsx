@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useDecartRealtime } from "@/hooks/useDecartRealtime";
-import { useViduRealtime, describeViduEnd, ViduSessionError } from "@/hooks/useViduRealtime";
+import { useViduRealtime, describeViduEnd, ViduSessionError, checkViduBrowserSupport } from "@/hooks/useViduRealtime";
+import { isPhone, inAppBrowser, isIOS } from "@/lib/device";
 import { GoLivePanel } from "./studio/GoLivePanel";
 import { loadGoLiveSettings, goLiveProblem, goLiveRtmpUrl, goLivePlatformLabel, type GoLiveSettings } from "@/lib/goLive";
 import { VideoDisplay, type Orientation } from "./VideoDisplay";
@@ -12,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { obsRelayTopic } from "@/lib/obsTopic";
-import { Monitor, Smartphone, Copy, Download, GripVertical, Zap, TimerOff, ImagePlus, Lock } from "lucide-react";
+import { Monitor, Smartphone, Copy, Download, GripVertical, Zap, TimerOff, ImagePlus, Lock, SwitchCamera, Fullscreen } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { ReviewPromptModal } from "./dashboard/ReviewPromptModal";
@@ -33,6 +34,11 @@ const REFERENCE_GATE_ENABLED = true;
 
 export function DeepfakeStudio() {
   const [apiKey, setApiKey] = useState("");
+  // Phones get portrait framing, Data saver, a camera flip and a full-screen output by default.
+  const onPhone = useMemo(() => isPhone(), []);
+  const inApp = useMemo(() => inAppBrowser(), []);
+  const [cameraFacing, setCameraFacing] = useState<"front" | "rear">("front");
+  const [obsPanelOpen, setObsPanelOpen] = useState(() => !isPhone());
 
   const [showPayment, setShowPayment] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
@@ -58,8 +64,9 @@ export function DeepfakeStudio() {
   // viewer more data (~2.7 / 3.6 / 4.7 Mbps). "best" asks for the plan's ceiling (HD, or
   // Full HD on Professional/Enterprise); the server enforces the ceiling either way.
   const [videoQuality, setVideoQuality] = useState<"best" | "540p" | "720p">(() => {
-    try { const v = localStorage.getItem("eliteswap-video-quality"); if (v === "540p" || v === "720p") return v; } catch { /* noop */ }
-    return "best";
+    try { const v = localStorage.getItem("eliteswap-video-quality"); if (v === "540p" || v === "720p" || v === "best") return v; } catch { /* noop */ }
+    // Phones are often on mobile data: start them on Data saver until they choose otherwise.
+    return isPhone() ? "540p" : "best";
   });
   const pickVideoQuality = (q: "best" | "540p" | "720p") => {
     setVideoQuality(q);
@@ -84,10 +91,10 @@ export function DeepfakeStudio() {
   const [hairHint, setHairHint] = useState("");
   const [outfitHint, setOutfitHint] = useState("");
   const [outputExpanded, setOutputExpanded] = useState(false);
-  const [orientation, setOrientation] = useState<Orientation>("landscape");
+  const [orientation, setOrientation] = useState<Orientation>(() => (isPhone() ? "portrait" : "landscape"));
   // Mirror for the long-lived encoder loops (broker MSTP/bitmap, P2P pump).
   // They read this on every frame to know whether to crop to portrait.
-  const orientationRef = useRef<Orientation>("landscape");
+  const orientationRef = useRef<Orientation>(orientation);
   useEffect(() => { orientationRef.current = orientation; }, [orientation]);
   // Notifier registries: each long-lived broadcast effect (broker + P2P)
   // installs a callback here so it gets pinged when the user flips orientation
@@ -1646,6 +1653,21 @@ export function DeepfakeStudio() {
       return;
     }
     setIsLaunching(true);
+    // A browser that can't do live video would otherwise fail after the session opened (and
+    // been charged its minimum), so check first. Only hard failures block.
+    const support = await checkViduBrowserSupport();
+    if (support.blocked) {
+      toast({
+        title: "This browser can't run the live studio",
+        description: inApp
+          ? `You're in ${inApp}'s built-in browser. Open this page in ${isIOS() ? "Safari" : "Chrome"} instead.`
+          : isIOS() ? "Open this page in Safari and try again." : "Open this page in Chrome and try again.",
+        variant: "destructive",
+      });
+      setIsLaunching(false);
+      return;
+    }
+    if (support.unlisted) console.info("[Studio] browser isn't on the RTC SDK's tested list; trying anyway");
 
     // Pre-clean: if the user just disconnected in this same tab, the browser
     // may still be finishing ICE/DTLS close + camera release. Wait out the
@@ -1794,6 +1816,7 @@ export function DeepfakeStudio() {
           referenceImageDataUri,
           rtmpUrls: goLive.enabled ? [goLiveRtmpUrl(goLive)] : undefined,
           resolution: videoQuality === "best" ? undefined : videoQuality,
+          facing: onPhone ? cameraFacing : undefined,
           onRemoteStream: handleRemoteStream,
           onEnded: (reason) => {
             // Vidu occasionally drops a stream before its first frame. Retry once on the same
@@ -2003,7 +2026,53 @@ export function DeepfakeStudio() {
       }]).then(() => {}, () => {});
     });
     setIsLaunching(false);
-  }, [apiKey, decartConnect, viduRealtime, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop, goLive, videoQuality]);
+  }, [apiKey, decartConnect, viduRealtime, disconnect, error, toast, liteMode, isLaunching, studioMode, applyStudioRequest, localStream, startPreviewLoop, goLive, videoQuality, inApp, onPhone, cameraFacing]);
+
+  // Phones: flip between front and rear cameras. Before connecting it only picks the camera
+  // the next session starts with.
+  const handleFlipCamera = useCallback(async () => {
+    const next = cameraFacing === "front" ? "rear" : "front";
+    if (!(isConnected && activeProviderRef.current === "vidu")) {
+      setCameraFacing(next);
+      toast({ title: next === "rear" ? "Rear camera selected" : "Front camera selected", description: "It's used when you connect." });
+      return;
+    }
+    const res = await viduRealtime.flipCamera();
+    if ("message" in res) { toast({ title: "Couldn't switch camera", description: res.message, variant: "destructive" }); return; }
+    setLocalStream(res.stream);
+    setCameraFacing(next);
+  // isConnected is derived further down from connectionState; listing that keeps this current.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraFacing, connectionState, viduRealtime, toast]);
+
+  // Full-screen output for phones (screen recording, screen-sharing into a call or a TikTok
+  // LIVE). The wrapper goes full screen so the free-trial watermark stays on top; iPhone
+  // Safari can only full-screen a bare <video>, so that fallback isn't offered on trials.
+  const outputWrapRef = useRef<HTMLDivElement>(null);
+  const [outputFullscreen, setOutputFullscreen] = useState(false);
+  useEffect(() => {
+    const sync = () => setOutputFullscreen(!!outputWrapRef.current && (document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement) === outputWrapRef.current);
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+    return () => { document.removeEventListener("fullscreenchange", sync); document.removeEventListener("webkitfullscreenchange", sync); };
+  }, []);
+  const handleFullscreen = useCallback(async () => {
+    const el = outputWrapRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void }) | null;
+    if (!el) return;
+    if (outputFullscreen) {
+      const doc = document as Document & { webkitExitFullscreen?: () => void };
+      try { if (document.exitFullscreen) await document.exitFullscreen(); else doc.webkitExitFullscreen?.(); } catch { /* already out */ }
+      return;
+    }
+    try {
+      if (el.requestFullscreen) { await el.requestFullscreen(); return; }
+      if (el.webkitRequestFullscreen) { await el.webkitRequestFullscreen(); return; }
+    } catch { /* fall through to the <video> fallback */ }
+    const video = el.querySelector("video") as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    if (video?.webkitEnterFullscreen && !isFreeTrial) { video.webkitEnterFullscreen(); return; }
+    toast({ title: "Full screen isn't available here", description: "Use the expand button on the output instead." });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFreeTrial, toast, outputFullscreen]);
 
   useEffect(() => {
     if (!autoStartPending || isStarted || !apiKey.trim()) return;
@@ -2488,8 +2557,8 @@ export function DeepfakeStudio() {
         </div>
       )}
       {/* Header */}
-      <header className="border-b border-border glass px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <header className="border-b border-border glass px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="text-xl font-heading font-bold text-primary">Elite Swap</h1>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className={`w-2 h-2 rounded-full ${
@@ -2501,7 +2570,7 @@ export function DeepfakeStudio() {
             <span className="font-heading uppercase tracking-wider">{connectionState}</span>
           </div>
           {referenceImage && (
-            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading">
+            <span className="hidden sm:inline text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-heading">
               Face Swap Active
             </span>
           )}
@@ -2525,8 +2594,8 @@ export function DeepfakeStudio() {
               <Smartphone className="w-4 h-4" />
             </button>
           </div>
-          {/* Lite mode toggle: auto-on for weak hardware */}
-          <button
+          {/* Lite mode toggle: auto-on for weak hardware. Decart-only, so not shown on phones. */}
+          {!onPhone && <button
             onClick={toggleLiteMode}
             className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-heading transition-colors ${
               liteMode
@@ -2538,7 +2607,7 @@ export function DeepfakeStudio() {
           >
             <Zap className="w-3.5 h-3.5" />
             Lite
-          </button>
+          </button>}
           <Button
             onClick={() => {
               if (myReseller) {
@@ -2579,6 +2648,29 @@ export function DeepfakeStudio() {
         </div>
       </header>
 
+      {/* In-app browsers (Instagram, Facebook, TikTok…) usually block the camera or live video. */}
+      {inApp && (
+        <div className="mx-4 mt-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-foreground flex flex-wrap items-center justify-between gap-2">
+          <span>
+            You're in {inApp}'s built-in browser, which usually can't run the live studio. Tap the menu (⋯) and
+            choose <strong>Open in {isIOS() ? "Safari" : "Chrome"}</strong>, or copy the link.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs"
+            onClick={() => {
+              navigator.clipboard?.writeText(window.location.href).then(
+                () => toast({ title: "Link copied", description: `Paste it into ${isIOS() ? "Safari" : "Chrome"}.` }),
+                () => toast({ title: "Copy this link", description: window.location.href }),
+              );
+            }}
+          >
+            <Copy className="w-3 h-3 mr-1.5" /> Copy link
+          </Button>
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4">
         {/* Video feeds */}
@@ -2586,24 +2678,54 @@ export function DeepfakeStudio() {
           className={`flex-1 relative ${outputExpanded ? "" : "grid grid-cols-1 md:grid-cols-2 gap-4"}`}
           style={{ contain: "layout paint" }}
         >
-          <VideoDisplay
+          {/* Phones skip the empty camera box until the camera is live: it pushed the
+              "upload a face" step a whole screen down. */}
+          {(!onPhone || localStream) && <VideoDisplay
             stream={localStream}
             label="Your Camera (Motion Source)"
-            mirrored
+            mirrored={cameraFacing === "front"}
             isMinimized={outputExpanded}
             paused={outputExpanded}
             onToggleExpand={() => setOutputExpanded(false)}
             orientation={orientation}
-          />
-          <div className="relative">
+          />}
+          {/* On phones the swapped output comes first; the raw camera is secondary there. */}
+          <div ref={outputWrapRef} className={`relative [&:fullscreen]:bg-black ${onPhone && !outputExpanded ? "order-first" : ""}`}>
             <VideoDisplay
               stream={remoteStream}
               label="Face Swap Output"
               isOutput
-              isExpanded={outputExpanded}
-              onToggleExpand={() => setOutputExpanded(!outputExpanded)}
+              isExpanded={outputExpanded || outputFullscreen}
+              onToggleExpand={outputFullscreen ? undefined : () => setOutputExpanded(!outputExpanded)}
               orientation={orientation}
+              // Phones follow the real shape of the swapped video (portrait when held upright,
+              // landscape when rotated); computers keep the frame the user picked.
+              onVideoSize={onPhone ? (w, h) => setOrientation(h > w ? "portrait" : "landscape") : undefined}
             />
+            {onPhone && (
+              <div className="absolute top-3 left-3 z-10 flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleFlipCamera}
+                  className="p-2 rounded-lg bg-background/70 hover:bg-background/90 text-foreground backdrop-blur-sm border border-border/50"
+                  title={cameraFacing === "front" ? "Switch to the rear camera" : "Switch to the front camera"}
+                  aria-label="Flip camera"
+                >
+                  <SwitchCamera className="w-4 h-4" />
+                </button>
+                {remoteStream && (
+                  <button
+                    type="button"
+                    onClick={handleFullscreen}
+                    className="p-2 rounded-lg bg-background/70 hover:bg-background/90 text-foreground backdrop-blur-sm border border-border/50"
+                    title={outputFullscreen ? "Exit full screen" : "Full screen"}
+                    aria-label={outputFullscreen ? "Exit full screen" : "Full screen"}
+                  >
+                    <Fullscreen className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
             {isFreeTrial && (
               <div className="pointer-events-none absolute bottom-3 right-3 px-3 py-1.5 rounded-md bg-background/70 backdrop-blur-sm border border-primary/40 z-10">
                 <div className="text-[10px] font-heading font-bold text-primary leading-tight">ELITE SWAP</div>
@@ -2778,7 +2900,16 @@ export function DeepfakeStudio() {
             />
           )}
 
-          {/* OBS Integration */}
+          {/* OBS Integration: collapsed on phones, where OBS doesn't run. */}
+          {!obsPanelOpen ? (
+            <div className="glass border border-border rounded-xl p-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">OBS Studio</h2>
+                <p className="text-xs text-muted-foreground">For streaming and video calls from a computer.</p>
+              </div>
+              <Button size="sm" variant="outline" className="text-xs shrink-0" onClick={() => setObsPanelOpen(true)}>Show</Button>
+            </div>
+          ) : (
           <div className="glass border border-border rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-heading font-semibold text-sm text-foreground/80 uppercase tracking-wider">
@@ -2878,6 +3009,7 @@ export function DeepfakeStudio() {
               </Button>
             </div>
           </div>
+          )}
 
           {/* Error display */}
           {error && (

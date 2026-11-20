@@ -20,6 +20,8 @@ export interface ViduConnectParams {
   rtmpUrls?: string[];
   /** Requested output resolution (540p/720p/1080p); the server caps it at the plan's ceiling. */
   resolution?: string;
+  /** Phones: start on the rear camera. Omitted = the browser's default (front/webcam). */
+  facing?: "front" | "rear";
   onRemoteStream: (stream: MediaStream) => void;
   /** Vidu ended the session on its side (render worker left, server hangup, control lost, no output). */
   onEnded?: (reason: string) => void;
@@ -37,6 +39,7 @@ const CONTROL_RECONNECT_DELAYS_MS = [500, 1500, 3000, 5000];
 const DEFAULT_CONTROL_URL = "wss://api.vidu.com/live/ws/live/connect";
 const USER_OFFLINE_QUIT = 0; // AliRtcUserOfflineReason.AliRtcUserOfflineQuit (not exported at runtime)
 const RTMP_ADDRESS_COOLDOWN_MS = 12000;
+const CAMERA_REAR = 0; // AliRtcCameraDirection.CAMERA_REAR (a type-only enum, not exported at runtime)
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([
@@ -61,6 +64,23 @@ async function mintViduSession(body: Record<string, unknown>, fallback: string) 
   }
   if (!data?.ok) throw new ViduSessionError(data?.message || fallback, data?.code || "MINT_FAILED");
   return data;
+}
+
+/**
+ * Whether this browser can run the live studio, checked BEFORE a studio session opens (a failed
+ * start still costs the user a minimum charge). `blocked` only for hard failures (no WebRTC or
+ * no H.264); the SDK's browser allow-list alone isn't trusted to block, since it may not know
+ * newer or regional browsers that work fine.
+ */
+export async function checkViduBrowserSupport(): Promise<{ blocked: boolean; unlisted: boolean }> {
+  try {
+    const AliRtc = await loadAliRtc();
+    const { detail } = await AliRtc.default.isSupported("sendrecv");
+    const blocked = !detail.isWebRTCSupported || !detail.isH264EncodeSupported || !detail.isH264DecodeSupported;
+    return { blocked, unlisted: !detail.isBrowserSupported };
+  } catch {
+    return { blocked: false, unlisted: false };
+  }
 }
 
 /** User-facing text for why Vidu ended a session (hangup reasons, conn_init errors, our own). */
@@ -434,7 +454,7 @@ export function useViduRealtime() {
   }, [stopTimers]);
 
   const connect = useCallback(async (params: ViduConnectParams) => {
-    const { pKey, sessionId, referenceImageDataUri, editingType, rtmpUrls, resolution, onRemoteStream, onEnded } = params;
+    const { pKey, sessionId, referenceImageDataUri, editingType, rtmpUrls, resolution, facing, onRemoteStream, onEnded } = params;
     endingRef.current = false;
     sessionParamsRef.current = { pKey, sessionId, resolution };
     setConnectionState("connecting");
@@ -511,6 +531,10 @@ export function useViduRealtime() {
       });
 
       engine.setDefaultSubscribeAllRemoteAudioStreams(false);
+      // Only ever set for the rear camera: a facing constraint can't be met by a desktop webcam.
+      if (facing === "rear") {
+        try { await engine.setCameraCapturerConfiguration({ cameraDirection: CAMERA_REAR }); } catch { /* keep the default camera */ }
+      }
 
       // Don't add enableLocalVideo(true) here: it reintroduced a stuck-on-connecting hang in live testing.
       try {
@@ -563,6 +587,24 @@ export function useViduRealtime() {
       throw err;
     }
   }, [handleEnded, stopTimers, tryDeliverRemoteStream]);
+
+  // Phones: swap between front and rear cameras mid-session. The SDK keeps publishing to Vidu
+  // with the new camera; returns the new local stream for the camera panel.
+  const flipCamera = useCallback(async (): Promise<{ ok: true; stream: MediaStream } | { ok: false; message: string }> => {
+    const engine = engineRef.current;
+    if (!engine || endingRef.current) return { ok: false, message: "Connect first, then flip the camera." };
+    try {
+      await engine.switchCamera();
+      const { AliRtcRawDataStreamType } = await loadAliRtc();
+      const video: MediaStreamTrack | undefined = await engine.getVideoTrack({ streamType: AliRtcRawDataStreamType.AliRtcSdkStreamTypeCapture }).catch(() => undefined);
+      const audio: MediaStreamTrack | undefined = await engine.getAudioTrack().catch(() => undefined);
+      if (!video) return { ok: false, message: "The other camera didn't start." };
+      return { ok: true, stream: new MediaStream(audio ? [video, audio] : [video]) };
+    } catch (e) {
+      console.warn("[useViduRealtime] switchCamera failed", e);
+      return { ok: false, message: "This device has no other camera to switch to." };
+    }
+  }, []);
 
   // Change the reference photo (and optionally the editing mode) without reconnecting.
   // The picture switches within a few seconds; no extra Vidu charge.
@@ -654,6 +696,7 @@ export function useViduRealtime() {
     connect,
     disconnect,
     switchReference,
+    flipCamera,
     backgroundState,
     startBackground,
     stopBackground,
