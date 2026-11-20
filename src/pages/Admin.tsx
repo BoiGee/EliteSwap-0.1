@@ -31,6 +31,7 @@ const UsageManager = lazy(() => import("@/components/admin/UsageManager"));
 const PaidUsersManager = lazy(() => import("@/components/admin/PaidUsersManager"));
 const DecartPoolManager = lazy(() => import("@/components/admin/DecartPoolManager"));
 const KeyActivityManager = lazy(() => import("@/components/admin/KeyActivityManager"));
+const BackgroundUsageCard = lazy(() => import("@/components/admin/BackgroundUsageCard").then((m) => ({ default: m.BackgroundUsageCard })));
 const AnnouncementManager = lazy(() => import("@/components/admin/AnnouncementManager"));
 const SiteLinksCard = lazy(() => import("@/components/admin/SiteLinksCard"));
 const AuditLogManager = lazy(() => import("@/components/admin/AuditLogManager"));
@@ -587,7 +588,7 @@ export default function Admin() {
 
           {tab === "live" && <LiveConnectionsManager />}
 
-          {tab === "usage" && <UsageManager />}
+          {tab === "usage" && <>{isAdmin && <BackgroundUsageCard />}<UsageManager /></>}
 
           {tab === "time_ledger" && <TimeLedgerManager />}
 

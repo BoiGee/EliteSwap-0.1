@@ -284,6 +284,30 @@ Deno.serve(async (req) => {
       console.error("[mint-vidu-rtc-session] Failed to record vidu_pool_key_id", e);
     }
 
+    // Elite AI background: log the stretch it's on (admin-only studio_background_segments; the
+    // studio ends it, or the session-close trigger does). Never blocks the background itself.
+    let backgroundSegmentId: string | null = null;
+    if (editingType === "background_replacement") {
+      try {
+        const { data: seg, error: segErr } = await admin
+          .from("studio_background_segments")
+          .insert({
+            session_id: sessionId,
+            user_id: userId,
+            api_key_id: keyRow.id,
+            vidu_live_id: viduBody.live?.id ?? null,
+            vidu_pool_key_id: chosen.id,
+            resolution,
+          })
+          .select("id")
+          .single();
+        if (segErr) console.error("[mint-vidu-rtc-session] Failed to log background segment", segErr.message);
+        else backgroundSegmentId = seg?.id ?? null;
+      } catch (e) {
+        console.error("[mint-vidu-rtc-session] Failed to log background segment", e);
+      }
+    }
+
     return json({
       ok: true,
       live_id: viduBody.live?.id ?? null,
@@ -303,6 +327,7 @@ Deno.serve(async (req) => {
       control_url: VIDU_CONTROL_URL,
       resolution,
       relaying: rtmpUrls.length > 0,
+      background_segment_id: backgroundSegmentId,
     });
   } catch (e) {
     console.error("[mint-vidu-rtc-session]", e);

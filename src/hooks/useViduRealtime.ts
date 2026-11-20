@@ -289,6 +289,18 @@ class ViduBackgroundLeg {
   // gets a clone of the character output; stopping the background then leaves the original live
   // (verified: feeding the original froze the output when the background was turned off).
   private inputClone: MediaStreamTrack | null = null;
+  // Admin-only usage log row for this stretch of background (studio_background_segments).
+  private segmentId: string | null = null;
+
+  // Closes the usage-log row once. Fire-and-forget: if it never lands (tab closed), the
+  // session-close trigger ends the row at the session's last heartbeat instead.
+  private endSegment(reason: string) {
+    const id = this.segmentId;
+    this.segmentId = null;
+    if (!id) return;
+    supabase.rpc("end_studio_background_segment" as never, { p_segment_id: id, p_reason: reason } as never)
+      .then(({ error }) => { if (error) console.warn("[useViduRealtime] background log end failed", error.message); });
+  }
 
   private cloneInput(track: MediaStreamTrack) {
     const prev = this.inputClone;
@@ -310,7 +322,8 @@ class ViduBackgroundLeg {
     if (!session.rtc?.token || !session.render_uid || !session.live_id || !session.client_secret) {
       throw new Error("The Elite AI background request was rejected");
     }
-    if (this.stopped) return;
+    this.segmentId = session.background_segment_id ?? null;
+    if (this.stopped) { this.endSegment("cancelled"); return; }
     this.renderUid = session.render_uid;
     this.control = new ViduControlChannel(session.control_url || DEFAULT_CONTROL_URL, session.live_id, session.client_secret, (r) => this.fail(r));
     this.control.open();
@@ -368,12 +381,13 @@ class ViduBackgroundLeg {
   private fail(reason: string) {
     if (this.stopped) return;
     console.warn("[useViduRealtime] Elite AI background ended:", reason);
-    void this.stop();
+    void this.stop(`failed:${reason}`);
     this.onEnded(reason);
   }
 
-  async stop() {
+  async stop(reason = "stopped") {
     this.stopped = true;
+    this.endSegment(reason);
     if (this.poll) clearInterval(this.poll);
     if (this.watchdog) clearTimeout(this.watchdog);
     this.control?.hangup();
@@ -407,11 +421,11 @@ export function useViduRealtime() {
   const relayingRef = useRef(false);
   const relayEndedAtRef = useRef(0);
 
-  const stopBackgroundLeg = useCallback(async () => {
+  const stopBackgroundLeg = useCallback(async (reason: string) => {
     const leg = bgLegRef.current;
     bgLegRef.current = null;
     setBackgroundState("off");
-    if (leg) await leg.stop();
+    if (leg) await leg.stop(reason);
   }, []);
 
   const stopTimers = useCallback(() => {
@@ -432,7 +446,7 @@ export function useViduRealtime() {
       ? rawReason
       : relayingRef.current ? "relay_start_failed" : "start_failed";
     stopTimers();
-    void stopBackgroundLeg();
+    void stopBackgroundLeg("session_ended");
     controlRef.current?.hangup();
     controlRef.current = null;
     void releaseEngine(engineRef.current);
@@ -673,7 +687,7 @@ export function useViduRealtime() {
       return { ok: true as const };
     } catch (e: any) {
       if (bgLegRef.current === leg) { bgLegRef.current = null; setBackgroundState("off"); }
-      await leg.stop();
+      await leg.stop("start_failed");
       return { ok: false, message: brandMessage(e?.message, "Couldn't start the Elite AI background. Please try again.") };
     }
   }, []);
@@ -681,13 +695,13 @@ export function useViduRealtime() {
   // Back to the character-only output; ends the second Vidu stream.
   const stopBackground = useCallback(async () => {
     const characterTrack = deliveredTrackRef.current;
-    await stopBackgroundLeg();
+    await stopBackgroundLeg("turned_off");
     if (characterTrack && !endingRef.current) onRemoteStreamRef.current?.(new MediaStream([characterTrack]));
   }, [stopBackgroundLeg]);
 
   const disconnect = useCallback(async () => {
     endingRef.current = true;
-    await stopBackgroundLeg();
+    await stopBackgroundLeg("disconnected");
     stopTimers();
     controlRef.current?.hangup();
     controlRef.current = null;
@@ -702,7 +716,7 @@ export function useViduRealtime() {
   }, [stopTimers, stopBackgroundLeg]);
 
   useEffect(() => {
-    const onPageHide = () => { controlRef.current?.hangup(); void bgLegRef.current?.stop(); };
+    const onPageHide = () => { controlRef.current?.hangup(); void bgLegRef.current?.stop("page_closed"); };
     window.addEventListener("pagehide", onPageHide);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
@@ -710,7 +724,7 @@ export function useViduRealtime() {
       if (remotePollRef.current) clearInterval(remotePollRef.current);
       if (outputWatchdogRef.current) clearTimeout(outputWatchdogRef.current);
       controlRef.current?.hangup();
-      void bgLegRef.current?.stop();
+      void bgLegRef.current?.stop("page_closed");
       void releaseEngine(engineRef.current);
     };
   }, []);
