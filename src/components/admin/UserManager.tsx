@@ -115,6 +115,21 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
   const [editEmail, setEditEmail] = useState("");
   const [newPaymentUserId, setNewPaymentUserId] = useState<string | null>(null);
   const [newPaymentCurrency, setNewPaymentCurrency] = useState<"BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20">("BTC");
+  // Mobile Money (manual) payments recorded by an admin: stored exactly like the customer MoMo
+  // checkout's rows (payment_method 'momo_manual', currency GHS, cedis in amount_local).
+  const [newPaymentMethod, setNewPaymentMethod] = useState<"crypto" | "momo_manual">("crypto");
+  const [newPaymentGhs, setNewPaymentGhs] = useState("");
+  const [newPaymentMomoRef, setNewPaymentMomoRef] = useState("");
+  const [newPaymentMomoPhone, setNewPaymentMomoPhone] = useState("");
+  const [newPaymentMomoName, setNewPaymentMomoName] = useState("");
+  const [ghsPerUsd, setGhsPerUsd] = useState<number | null>(null);
+  useEffect(() => {
+    if (newPaymentMethod !== "momo_manual" || ghsPerUsd !== null) return;
+    supabase.from("fx_rates" as any).select("per_usd").eq("currency", "GHS").maybeSingle()
+      .then(({ data }) => { const r = Number((data as any)?.per_usd); if (r > 0) setGhsPerUsd(r); });
+  }, [newPaymentMethod, ghsPerUsd]);
+  // Same rounding as the customer MoMo quote: up to a whole cedi.
+  const ghsFor = (usd: number) => (ghsPerUsd && usd > 0 ? Math.ceil(usd * ghsPerUsd) : null);
   const [newPaymentTxHash, setNewPaymentTxHash] = useState("");
   const [newPaymentAmount, setNewPaymentAmount] = useState("");
   const [newPaymentPlanId, setNewPaymentPlanId] = useState("");
@@ -596,24 +611,51 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
     const matchedPlanId = plan.id;
     // Annual = 12 packs' worth of minutes, so partners get 12x the plan's shared profit.
     const commissionBase = plan.commission_base_usd != null ? Number(plan.commission_base_usd) * (annual ? 12 : 1) : null;
+    const momo = newPaymentMethod === "momo_manual";
+    let ghs: number | null = null;
+    if (momo) {
+      ghs = newPaymentGhs.trim() ? parseFloat(newPaymentGhs) : ghsFor(amt);
+      if (ghs !== null && (!Number.isFinite(ghs) || ghs <= 0)) {
+        toast({ title: "Enter the cedis they sent", variant: "destructive" });
+        return;
+      }
+    }
     // Admin inserts skip payments_enforce_financials, so lock the base here as checkout does;
     // otherwise a later base change would retroactively change this payment's commission.
     const { error } = await supabase.from("payments").insert({
       user_id: userId,
-      currency: newPaymentCurrency,
-      payment_method: "crypto",
-      tx_hash: newPaymentTxHash.trim() || null,
       amount_usd: amt,
       plan_id: matchedPlanId,
       billing_period: newPaymentPeriod,
       commission_base_usd_snapshot: commissionBase,
       status: newPaymentStatus,
+      ...(momo
+        ? {
+            // Same shape as submit_momo_plan_payment(): the crypto verifier ignores these rows.
+            currency: "GHS",
+            payment_method: "momo_manual",
+            tx_hash: null,
+            amount_local: ghs,
+            // GHS per USD, as the customer quote stores it; the effective rate if no live rate loaded.
+            fx_rate: ghs !== null ? (ghsPerUsd ?? Math.round((ghs / amt) * 10000) / 10000) : null,
+            provider_reference: newPaymentMomoRef.trim() || null,
+            momo_sender_phone: newPaymentMomoPhone.replace(/[\s().-]/g, "") || null,
+            momo_sender_name: newPaymentMomoName.trim().slice(0, 80) || null,
+          }
+        : {
+            currency: newPaymentCurrency,
+            payment_method: "crypto",
+            tx_hash: newPaymentTxHash.trim() || null,
+          }),
     } as any);
     if (error) {
       console.error("[UserManager.createPaymentForUser]", error);
+      const dupRef = momo && error.code === "23505";
       toast({
-        title: "Error",
-        description: `${getSafeErrorMessage(error.code)}: ${error.message}`,
+        title: dupRef ? "That MoMo transaction ID is already recorded" : "Error",
+        description: dupRef
+          ? "Another payment already has this transaction ID. Check the Payments tab before recording it again."
+          : `${getSafeErrorMessage(error.code)}: ${error.message}`,
         variant: "destructive",
       });
     } else {
@@ -622,6 +664,10 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
       setNewPaymentAmount("");
       setNewPaymentPlanId("");
       setNewPaymentPeriod("monthly");
+      setNewPaymentGhs("");
+      setNewPaymentMomoRef("");
+      setNewPaymentMomoPhone("");
+      setNewPaymentMomoName("");
       setNewPaymentUserId(null);
       onRefresh();
     }
@@ -1063,7 +1109,18 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
 
                     {newPaymentUserId === p.user_id && (
                       <div className="bg-muted/20 rounded-lg p-3 space-y-2">
-                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                        <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                          <div>
+                            <span className="text-xs text-muted-foreground font-heading">Paid with</span>
+                            <select
+                              value={newPaymentMethod}
+                              onChange={(e) => setNewPaymentMethod(e.target.value as "crypto" | "momo_manual")}
+                              className="w-full bg-muted/30 border border-border rounded-lg px-2 py-1 text-xs font-heading text-foreground mt-0.5"
+                            >
+                              <option value="crypto">Crypto</option>
+                              <option value="momo_manual">Mobile Money (GHS)</option>
+                            </select>
+                          </div>
                           <div>
                             <span className="text-xs text-muted-foreground font-heading">Billing</span>
                             <select
@@ -1099,27 +1156,47 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                               ))}
                             </select>
                           </div>
-                          <div>
-                            <span className="text-xs text-muted-foreground font-heading">Currency</span>
-                            <select
-                              value={newPaymentCurrency}
-                              onChange={(e) => setNewPaymentCurrency(e.target.value as "BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20")}
-                              className="w-full bg-muted/30 border border-border rounded-lg px-2 py-1 text-xs font-heading text-foreground mt-0.5"
-                            >
-                              <option value="BTC">BTC</option>
-                              <option value="BNB">BNB</option>
-                              <option value="USDT-BEP20">USDT (BEP-20)</option>
-                              <option value="USDT-TRC20">USDT (TRC20)</option>
-                            </select>
-                          </div>
+                          {newPaymentMethod === "momo_manual" ? (
+                            <div>
+                              <span className="text-xs text-muted-foreground font-heading">Cedis received (GHS)</span>
+                              <Input
+                                value={newPaymentGhs}
+                                onChange={(e) => setNewPaymentGhs(e.target.value)}
+                                type="number"
+                                className="h-7 text-xs mt-0.5"
+                                placeholder={(() => { const g = ghsFor(newPaymentAmount.trim() ? parseFloat(newPaymentAmount) : 0); return g ? `≈ ${g.toLocaleString()} at today's rate` : "GHS amount"; })()}
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-xs text-muted-foreground font-heading">Currency</span>
+                              <select
+                                value={newPaymentCurrency}
+                                onChange={(e) => setNewPaymentCurrency(e.target.value as "BTC" | "BNB" | "USDT-BEP20" | "USDT-TRC20")}
+                                className="w-full bg-muted/30 border border-border rounded-lg px-2 py-1 text-xs font-heading text-foreground mt-0.5"
+                              >
+                                <option value="BTC">BTC</option>
+                                <option value="BNB">BNB</option>
+                                <option value="USDT-BEP20">USDT (BEP-20)</option>
+                                <option value="USDT-TRC20">USDT (TRC20)</option>
+                              </select>
+                            </div>
+                          )}
                           <div>
                             <span className="text-xs text-muted-foreground font-heading">Amount paid (USD)</span>
                             <Input value={newPaymentAmount} onChange={(e) => setNewPaymentAmount(e.target.value)} type="number" className="h-7 text-xs mt-0.5" placeholder="Plan price" />
                           </div>
-                          <div>
-                            <span className="text-xs text-muted-foreground font-heading">TX Hash</span>
-                            <Input value={newPaymentTxHash} onChange={(e) => setNewPaymentTxHash(e.target.value)} className="h-7 text-xs mt-0.5" placeholder="Optional" />
-                          </div>
+                          {newPaymentMethod === "momo_manual" ? (
+                            <div>
+                              <span className="text-xs text-muted-foreground font-heading">MoMo transaction ID</span>
+                              <Input value={newPaymentMomoRef} onChange={(e) => setNewPaymentMomoRef(e.target.value)} className="h-7 text-xs mt-0.5 font-mono" placeholder="From the MoMo SMS (optional)" />
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-xs text-muted-foreground font-heading">TX Hash</span>
+                              <Input value={newPaymentTxHash} onChange={(e) => setNewPaymentTxHash(e.target.value)} className="h-7 text-xs mt-0.5" placeholder="Optional" />
+                            </div>
+                          )}
                           <div>
                             <span className="text-xs text-muted-foreground font-heading">Status</span>
                             <select
@@ -1133,6 +1210,22 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                             </select>
                           </div>
                         </div>
+                        {newPaymentMethod === "momo_manual" && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <div>
+                              <span className="text-xs text-muted-foreground font-heading">Sender's MoMo number</span>
+                              <Input value={newPaymentMomoPhone} onChange={(e) => setNewPaymentMomoPhone(e.target.value)} inputMode="tel" className="h-7 text-xs mt-0.5" placeholder="Optional" />
+                            </div>
+                            <div>
+                              <span className="text-xs text-muted-foreground font-heading">Sender's name</span>
+                              <Input value={newPaymentMomoName} onChange={(e) => setNewPaymentMomoName(e.target.value)} className="h-7 text-xs mt-0.5" placeholder="Optional" />
+                            </div>
+                            <p className="col-span-2 self-end text-[11px] text-muted-foreground">
+                              Recorded as a Mobile Money payment, like the customer checkout. Confirmed issues the plan's key straight away.
+                              {ghsPerUsd ? ` Today's rate: ${ghsPerUsd.toFixed(2)} GHS per USD.` : ""}
+                            </p>
+                          </div>
+                        )}
                         <Button size="sm" onClick={() => createPaymentForUser(p.user_id)} className="font-heading text-xs h-7">Create Payment</Button>
                       </div>
                     )}
@@ -1144,9 +1237,12 @@ export default function UserManager({ profiles, payments, apiKeys, userRoles, fr
                         {uPayments.map((pay) => (
                           <div key={pay.id} className="flex items-center justify-between bg-muted/20 rounded-lg px-3 py-2 text-xs">
                             <div className="flex items-center gap-2">
-                              <span className="font-heading font-semibold">{pay.currency}</span>
+                              <span className="font-heading font-semibold">{(pay as any).payment_method === "momo_manual" ? "MoMo" : pay.currency}</span>
                               {pay.amount_usd != null && <span className="text-muted-foreground">${pay.amount_usd}</span>}
-                              <span className="font-mono text-foreground/70 truncate max-w-[180px]">{pay.tx_hash}</span>
+                              {(pay as any).payment_method === "momo_manual" && (pay as any).amount_local != null && (
+                                <span className="text-muted-foreground">GHS {Number((pay as any).amount_local).toLocaleString()}</span>
+                              )}
+                              <span className="font-mono text-foreground/70 truncate max-w-[180px]">{pay.tx_hash ?? (pay as any).provider_reference}</span>
                               <span className="text-muted-foreground">{new Date(pay.created_at).toLocaleDateString()}</span>
                             </div>
                             <div className="flex items-center gap-2">
